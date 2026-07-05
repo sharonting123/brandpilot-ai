@@ -1,0 +1,13 @@
+services:
+  brandpilot-ai:
+    build: .
+    container_name: brandpilot-ai
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 4173
+    ports:
+      - "127.0.0.1:4173:4173"
