@@ -1051,7 +1051,8 @@ function normalizeFunnelRow(row) {
     row.poi_id ? `poi_id=${row.poi_id}` : null,
     row.deal_id ? `deal_id=${row.deal_id}` : null,
     row.campaign_id ? `campaign_id=${row.campaign_id}` : null,
-    row.campon_reduce ? `coupon_reduce=${row.coupon_reduce}` : null,
+    row.pay_price ? `pay_price=${row.pay_price}` : null,
+    row.coupon_reduce ? `coupon_reduce=${row.coupon_reduce}` : null,
     row.mrn_biz ? `mrn_biz=${row.mrn_biz}` : null,
     row.mrn_entry ? `mrn_entry=${row.mrn_entry}` : null,
     params.mrn_biz ? `mrn_biz=${params.mrn_biz}` : null,
@@ -1115,8 +1116,5 @@ function escapeHtml(value) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-laceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }

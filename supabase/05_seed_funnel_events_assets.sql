@@ -176,3 +176,50 @@ where not exists (
     and asset_type = 'funnel_case'
     and title = '海底捞搜索到核销归因样例'
 );
+
+insert into public.brand_assets (brand_id, asset_type, title, content, metadata)
+select *
+from (
+  values
+    (
+      'haidilao',
+      'analysis_framework',
+      '经分框架：GTV 三因子拆解',
+      '半年度复盘按交易用户数、购买频次、客单价拆解 GTV，并区分自然增长、活动拉动和套餐结构变化。',
+      '{"source":"html_reference","framework":"gtv_three_factor"}'::jsonb
+    ),
+    (
+      'haidilao',
+      'analysis_framework',
+      '经分框架：变现率结构性置换',
+      '提案需同时观察佣金收入、广告收入、商户广告渗透率和综合 take rate，避免只用交易额判断经营质量。',
+      '{"source":"html_reference","framework":"take_rate_mix"}'::jsonb
+    ),
+    (
+      'haidilao',
+      'analysis_framework',
+      '经分框架：UE 与 LTV/CAC',
+      '单店 UE 关注 GTV、佣金、广告收入、补贴和运营成本；单用户 UE 关注获客成本、回本周期、复购和 LTV/CAC。',
+      '{"source":"html_reference","framework":"unit_economics"}'::jsonb
+    ),
+    (
+      'haidilao',
+      'risk_threshold',
+      '经分预警线：补贴率、广告渗透、核销率',
+      '补贴率接近 2% 代表竞争烈度抬升；广告商户渗透低于 15% 代表商户投放意愿不足；核销率跌破 78% 代表购买决策质量下降。',
+      '{"source":"html_reference","framework":"kpi_guardrail"}'::jsonb
+    ),
+    (
+      'haidilao',
+      'resource_allocation',
+      '下半年资源分配建议',
+      '优先投向搜索广告产品、商户广告教育、场景化套餐和 AI 经营复盘工具，用资源分配解释下半年增长路径。',
+      '{"source":"html_reference","framework":"resource_allocation"}'::jsonb
+    )
+) as assets(brand_id, asset_type, title, content, metadata)
+where not exists (
+  select 1 from public.brand_assets existing
+  where existing.brand_id = assets.brand_id
+    and existing.asset_type = assets.asset_type
+    and existing.title = assets.title
+);

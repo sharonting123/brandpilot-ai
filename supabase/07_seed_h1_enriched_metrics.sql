@@ -78,7 +78,7 @@ set
   search_impressions = excluded.search_impressions,
   poi_visits = excluded.poi_visits,
   paid_orders = excluded.paid_orders,
-  verified_orders = exclyned.verified_orders,
+  verified_orders = excluded.verified_orders,
   gmv = excluded.gmv,
   coupon_reduce_amount = excluded.coupon_reduce_amount,
   ad_spend = excluded.ad_spend,

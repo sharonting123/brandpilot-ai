@@ -90,6 +90,60 @@ create table if not exists public.fact_deal_campaign_daily (
   primary key (date, deal_id, campaign_id, source)
 );
 
+create table if not exists public.fact_brand_monthly (
+  month date not null,
+  brand_id text not null references public.dim_brand(brand_id) on delete cascade,
+  active_users integer not null default 0,
+  purchase_frequency numeric(10, 2) not null default 0,
+  avg_order_value numeric(12, 2) not null default 0,
+  gtv numeric(16, 2) not null default 0,
+  paid_orders integer not null default 0,
+  verified_orders integer not null default 0,
+  repeat_purchase_rate numeric(8, 4) not null default 0,
+  commission_revenue numeric(14, 2) not null default 0,
+  ad_revenue numeric(14, 2) not null default 0,
+  merchant_revenue numeric(14, 2) not null default 0,
+  subsidy_amount numeric(14, 2) not null default 0,
+  operating_cost numeric(14, 2) not null default 0,
+  ad_merchant_penetration numeric(8, 4) not null default 0,
+  take_rate numeric(8, 4) not null default 0,
+  subsidy_rate numeric(8, 4) not null default 0,
+  data_confidence text not null default 'demo_model',
+  notes text,
+  primary key (month, brand_id)
+);
+
+create table if not exists public.fact_city_brand_monthly (
+  month date not null,
+  brand_id text not null references public.dim_brand(brand_id) on delete cascade,
+  city text not null,
+  store_count integer not null default 0,
+  search_impressions integer not null default 0,
+  poi_visits integer not null default 0,
+  paid_orders integer not null default 0,
+  verified_orders integer not null default 0,
+  gmv numeric(14, 2) not null default 0,
+  coupon_reduce_amount numeric(14, 2) not null default 0,
+  ad_spend numeric(14, 2) not null default 0,
+  roi numeric(10, 2) not null default 0,
+  avg_order_value numeric(12, 2) not null default 0,
+  primary key (month, brand_id, city)
+);
+
+create table if not exists public.fact_competitor_benchmark_monthly (
+  month date not null,
+  brand_id text not null references public.dim_brand(brand_id) on delete cascade,
+  competitor text not null,
+  market_share numeric(8, 4) not null default 0,
+  avg_order_value numeric(12, 2) not null default 0,
+  verification_rate numeric(8, 4) not null default 0,
+  subsidy_rate numeric(8, 4) not null default 0,
+  ad_take_rate numeric(8, 4) not null default 0,
+  content_share numeric(8, 4) not null default 0,
+  data_confidence text not null default 'modeled_directional',
+  primary key (month, brand_id, competitor)
+);
+
 create table if not exists public.fact_meituan_funnel_events (
   id uuid primary key default gen_random_uuid(),
   occurred_at timestamptz not null default now(),
