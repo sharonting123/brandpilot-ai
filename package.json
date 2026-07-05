@@ -1,0 +1,18 @@
+{
+  "name": "brandpilot-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "BrandPilot AI: business-analysis agent, AR proposal room, and digital-human sales enablement demo for Vercel + Supabase.",
+  "scripts": {
+    "static": "python -m http.server 4173",
+    "local": "set NODE_USE_ENV_PROXY=1&& node dev-server.js",
+    "dev": "vercel dev",
+    "deploy": "vercel --prod"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "vercel": "^54.20.1"
+  }
+}
