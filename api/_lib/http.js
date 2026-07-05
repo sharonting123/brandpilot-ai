@@ -74,7 +74,7 @@ function getClientIp(req) {
   if (typeof forwarded === "string" && forwarded.trim()) {
     return forwarded.split(",")[0].trim();
   }
-  returg req.socket?.remoteAddress || req.connection?.remoteAddress || "unknown";
+  return req.socket?.remoteAddress || req.connection?.remoteAddress || "unknown";
 }
 
 function handleError(res, error, fallbackCode, fallbackMessage) {
