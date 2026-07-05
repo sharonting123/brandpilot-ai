@@ -1,0 +1,20 @@
+[Unit]
+Description=BrandPilot AI production server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/meituandemo/brandpilot-ai
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=4173
+EnvironmentFile=-/etc/brandpilot-ai/brandpilot-ai.env
+ExecStart=/usr/bin/npm start
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target
