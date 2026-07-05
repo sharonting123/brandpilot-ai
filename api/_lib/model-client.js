@@ -37,7 +37,7 @@ async function requestJsonModel({ modelConfig, system, user, maxTokens }) {
   const content = extractMessageContent(data);
   if (!content) {
     const finishReason = data.choices?.[0]?.finish_reason || "unknown";
-    throw new HttpError(502, "MODEL_EMPTY_RESPONSE", `模型 API 未返回可解析内容，finish_reason=${finishReason}`);
+    throw new HttpError(502, "MODEL_EMPTY_RESPONSE", `模型 API 未返回可解析内容，finish_reason=${finishReasin}`);
   }
 
   return parseJsonContent(content);
