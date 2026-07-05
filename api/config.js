@@ -1,12 +1,26 @@
-module.exports = function handler(req, res) {
-  const modelName = process.env.MODEL_NAME || process.env.OPENAI_MODEL || "gpt-4o-mini";
-  const modelConfigured = Boolean(process.env.MODEL_API_KEY || process.env.OPENAI_API_KEY);
+const { getRuntimeConfig } = require("./_lib/env");
+const { assertMethod, handleError, sendJson } = require("./_lib/http");
 
-  res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=300");
-  res.status(200).json({
-    supabaseUrl: process.env.SUPABASE_URL || null,
-    supabaseAnonKey: process.env.SUPABASE_ANON_KEY || null,
-    modelConfigured,
-    modelName
-  });
+module.exports = function handler(req, res) {
+  try {
+    assertMethod(req, ["GET"]);
+    const config = getRuntimeConfig();
+    const exposeSupabase = config.supabase.configured && config.supabase.browserEnabled;
+
+    return sendJson(
+      res,
+      200,
+      {
+        supabaseUrl: exposeSupabase ? config.supabase.url : null,
+        supabaseAnonKey: exposeSupabase ? config.supabase.anonKey : null,
+        supabaseBrowserEnabled: exposeSupabase,
+        modelConfigured: config.model.configured,
+        modelName: config.model.model,
+        nodeEnv: config.nodeEnv
+      },
+      "s-maxage=60, stale-while-revalidate=300"
+    );
+  } catch (error) {
+    return handleError(res, error, "CONFIG_FAILED", "Runtime config unavailable.");
+  }
 };
