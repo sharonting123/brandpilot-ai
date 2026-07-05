@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="BrandPilot AI: 连锁餐饮品牌经营分析 Agent、AR 城市展厅、数字人直播提案工作台"
+    />
+    <title>BrandPilot AI</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="rail" aria-label="项目导航">
+        <div class="brand-mark" aria-hidden="true">BP</div>
+        <nav class="rail-nav">
+          <button class="rail-button active" data-view="workbench" title="经营提案">经分</button>
+          <button class="rail-button" data-view="funnel" title="美团链路归因">链路</button>
+          <button class="rail-button" data-view="ar" title="AR 城市展厅">AR</button>
+          <button class="rail-button" data-view="live" title="数字人直播">直播</button>
+          <button class="rail-button" data-view="infra" title="基建">基建</button>
+        </nav>
+        <div class="rail-status" id="connectionDot" title="Supabase 连接状态"></div>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">BrandPilot AI</p>
+            <h1>连锁餐饮品牌提案智能体</h1>
+          </div>
+          <div class="topbar-actions">
+            <select id="brandSelect" class="select" aria-label="选择品牌"></select>
+            <button class="text-button" id="syncButton" type="button">同步 Supabase</button>
+            <button class="primary-button" id="generateButton" type="button">生成提案</button>
+          </div>
+        </header>
+
+        <section class="notice" id="runtimeNotice" role="status">
+          正在检测 Supabase 连接...
+        </section>
+
+        <section class="view active" id="view-workbench" aria-label="经营提案工作台">
+          <div class="layout-grid">
+            <section class="panel agent-panel">
+              <div class="panel-heading">
+                <span>Multi-Agent 编排</span>
+                <strong id="agentProgressLabel">5/5</strong>
+              </div>
+              <div class="agent-list" id="agentList"></div>
+              <div class="agent-log" id="agentActivityLog" aria-live="polite"></div>
+            </section>
+
+            <section class="proposal-stage">
+              <div class="proposal-header">
+                <div>
+                  <p class="eyebrow">品牌经营诊断</p>
+                  <h2 id="proposalTitle">华东茶饮连锁增长提案</h2>
+                </div>
+                <div class="score-block">
+                  <span>机会分</span>
+                  <strong id="opportunityScore">86</strong>
+                </div>
+              </div>
+
+              <div class="metric-strip" id="metricStrip"></div>
+
+              <div class="control-strip" aria-label="提案交互控制">
+                <select id="scenarioSelect" class="select compact-select" aria-label="选择策略场景">
+                  <option value="boost">增长冲刺</option>
+                  <option value="defense">竞对防守</option>
+                  <option value="live">直播转化</option>
+                </select>
+                <button class="text-button" id="runAgentButton" type="button">运行 Agent</button>
+                <button class="text-button" id="simulateBudgetButton" type="button">预算模拟</button>
+                <button class="text-button" id="exportBriefButton" type="button">生成拜访话术</button>
+              </div>
+
+              <div class="diagnosis-grid">
+                <article class="diagnosis-panel">
+                  <h3>关键结论</h3>
+                  <ul id="insightList"></ul>
+                </article>
+                <article class="diagnosis-panel">
+                  <h3>推荐动作</h3>
+                  <div id="actionList" class="action-list"></div>
+                </article>
+              </div>
+
+              <div class="timeline" id="timeline"></div>
+            </section>
+
+            <aside class="panel side-panel">
+              <div class="panel-heading">
+                <span>提案资产</span>
+                <strong id="proposalCount">0</strong>
+              </div>
+              <div class="asset-stack" id="assetStack"></div>
+            </aside>
+          </div>
+        </section>
+
+
+        <section class="view" id="view-funnel" aria-label="美团链路归因">
+          <div class="funnel-layout">
+            <section class="funnel-stage">
+              <div class="proposal-header">
+                <div>
+                  <p class="eyebrow">Meituan Local Life Funnel</p>
+                  <h2>海底捞搜索到下单归因链路</h2>
+                </div>
+                <div class="score-block compact-score">
+                  <span>支付前</span>
+                  <strong>358.3</strong>
+                </div>
+              </div>
+              <div class="control-strip funnel-controls" aria-label="链路交互控制">
+                <button class="text-button" id="loadFunnelButton" type="button">读取 Supabase 链路</button>
+                <button class="text-button" id="playFunnelButton" type="button">播放链路</button>
+                <span id="funnelSourceLabel">当前展示样例链路</span>
+              </div>
+              <div class="funnel-path" id="funnelTimeline"></div>
+            </section>
+
+            <aside class="panel funnel-side">
+              <div class="panel-heading">
+                <span>真实链路字段</span>
+                <strong>6项</strong>
+              </div>
+              <div class="funnel-fields" id="funnelFacts"></div>
+            </aside>
+          </div>
+
+          <section class="schema-section">
+            <div class="panel-heading">
+              <span>底表补充</span>
+              <strong>5层</strong>
+            </div>
+            <div class="schema-grid" id="schemaCards"></div>
+          </section>
+        </section>
+        <section class="view" id="view-ar" aria-label="AR 城市展厅">
+          <div class="ar-layout">
+            <section class="city-stage" aria-label="城市商圈热力图">
+              <div class="map-toolbar">
+                <span>上海 · 连锁餐饮机会热区</span>
+                <div class="segmented">
+                  <button class="segment active" data-ar-mode="growth">增长</button>
+                  <button class="segment" data-ar-mode="competition">竞对</button>
+                  <button class="segment" data-ar-mode="budget">预算</button>
+                </div>
+              </div>
+              <div class="city-grid" id="cityGrid"></div>
+              <div class="ar-inspector">
+                <div>
+                  <span id="arSelectedZone">已选热区：静安 CBD</span>
+                  <strong id="arPlanHeadline">建议配置午高峰新人券 + 会员日资源位</strong>
+                </div>
+                <button class="primary-button" id="arApplyPlanButton" type="button">生成 AR 提案</button>
+              </div>
+            </section>
+            <aside class="phone-ar">
+              <div class="phone-frame">
+                <div class="phone-top"></div>
+                <div class="ar-camera">
+                  <div class="ar-reticle"></div>
+                  <div class="ar-card">
+                    <span id="arModeLabel">增长机会</span>
+                    <strong id="arPrimaryMetric">+18.6%</strong>
+                    <small id="arNarrative">午晚高峰券包可提升复购与交易额</small>
+                  </div>
+                  <div class="store-pin pin-a">A</div>
+                  <div class="store-pin pin-b">B</div>
+                  <div class="store-pin pin-c">C</div>
+                </div>
+                <div class="phone-bottom"></div>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view" id="view-live" aria-label="人像数字人虚拟直播">
+          <div class="live-layout">
+            <section class="live-stage">
+              <div class="live-header">
+                <span class="live-badge">LIVE</span>
+                <span id="liveTitle">品牌服务报告口播版</span>
+              </div>
+              <div class="live-controls" aria-label="数字人脚本模式">
+                <button class="segment active" data-live-mode="short">45秒</button>
+                <button class="segment" data-live-mode="pitch">90秒</button>
+                <button class="segment" data-live-mode="stream">直播间</button>
+                <button class="text-button" id="generateLiveButton" type="button">生成脚本</button>
+              </div>
+              <div class="avatar-wrap">
+                <div class="avatar">
+                  <div class="avatar-face"></div>
+                  <div class="avatar-neck"></div>
+                  <div class="avatar-suit"></div>
+                </div>
+                <div class="caption" id="liveCaption">
+                  本月核心机会在华东 CBD 午高峰场景，建议以门店分层券包承接新增曝光。
+                </div>
+              </div>
+            </section>
+            <aside class="script-panel">
+              <div class="panel-heading">
+                <span>数字人内容链路</span>
+                <strong>4步</strong>
+              </div>
+              <div id="scriptCards" class="script-cards"></div>
+              <div class="transcript-panel" id="liveTranscript"></div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view" id="view-infra" aria-label="数据基建">
+          <div class="infra-grid">
+            <article class="infra-panel">
+              <h2>指标口径层</h2>
+              <p>品牌、门店、城市、商圈、品类、竞对六套统一口径。</p>
+              <div class="pill-row">
+                <span>GMV</span><span>曝光</span><span>转化</span><span>ROI</span><span>复购</span>
+              </div>
+            </article>
+            <article class="infra-panel">
+              <h2>标签体系层</h2>
+              <p>门店生命周期、客群偏好、补贴敏感度、商圈渗透率、履约能力。</p>
+              <div class="pill-row">
+                <span>高潜</span><span>流失预警</span><span>竞对强压</span><span>低转化</span>
+              </div>
+            </article>
+            <article class="infra-panel">
+              <h2>知识资产层</h2>
+              <p>沉淀品牌案例、行业打法、销售话术、提案模板和素材资产。</p>
+              <div class="pill-row">
+                <span>RAG</span><span>Case Bank</span><span>Prompt</span><span>素材库</span>
+              </div>
+            </article>
+            <article class="infra-panel">
+              <h2>评估闭环层</h2>
+              <p>提案采用、项目推进、投放效果和复盘反馈回流到 Agent。</p>
+              <div class="pill-row">
+                <span>A/B</span><span>归因</span><span>复盘</span><span>Agent Eval</span>
+              </div>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="assets/app.js" defer></script>
+  </body>
+</html>
+
+
