@@ -5,8 +5,13 @@
   "description": "BrandPilot AI: business-analysis agent, AR proposal room, and digital-human sales enablement demo for Vercel + Supabase.",
   "scripts": {
     "static": "python -m http.server 4173",
-    "local": "set NODE_USE_ENV_PROXY=1&& node dev-server.js",
+    "start": "node dev-server.js",
+    "local": "node dev-server.js",
+    "local:proxy": "NODE_USE_ENV_PROXY=1 node dev-server.js",
     "dev": "vercel dev",
+    "check": "node scripts/check-js.js",
+    "workflow:test": "node scripts/workflow-test.js",
+    "smoke": "node scripts/smoke-test.js",
     "deploy": "vercel --prod"
   },
   "engines": {
