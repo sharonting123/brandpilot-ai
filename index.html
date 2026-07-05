@@ -1,102 +1,18 @@
-<!doctype html>
-<html lang="zh-CN">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta
-      name="description"
-      content="BrandPilot AI: 连锁餐饮品牌经营分析 Agent、AR 城市展厅、数字人直播提案工作台"
-    />
-    <title>BrandPilot AI</title>
-    <link rel="stylesheet" href="assets/styles.css" />
-  </head>
-  <body>
-    <div class="app-shell">
-      <aside class="rail" aria-label="项目导航">
-        <div class="brand-mark" aria-hidden="true">BP</div>
-        <nav class="rail-nav">
-          <button class="rail-button active" data-view="workbench" title="经营提案">经分</button>
-          <button class="rail-button" data-view="funnel" title="美团链路归因">链路</button>
-          <button class="rail-button" data-view="ar" title="AR 城市展厅">AR</button>
-          <button class="rail-button" data-view="live" title="数字人直播">直播</button>
-          <button class="rail-button" data-view="infra" title="基建">基建</button>
-        </nav>
-        <div class="rail-status" id="connectionDot" title="Supabase 连接状态"></div>
-      </aside>
-
-      <main class="workspace">
-        <header class="topbar">
-          <div>
-            <p class="eyebrow">BrandPilot AI</p>
-            <h1>海底捞半年度提案智能体</h1>
-          </div>
-          <div class="topbar-actions">
-            <select id="brandSelect" class="select" aria-label="选择品牌"></select>
-            <button class="text-button" id="syncButton" type="button">同步 Supabase</button>
-            <button class="primary-button" id="generateButton" type="button">生成提案</button>
-          </div>
-        </header>
-
-        <section class="notice" id="runtimeNotice" role="status">
-          正在检测 Supabase 连接...
-        </section>
-
-        <section class="view active" id="view-workbench" aria-label="经营提案工作台">
-          <div class="layout-grid">
-            <section class="panel agent-panel">
-              <div class="panel-heading">
-                <span>Multi-Agent 编排</span>
-                <strong id="agentProgressLabel">7/7</strong>
-              </div>
-              <div class="agent-list" id="agentList"></div>
-              <div class="agent-log" id="agentActivityLog" aria-live="polite"></div>
-            </section>
-
-            <section class="proposal-stage">
-              <div class="proposal-header">
-                <div>
-                  <p class="eyebrow">经营分析主 Agent</p>
-                  <h2 id="proposalTitle">海底捞 2026 H1 半年度经营提案</h2>
-                </div>
-                <div class="score-block">
-                  <span>机会分</span>
-                  <strong id="opportunityScore">86</strong>
-                </div>
-              </div>
-
-              <div class="metric-strip" id="metricStrip"></div>
-
-              <div class="control-strip" aria-label="提案交互控制">
-                <select id="scenarioSelect" class="select compact-select" aria-label="选择策略场景">
-                  <option value="boost">半年度提案</option>
-                  <option value="defense">搜索承接</option>
-                  <option value="live">KA 拜访</option>
-                </select>
-                <button class="text-button" id="runAgentButton" type="button">运行工作流</button>
-                <button class="text-button" id="simulateBudgetButton" type="button">策略模拟</button>
-                <button class="text-button" id="exportBriefButton" type="button">生成拜访话术</button>
-              </div>
-
-              <div class="diagnosis-grid">
-                <article class="diagnosis-panel">
-                  <h3>关键结论</h3>
-                  <ul id="insightList"></ul>
-                </article>
-                <article class="diagnosis-panel">
-                  <h3>推荐动作</h3>
-                  <div id="actionList" class="action-list"></div>
-                </article>
-              </div>
-
-              <div class="timeline" id="timeline"></div>
-            </section>
-
-            <aside class="panel side-panel">
-              <div class="panel-heading">
-                <span>提案资产</span>
-                <strong id="proposalCount">0</strong>
-              </div>
-              <div class="asset-stack" id="assetStack"></div>
-            </aside>
-          </div>
-        </section>
+{
+  "name": "index.html",
+  "path": "index.html",
+  "sha": "0228278543402e26d94f5f29f417cb380e948901",
+  "size": 4472,
+  "url": "https://api.github.com/repos/sharonting123/brandpilot-ai/contents/index.html?ref=main",
+  "html_url": "https://github.com/sharonting123/brandpilot-ai/blob/main/index.html",
+  "git_url": "https://api.github.com/repos/sharonting123/brandpilot-ai/git/blobs/0228278543402e26d94f5f29f417cb380e948901",
+  "download_url": "https://raw.githubusercontent.com/sharonting123/brandpilot-ai/main/index.html",
+  "type": "file",
+  "content": "PCFkb2N0eXBlIGh0bWw+CjxodG1sIGxhbmc9InpoLUNOIj4KICA8aGVhZD4K\nICAgIDxtZXRhIGNoYXJzZXQ9InV0Zi04IiAvPgogICAgPG1ldGEgbmFtZT0i\ndmlld3BvcnQiIGNvbnRlbnQ9IndpZHRoPWRldmljZS13aWR0aCwgaW5pdGlh\nbC1zY2FsZT0xIiAvPgogICAgPG1ldGEKICAgICAgbmFtZT0iZGVzY3JpcHRp\nb24iCiAgICAgIGNvbnRlbnQ9IkJyYW5kUGlsb3QgQUk6IOi/numUgemkkOml\nruWTgeeJjOe7j+iQpeWIhuaekCBBZ2VudOOAgUFSIOWfjuW4guWxleWOheOA\ngeaVsOWtl+S6uuebtOaSreaPkOahiOW3peS9nOWPsCIKICAgIC8+CiAgICA8\ndGl0bGU+QnJhbmRQaWxvdCBBSTwvdGl0bGU+CiAgICA8bGluayByZWw9InN0\neWxlc2hlZXQiIGhyZWY9ImFzc2V0cy9zdHlsZXMuY3NzIiAvPgogIDwvaGVh\nZD4KICA8Ym9keT4KICAgIDxkaXYgY2xhc3M9ImFwcC1zaGVsbCI+CiAgICAg\nIDxhc2lkZSBjbGFzcz0icmFpbCIgYXJpYS1sYWJlbD0i6aG555uu5a+86Iiq\nIj4KICAgICAgICA8ZGl2IGNsYXNzPSJicmFuZC1tYXJrIiBhcmlhLWhpZGRl\nbj0idHJ1ZSI+QlA8L2Rpdj4KICAgICAgICA8bmF2IGNsYXNzPSJyYWlsLW5h\ndiI+CiAgICAgICAgICA8YnV0dG9uIGNsYXNzPSJyYWlsLWJ1dHRvbiBhY3Rp\ndmUiIGRhdGEtdmlldz0id29ya2JlbmNoIiB0aXRsZT0i57uP6JCl5o+Q5qGI\nIj7nu4/liIY8L2J1dHRvbj4KICAgICAgICAgIDxidXR0b24gY2xhc3M9InJh\naWwtYnV0dG9uIiBkYXRhLXZpZXc9ImZ1bm5lbCIgdGl0bGU9Iue+juWboumT\nvui3r+W9kuWboCI+6ZO+6LevPC9idXR0b24+DQogICAgICAgICAgPGJ1dHRv\nbiBjbGFzcz0icmFpbC1idXR0b24iIGRhdGEtdmlldz0iYXIiIHRpdGxlPSJB\nUiDln47luILlsZXljoUiPkFSPC9idXR0b24+CiAgICAgICAgICA8YnV0dG9u\nIGNsYXNzPSJyYWlsLWJ1dHRvbiIgZGF0YS12aWV3PSJsaXZlIiB0aXRsZT0i\n5pWw5a2X5Lq655u05pKtIj7nm7Tmkq08L2J1dHRvbj4KICAgICAgICAgIDxi\ndXR0b24gY2xhc3M9InJhaWwtYnV0dG9uIiBkYXRhLXZpZXc9ImluZnJhIiB0\naXRsZT0i5Z+65bu6Ij7ln7rlu7o8L2J1dHRvbj4KICAgICAgICA8L25hdj4K\nICAgICAgICA8ZGl2IGNsYXNzPSJyYWlsLXN0YXR1cyIgaWQ9ImNvbm5lY3Rp\nb25Eb3QiIHRpdGxlPSJTdXBhYmFzZSDov57mjqXnirbmgIEiPjwvZGl2Pgog\nICAgICA8L2FzaWRlPgoKICAgICAgPG1haW4gY2xhc3M9IndvcmtzcGFjZSI+\nCiAgICAgICAgPGhlYWRlciBjbGFzcz0idG9wYmFyIj4KICAgICAgICAgIDxk\naXY+CiAgICAgICAgICAgIDxwIGNsYXNzPSJleWVicm93Ij5CcmFuZFBpbG90\nIEFJPC9wPgogICAgICAgICAgICA8aDE+5rW35bqV5o2e5Y2K5bm05bqm5o+Q\n5qGI5pm66IO95L2TPC9oMT4KICAgICAgICAgIDwvZGl2PgogICAgICAgICAg\nPGRpdiBjbGFzcz0idG9wYmFyLWFjdGlvbnMiPgogICAgICAgICAgICA8c2Vs\nZWN0IGlkPSJicmFuZFNlbGVjdCIgY2xhc3M9InNlbGVjdCIgYXJpYS1sYWJl\nbD0i6YCJ5oup5ZOB54mMIj48L3NlbGVjdD4KICAgICAgICAgICAgPGJ1dHRv\nbiBjbGFzcz0idGV4dC1idXR0b24iIGlkPSJzeW5jQnV0dG9uIiB0eXBlPSJi\ndXR0b24iPuWQjOatpSBTdXBhYmFzZTwvYnV0dG9uPgogICAgICAgICAgICA8\nYnV0dG9uIGNsYXNzPSJwcmltYXJ5LWJ1dHRvbiIgaWQ9ImdlbmVyYXRlQnV0\ndG9uIiB0eXBlPSJidXR0b24iPueUn+aIkOaPkOahiDwvYnV0dG9uPgogICAg\nICAgICAgPC9kaXY+CiAgICAgICAgPC9oZWFkZXI+CgogICAgICAgIDxzZWN0\naW9uIGNsYXNzPSJub3RpY2UiIGlkPSJydW50aW1lTm90aWNlIiByb2xlPSJz\ndGF0dXMiPgogICAgICAgICAg5q2j5Zyo5qOA5rWLIFN1cGFiYXNlIOi/nuaO\npS4uLgogICAgICAgIDwvc2VjdGlvbj4KCiAgICAgICAgPHNlY3Rpb24gY2xh\nc3M9InZpZXcgYWN0aXZlIiBpZD0idmlldy13b3JrYmVuY2giIGFyaWEtbGFi\nZWw9Iue7j+iQpeaPkOahiOW3peS9nOWPsCI+CiAgICAgICAgICA8ZGl2IGNs\nYXNzPSJsYXlvdXQtZ3JpZCI+CiAgICAgICAgICAgIDxzZWN0aW9uIGNsYXNz\nPSJwYW5lbCBhZ2VudC1wYW5lbCI+CiAgICAgICAgICAgICAgPGRpdiBjbGFz\ncz0icGFuZWwtaGVhZGluZyI+CiAgICAgICAgICAgICAgICA8c3Bhbj5NdWx0\naS1BZ2VudCDnvJbmjpI8L3NwYW4+CiAgICAgICAgICAgICAgICA8c3Ryb25n\nIGlkPSJhZ2VudFByb2dyZXNzTGFiZWwiPjcvNzwvc3Ryb25nPgogICAgICAg\nICAgICAgIDwvZGl2PgogICAgICAgICAgICAgIDxkaXYgY2xhc3M9ImFnZW50\nLWxpc3QiIGlkPSJhZ2VudExpc3QiPjwvZGl2PgogICAgICAgICAgICAgIDxk\naXYgY2xhc3M9ImFnZW50LWxvZyIgaWQ9ImFnZW50QWN0aXZpdHlMb2ciIGFy\naWEtbGl2ZT0icG9saXRlIj48L2Rpdj4KICAgICAgICAgICAgPC9zZWN0aW9u\nPgoKICAgICAgICAgICAgPHNlY3Rpb24gY2xhc3M9InByb3Bvc2FsLXN0YWdl\nIj4KICAgICAgICAgICAgICA8ZGl2IGNsYXNzPSJwcm9wb3NhbC1oZWFkZXIi\nPgogICAgICAgICAgICAgICAgPGRpdj4KICAgICAgICAgICAgICAgICAgPHAg\nY2xhc3M9ImV5ZWJyb3ciPue7j+iQpeWIhuaekOS4uyBBZ2VudDwvcD4KICAg\nICAgICAgICAgICAgICAgPGgyIGlkPSJwcm9wb3NhbFRpdGxlIj7mtbflupXm\njZ4gMjAyNiBIMSDljYrlubTluqbnu4/okKXmj5DmoYg8L2gyPgogICAgICAg\nICAgICAgICAgPC9kaXY+CiAgICAgICAgICAgICAgICA8ZGl2IGNsYXNzPSJz\nY29yZS1ibG9jayI+CiAgICAgICAgICAgICAgICAgIDxzcGFuPuacuuS8muWI\nhjwvc3Bhbj4KICAgICAgICAgICAgICAgICAgPHN0cm9uZyBpZD0ib3Bwb3J0\ndW5pdHlTY29yZSI+ODY8L3N0cm9uZz4KICAgICAgICAgICAgICAgIDwvZGl2\nPgogICAgICAgICAgICAgIDwvZGl2PgoKICAgICAgICAgICAgICA8ZGl2IGNs\nYXNzPSJtZXRyaWMtc3RyaXAiIGlkPSJtZXRyaWNTdHJpcCI+PC9kaXY+Cgog\nICAgICAgICAgICAgIDxkaXYgY2xhc3M9ImNvbnRyb2wtc3RyaXAiIGFyaWEt\nbGFiZWw9IuaPkOahiOS6pOS6kuaOp+WItiI+CiAgICAgICAgICAgICAgICA8\nc2VsZWN0IGlkPSJzY2VuYXJpb1NlbGVjdCIgY2xhc3M9InNlbGVjdCBjb21w\nYWN0LXNlbGVjdCIgYXJpYS1sYWJlbD0i6YCJ5oup562W55Wl5Zy65pmvIj4K\nICAgICAgICAgICAgICAgICAgPG9wdGlvbiB2YWx1ZT0iYm9vc3QiPuWNiuW5\ntOW6puaPkOahiDwvb3B0aW9uPgogICAgICAgICAgICAgICAgICA8b3B0aW9u\nIHZhbHVlPSJkZWZlbnNlIj7mkJzntKLmib/mjqU8L29wdGlvbj4KICAgICAg\nICAgICAgICAgICAgPG9wdGlvbiB2YWx1ZT0ibGl2ZSI+S0Eg5ouc6K6/PC9v\ncHRpb24+CiAgICAgICAgICAgICAgICA8L3NlbGVjdD4KICAgICAgICAgICAg\nICAgIDxidXR0b24gY2xhc3M9InRleHQtYnV0dG9uIiBpZD0icnVuQWdlbnRC\ndXR0b24iIHR5cGU9ImJ1dHRvbiI+6L+Q6KGM5bel5L2c5rWBPC9idXR0b24+\nCiAgICAgICAgICAgICAgICA8YnV0dG9uIGNsYXNzPSJ0ZXh0LWJ1dHRvbiIg\naWQ9InNpbXVsYXRlQnVkZ2V0QnV0dG9uIiB0eXBlPSJidXR0b24iPuetlueV\npeaooeaLnzwvYnV0dG9uPgogICAgICAgICAgICAgICAgPGJ1dHRvbiBjbGFz\ncz0idGV4dC1idXR0b24iIGlkPSJleHBvcnRCcmllZkJ1dHRvbiIgdHlwZT0i\nYnV0dG9uIj7nlJ/miJDmi5zorr/or53mnK88L2J1dHRvbj4KICAgICAgICAg\nICAgICA8L2Rpdj4KCiAgICAgICAgICAgICAgPGRpdiBjbGFzcz0iZGlhZ25v\nc2lzLWdyaWQiPgogICAgICAgICAgICAgICAgPGFydGljbGUgY2xhc3M9ImRp\nYWdub3Npcy1wYW5lbCI+CiAgICAgICAgICAgICAgICAgIDxoMz7lhbPplK7n\nu5Porro8L2gzPgogICAgICAgICAgICAgICAgICA8dWwgaWQ9Imluc2lnaHRM\naXN0Ij48L3VsPgogICAgICAgICAgICAgICAgPC9hcnRpY2xlPgogICAgICAg\nICAgICAgICAgPGFydGljbGUgY2xhc3M9ImRpYWdub3Npcy1wYW5lbCI+CiAg\nICAgICAgICAgICAgICAgIDxoMz7mjqjojZDliqjkvZw8L2gzPgogICAgICAg\nICAgICAgICAgICA8ZGl2IGlkPSJhY3Rpb25MaXN0IiBjbGFzcz0iYWN0aW9u\nLWxpc3QiPjwvZGl2PgogICAgICAgICAgICAgICAgPC9hcnRpY2xlPgogICAg\nICAgICAgICAgIDwvZGl2PgoKICAgICAgICAgICAgICA8ZGl2IGNsYXNzPSJ0\naW1lbGluZSIgaWQ9InRpbWVsaW5lIj48L2Rpdj4KICAgICAgICAgICAgPC9z\nZWN0aW9uPgoKICAgICAgICAgICAgPGFzaWRlIGNsYXNzPSJwYW5lbCBzaWRl\nLXBhbmVsIj4KICAgICAgICAgICAgICA8ZGl2IGNsYXNzPSJwYW5lbC1oZWFk\naW5nIj4KICAgICAgICAgICAgICAgIDxzcGFuPuaPkOahiOi1hOS6pzwvc3Bh\nbj4KICAgICAgICAgICAgICAgIDxzdHJvbmcgaWQ9InByb3Bvc2FsQ291bnQi\nPjA8L3N0cm9uZz4KICAgICAgICAgICAgICA8L2Rpdj4KICAgICAgICAgICAg\nICA8ZGl2IGNsYXNzPSJhc3NldC1zdGFjayIgaWQ9ImFzc2V0U3RhY2siPjwv\nZGl2PgogICAgICAgICAgICA8L2FzaWRlPgogICAgICAgICAgPC9kaXY+CiAg\nICAgICAgPC9zZWN0aW9uPgo=\n",
+  "encoding": "base64",
+  "_links": {
+    "self": "https://api.github.com/repos/sharonting123/brandpilot-ai/contents/index.html?ref=main",
+    "git": "https://api.github.com/repos/sharonting123/brandpilot-ai/git/blobs/0228278543402e26d94f5f29f417cb380e948901",
+    "html": "https://github.com/sharonting123/brandpilot-ai/blob/main/index.html"
+  }
+}
