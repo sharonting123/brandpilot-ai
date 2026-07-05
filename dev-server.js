@@ -1,10 +1,13 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const { applySecurityHeaders } = require("./api/_lib/http");
 
 const root = __dirname;
 const port = Number(process.env.PORT || 4173);
+const host = process.env.HOST || "127.0.0.1";
 const envFile = path.join(root, ".env.local");
+const prodEnvFile = path.join(root, ".env.production");
 const fileTypes = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -16,15 +19,18 @@ const fileTypes = {
   ".jpeg": "image/jpeg"
 };
 
+loadDotEnv(prodEnvFile);
 loadDotEnv(envFile);
 
 const apiHandlers = {
   "/api/config": require("./api/config"),
-  "/api/agent-run": require("./api/agent-run")
+  "/api/agent-run": require("./api/agent-run"),
+  "/api/health": require("./api/health")
 };
 
 const server = http.createServer(async (req, res) => {
   try {
+    applySecurityHeaders(res);
     const url = new URL(req.url, "http://localhost");
     if (apiHandlers[url.pathname]) {
       await apiHandlers[url.pathname](req, decorateResponse(res));
@@ -48,7 +54,7 @@ const server = http.createServer(async (req, res) => {
       }
       res.writeHead(200, {
         "content-type": fileTypes[path.extname(file).toLowerCase()] || "application/octet-stream",
-        "cache-control": "no-store"
+        "cache-control": cacheControlFor(file)
       });
       fs.createReadStream(file).pipe(res);
     });
@@ -58,9 +64,15 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(port, "127.0.0.1", () => {
-  console.log(`BrandPilot demo server http://127.0.0.1:${port}`);
+server.keepAliveTimeout = 70 * 1000;
+server.headersTimeout = 75 * 1000;
+
+server.listen(port, host, () => {
+  console.log(`BrandPilot server http://${host}:${port}`);
 });
+
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
 
 function loadDotEnv(filePath) {
   if (!fs.existsSync(filePath)) return;
@@ -86,4 +98,16 @@ function decorateResponse(res) {
     res.end(JSON.stringify(payload));
   };
   return res;
+}
+
+function cacheControlFor(file) {
+  const name = path.basename(file);
+  if (name === "index.html") return "no-store";
+  if (file.includes(`${path.sep}assets${path.sep}`)) return "public, max-age=3600";
+  return "no-store";
+}
+
+function shutdown() {
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(1), 8000).unref();
 }
