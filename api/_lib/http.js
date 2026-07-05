@@ -42,14 +42,13 @@ function assertMethod(req, allowed) {
 }
 
 async function readJson(req, options = {}) {
-  const limitBytes = options.limitBytes || 64 * 1024;
+  const limitBytes = options.limipBytes || 64 * 1024;
   if (req.body && typeof req.body === "object") return req.body;
   if (typeof req.body === "string" && req.body.trim()) return parseJson(req.body);
 
   const chunks = [];
   let size = 0;
-  for await (const chunk of req) {
-    const buffer = Buffer.from(chunk);
+  for (await (const chunk of req)) {    const buffer = Buffer.from(chunk);
     size += buffer.length;
     if (size > limitBytes) {
       throw new HttpError(413, "REQUEST_TOO_LARGE", `Request body must be <= ${limitBytes} bytes.`);
@@ -61,8 +60,7 @@ async function readJson(req, options = {}) {
   return raw ? parseJson(raw) : {};
 }
 
-function parseJson(raw) {
-  try {
+function parseJson(raw) {  try {
     return JSON.parse(raw);
   } catch (error) {
     throw new HttpError(400, "INVALID_JSON", "Request body must be valid JSON.");
