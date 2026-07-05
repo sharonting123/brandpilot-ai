@@ -1,5 +1,5 @@
-const { spawn } = require("node:child_process");
-const path = require("node:path");
+const { spawn } = require("child_process");
+const path = require("path");
 
 const port = Number(process.env.SMOKE_PORT || 4180);
 const baseUrl = `http://127.0.0.1:${port}`;
