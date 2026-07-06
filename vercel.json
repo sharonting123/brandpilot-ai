@@ -3,8 +3,17 @@
   "cleanUrls": true,
   "trailingSlash": false,
   "functions": {
+    "api/chat.js": {
+      "maxDuration": 60
+    },
     "api/agent-run.js": {
       "maxDuration": 60
+    },
+    "api/health.js": {
+      "maxDuration": 10
+    },
+    "api/config.js": {
+      "maxDuration": 5
     }
   },
   "routes": [

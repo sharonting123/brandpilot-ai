@@ -22,9 +22,11 @@ const fileTypes = {
 loadDotEnv(prodEnvFile);
 loadDotEnv(envFile);
 
+// API 路由处理器（包括新增的 /api/chat）
 const apiHandlers = {
   "/api/config": require("./api/config"),
   "/api/agent-run": require("./api/agent-run"),
+  "/api/chat": require("./api/chat"),
   "/api/health": require("./api/health")
 };
 
@@ -68,7 +70,7 @@ server.keepAliveTimeout = 70 * 1000;
 server.headersTimeout = 75 * 1000;
 
 server.listen(port, host, () => {
-  console.log(`BrandPilot server http://${host}:${port}`);
+  console.log("BrandPilot server http://" + host + ":" + port);
 });
 
 process.on("SIGTERM", shutdown);
@@ -103,7 +105,7 @@ function decorateResponse(res) {
 function cacheControlFor(file) {
   const name = path.basename(file);
   if (name === "index.html") return "no-store";
-  if (file.includes(`${path.sep}assets${path.sep}`)) return "public, max-age=3600";
+  if (file.includes(path.sep + "assets" + path.sep)) return "public, max-age=3600";
   return "no-store";
 }
 

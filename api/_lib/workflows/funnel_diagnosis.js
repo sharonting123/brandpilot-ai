@@ -1,0 +1,204 @@
+/**
+ * funnel_diagnosis 工作流：链路诊断
+ * 查数 → 漏斗归因 → 找最大损耗点 → 给诊断结论
+ * 轻量级，不生成完整提案。
+ */
+
+function getSystemPrompt(brandName, params) {
+  return [
+    "你是 BrandPilot AI 的链路诊断专家，正在为「" + brandName + "」诊断搜索到核销的转化链路。",
+    "",
+    "你的任务：",
+    "1. 用 computeFunnel 工具计算7阶段转化漏斗",
+    "2. 找出最大损耗点（转化率最低的环节）",
+    "3. 分析造成损耗的可能原因",
+    "4. 给出针对性的优化建议",
+    "",
+    "漏斗阶段：搜索曝光 → 搜索点击 → POI点击 → 套餐详情 → 下单提交 → 支付订单 → 核销订单",
+    "",
+    "分析要点：",
+    "- 每个阶段的转化率和绝对流失量",
+    "- 最大损耗点是在哪个环节",
+    "- 损耗原因可能是：页面承接不足、套餐吸引力不够、下单体验差、支付门槛高、到店动力弱",
+    "- 给出具体的优化方向",
+    "",
+    "回复结构清晰，包含：",
+    "1. 【漏斗概览】各阶段的量和转化率",
+    "2. 【最大损耗点】具体是什么环节，转化率多少",
+    "3. 【损耗原因分析】2-3条可能原因",
+    "4. 【优化建议】2-3条可执行的改善方向",
+    "",
+    "禁止编造数据，只使用工具返回的真实数值。",
+    "品牌固定为" + brandName + "，周期为" + (params.period || "最新数据") + "。"
+  ].join("\n");
+}
+
+async function buildToolDefinitions() {
+  const [{ tool }, { z }] = await Promise.all([
+    import("ai"),
+    import("zod")
+  ]);
+
+  const { TOOL_REGISTRY } = require("../agent-tools");
+
+  return {
+    computeFunnel: tool({
+      description: "计算搜索曝光到核销订单的7阶段转化漏斗，找最大损耗点",
+      parameters: z.object({
+        brandId: z.string().default("haidilao").describe("品牌 ID")
+      }),
+      execute: async (args) => await TOOL_REGISTRY.computeFunnel.fn(args)
+    }),
+    queryBrandData: tool({
+      description: "查询品牌基础数据（POI、套餐等）",
+      parameters: z.object({
+        brandId: z.string().default("haidilao").describe("品牌 ID")
+      }),
+      execute: async (args) => await TOOL_REGISTRY.queryBrandData.fn(args)
+    })
+  };
+}
+
+function buildFunnelChart(funnelStr) {
+  try {
+    const data = JSON.parse(funnelStr);
+    const stages = data.funnel || [];
+    return [{
+      type: "funnel",
+      title: "搜索到核销转化漏斗",
+      data: {
+        labels: stages.map((s) => s.stage),
+        datasets: [{ label: "用户数", data: stages.map((s) => s.count) }]
+      }
+    }, {
+      type: "bar",
+      title: "各阶段转化率",
+      data: {
+        labels: stages.slice(1).map((s) => s.label),
+        datasets: [{ label: "转化率 (%)", data: stages.slice(1).map((s) => (s.rateFromPrevious || 0) * 100) }]
+      }
+    }];
+  } catch {
+    return [];
+  }
+}
+
+async function execute(params) {
+  const { message, modelConfig, brandName = "海底捞", intentParams = {} } = params;
+  const startedAt = Date.now();
+  const agentTrace = [];
+
+  const [{ generateText }, { createOpenAI }] = await Promise.all([
+    import("ai"),
+    import("@ai-sdk/openai")
+  ]);
+
+  const model = createOpenAI({
+    baseURL: modelConfig.baseUrl,
+    apiKey: modelConfig.apiKey
+  })(modelConfig.model);
+
+  const toolsDefined = await buildToolDefinitions();
+  const systemPrompt = getSystemPrompt(brandName, intentParams);
+
+  let funnelRaw = null;
+  let answer = "";
+  const toolStart = Date.now();
+
+  try {
+    const result = await generateText({
+      model,
+      system: systemPrompt,
+      messages: [{ role: "user", content: message }],
+      tools: toolsDefined,
+      maxSteps: 6,
+      temperature: 0.3
+    });
+
+    answer = result.text;
+
+    if (result.steps) {
+      for (const step of result.steps) {
+        if (step.toolCalls) {
+          for (const tc of step.toolCalls) {
+            if (tc.toolName === "computeFunnel" && tc.result) {
+              funnelRaw = tc.result;
+            }
+            agentTrace.push({
+              name: "工具调用",
+              tool: tc.toolName,
+              summary: "调用 " + tc.toolName + " 完成",
+              durationMs: 0
+            });
+          }
+        }
+      }
+    }
+
+    agentTrace.push({
+      name: "链路诊断Agent",
+      tool: "推理完成",
+      summary: "完成漏斗分析和损耗诊断",
+      durationMs: Date.now() - toolStart
+    });
+  } catch (error) {
+    const { TOOL_REGISTRY } = require("../agent-tools");
+    funnelRaw = await TOOL_REGISTRY.computeFunnel.fn({ brandId: "haidilao" });
+    const funnel = JSON.parse(funnelRaw);
+    const bottleneck = funnel.bottleneck;
+
+    answer = [
+      "# " + brandName + " 搜索到核销链路诊断（确定性分析）",
+      "",
+      "## 漏斗概览",
+      funnel.funnel.map((s) =>
+        "- **" + s.stage + "**：" + s.count.toLocaleString() + "（" + (s.rateFromPrevious !== null ? (s.rateFromPrevious * 100).toFixed(1) + "%" : "起点") + "）"
+      ).join("\n"),
+      "",
+      "## 最大损耗点",
+      "最大损耗在「" + bottleneck.from + " → " + bottleneck.to + "」，转化率仅 " + (bottleneck.conversionRate * 100).toFixed(1) + "%",
+      "",
+      "## 损耗原因分析",
+      "- POI 页面信息不足，用户无法快速判断是否值得进店消费",
+      "- 套餐展示方式不够吸引，缺少场景化推荐",
+      "- 下单决策路径较长，存在流失",
+      "",
+      "## 优化建议",
+      "- 优化 POI 页面的套餐组展示，按场景（聚餐/单人/家庭）分类推荐",
+      "- 缩短下单流程，减少跳转步骤",
+      "- 加入限时优惠/会员权益标签，提升下单紧迫感",
+      "",
+      "> 确定性分析模式，建议配置 MODEL_API_KEY 获得 AI 增强诊断。"
+    ].join("\n");
+
+    agentTrace.push({
+      name: "链路诊断Agent",
+      tool: "fallback",
+      summary: "LLM 调用失败：" + error.message + "，使用确定性分析",
+      durationMs: Date.now() - toolStart
+    });
+  }
+
+  const charts = funnelRaw ? buildFunnelChart(funnelRaw) : buildFallbackCharts();
+
+  return {
+    workflow: "funnel_diagnosis",
+    answer,
+    agentTrace,
+    charts,
+    totalDurationMs: Date.now() - startedAt
+  };
+}
+
+function buildFallbackCharts() {
+  return [{
+    type: "funnel",
+    title: "搜索到核销转化漏斗",
+    data: {
+      labels: ["搜索曝光", "搜索点击", "POI点击", "套餐详情", "下单提交", "支付订单", "核销订单"],
+      datasets: [{ label: "用户数", data: [5120000, 486400, 205000, 94500, 33900, 21600, 18400] }]
+    }
+  }];
+}
+
+module.exports = { execute };
