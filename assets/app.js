@@ -36,6 +36,8 @@
   var sessionList = document.getElementById("sessionList");
   var newSessionButton = document.getElementById("newSessionButton");
   var appContainer = document.getElementById("appContainer");
+  var defaultChatPlaceholder =
+    "输入你的问题，并尽量写明统计周期；也可先点 📎 上传文档再提问";
 
   // ===== 状态 =====
   var isProcessing = false;
@@ -393,6 +395,12 @@
       });
   }
 
+  function resetChatInputPlaceholder() {
+    if (!chatInput) return;
+    var hasDocs = window.BrandPilotDocuments && window.BrandPilotDocuments.getAttachments().length;
+    if (!hasDocs) chatInput.placeholder = defaultChatPlaceholder;
+  }
+
   function bindDocumentUpload() {
     if (!documentUploadButton || !documentUploadInput) return;
 
@@ -404,15 +412,30 @@
       var files = documentUploadInput.files;
       documentUploadInput.value = "";
       if (!files || !files.length || !window.BrandPilotDocuments) return;
-      statusText.textContent = "解析文档中…";
+      statusText.textContent = window.BrandPilotDocuments.hasPendingImages(files)
+        ? "OCR 识别中…"
+        : "解析文档中…";
       window.BrandPilotDocuments.addFiles(files)
-        .then(function () {
+        .then(function (added) {
           window.BrandPilotDocuments.renderChips(chatAttachments);
-          statusText.textContent = "就绪";
+          var count = (added && added.length) || 1;
+          var hasOcr = (added || []).some(function (item) { return item.sourceType === "ocr"; });
+          var names = (added || []).map(function (item) { return item.filename; }).join("、");
+          statusText.textContent = hasOcr
+            ? "已识别 " + count + " 个文件（OCR）"
+            : "已添加 " + count + " 个文档";
+          if (chatInput) {
+            chatInput.placeholder =
+              names +
+              " 已就绪，输入问题后发送；或直接发送让 AI 分析文档内容";
+          }
         })
         .catch(function (error) {
           alert(error.message || "文档解析失败");
-          statusText.textContent = "就绪";
+          statusText.textContent = "文档解析失败";
+          window.setTimeout(function () {
+            if (statusText.textContent === "文档解析失败") statusText.textContent = "就绪";
+          }, 3000);
         });
     });
 
@@ -422,6 +445,10 @@
         if (!btn || !window.BrandPilotDocuments) return;
         window.BrandPilotDocuments.removeAttachment(btn.getAttribute("data-doc-remove"));
         window.BrandPilotDocuments.renderChips(chatAttachments);
+        resetChatInputPlaceholder();
+        if (!window.BrandPilotDocuments.getAttachments().length) {
+          statusText.textContent = "就绪";
+        }
       });
     }
   }
@@ -463,6 +490,7 @@
     if (window.BrandPilotDocuments) {
       window.BrandPilotDocuments.clearAttachments();
       window.BrandPilotDocuments.renderChips(chatAttachments);
+      resetChatInputPlaceholder();
     }
 
     conversationHistory.push({ role: "user", content: message });

@@ -29,6 +29,8 @@ module.exports = function handler(req, res) {
         modelConfigured: config.model.configured,
         modelName: config.model.model,
         dashscopeConfigured: config.dashscope.configured,
+        ocrConfigured: config.ocr.configured,
+        ocrModel: config.ocr.model,
         ragEmbeddingConfigured: config.rag.embeddingEnabled,
         ragRerankConfigured: config.rag.rerankEnabled,
         ragEmbeddingModel: config.rag.embeddingModel,

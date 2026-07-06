@@ -91,9 +91,9 @@
             id="documentUploadInput"
             hidden
             multiple
-            accept=".txt,.md,.markdown,.html,.htm,.csv,.json,.docx,.pdf"
+            accept=".txt,.md,.markdown,.html,.htm,.csv,.json,.docx,.pdf,.jpg,.jpeg,.png,.webp,.gif,.bmp"
           />
-          <button type="button" id="documentUploadButton" class="doc-upload-button" title="上传文档（txt/md/html/csv/json/docx/pdf）" aria-label="上传文档">
+          <button type="button" id="documentUploadButton" class="doc-upload-button" title="上传文档或图片（支持 OCR 识别）" aria-label="上传文档或图片">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21.44 11.05l-9.19 9.19a6 6 0 1 1-8.49-8.49l9.19-9.19a4 4 0 1 1 5.66 5.66l-9.2 9.19a2 2 0 1 1-2.83-2.83l8.49-8.48" />
             </svg>
@@ -101,7 +101,7 @@
           <textarea
             id="chatInput"
             class="chat-input"
-            placeholder="输入你的问题，并尽量写明统计周期，例如：海底捞2026年6月的GMV和核销率是多少？"
+            placeholder="输入你的问题，并尽量写明统计周期；也可先点 📎 上传文档再提问"
             rows="2"
           ></textarea>
           <button id="sendButton" class="send-button" title="发送 (Enter)">
@@ -151,7 +151,7 @@
   <script src="assets/assistant.js" defer></script>
   <script src="assets/markdown.js" defer></script>
   <script src="assets/auth.js?v=username-fix" defer></script>
-  <script src="assets/document-upload.js?v=doc-upload" defer></script>
-  <script src="assets/app.js?v=doc-upload" defer></script>
+  <script src="assets/document-upload.js?v=doc-ocr" defer></script>
+  <script src="assets/app.js?v=doc-ocr" defer></script>
 </body>
 </html>

@@ -7,6 +7,7 @@
   var MAX_FILES = 3;
   var MAX_FILE_BYTES = 6 * 1024 * 1024;
   var TEXT_EXT = /\.(txt|md|markdown|html?|csv|json)$/i;
+  var IMAGE_EXT = /\.(jpe?g|png|webp|gif|bmp)$/i;
 
   var state = {
     items: []
@@ -57,12 +58,16 @@
   function parseLocally(file, text) {
     var normalized = normalizeLocalText(file.name, text);
     if (!normalized) throw new Error("未能从文档中提取文本：" + file.name);
+    var truncated = normalized.length > 48000;
+    var packed = truncated ? normalized.slice(0, 48000) : normalized;
+    var chunkCount = Math.max(1, Math.ceil(packed.length / 1000));
     return {
       filename: file.name,
       format: (file.name.split(".").pop() || "txt").toLowerCase(),
-      text: normalized,
-      truncated: normalized.length > 48000,
-      charCount: normalized.length
+      text: packed,
+      truncated: truncated,
+      charCount: normalized.length,
+      chunkCount: chunkCount
     };
   }
 
@@ -88,6 +93,10 @@
     });
   }
 
+  function isImageFile(file) {
+    return IMAGE_EXT.test(file && file.name ? file.name : "");
+  }
+
   function parseFile(file) {
     if (!file) return Promise.reject(new Error("未选择文件"));
     if (file.size > MAX_FILE_BYTES) {
@@ -101,6 +110,10 @@
     return readFileAsBase64(file).then(function (base64) {
       return parseOnServer(file, base64);
     });
+  }
+
+  function hasPendingImages(files) {
+    return Array.prototype.some.call(files || [], isImageFile);
   }
 
   function addFiles(fileList) {
@@ -120,8 +133,12 @@
             filename: parsed.filename || file.name,
             format: parsed.format || "",
             text: parsed.text || "",
+            chunks: parsed.chunks || [],
+            chunkCount: parsed.chunkCount || Math.max(1, Math.ceil((parsed.text || "").length / 1000)),
             charCount: parsed.charCount || (parsed.text || "").length,
-            truncated: Boolean(parsed.truncated)
+            truncated: Boolean(parsed.truncated),
+            sourceType: parsed.sourceType || (isImageFile(file) ? "ocr" : "text"),
+            ocrModel: parsed.ocrModel || ""
           };
           state.items.push(item);
           return item;
@@ -145,8 +162,12 @@
         name: item.filename,
         format: item.format,
         text: item.text,
+        chunks: item.chunks,
+        chunkCount: item.chunkCount,
         charCount: item.charCount,
-        truncated: item.truncated
+        truncated: item.truncated,
+        sourceType: item.sourceType,
+        ocrModel: item.ocrModel
       };
     });
   }
@@ -159,8 +180,13 @@
       return;
     }
     container.hidden = false;
-    container.innerHTML = state.items.map(function (item) {
-      var meta = item.format.toUpperCase() + " · " + item.charCount.toLocaleString("zh-CN") + " 字";
+    var hint =
+      '<p class="doc-attachments-hint">📎 已添加 ' +
+      state.items.length +
+      " 个文档。系统会<strong>切分为段落</strong>，发送时按你的问题选取相关片段（图片会先 OCR 识别）。</p>";
+    container.innerHTML = hint + state.items.map(function (item) {
+      var meta = item.format.toUpperCase() + " · " + item.charCount.toLocaleString("zh-CN") + " 字 · " + item.chunkCount + " 段";
+      if (item.sourceType === "ocr") meta += " · OCR";
       if (item.truncated) meta += " · 已截断";
       return (
         '<span class="doc-chip" data-doc-id="' + escapeAttr(item.id) + '">' +
@@ -189,6 +215,8 @@
     clearAttachments: clearAttachments,
     getAttachments: getAttachments,
     renderChips: renderChips,
+    hasPendingImages: hasPendingImages,
+    isImageFile: isImageFile,
     maxFiles: MAX_FILES
   };
 })(typeof window !== "undefined" ? window : global);

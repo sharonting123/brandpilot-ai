@@ -10,6 +10,12 @@ function getDashScopeConfig(env = process.env) {
   };
 }
 
+function getOcrConfig(env = process.env) {
+  const { getOcrConfig: getConfig } = require("./image-ocr");
+  return getConfig(env);
+}
+
 module.exports = {
-  getDashScopeConfig
+  getDashScopeConfig,
+  getOcrConfig
 };

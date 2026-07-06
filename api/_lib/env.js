@@ -37,12 +37,15 @@ function getRuntimeConfig(env = process.env) {
   const model = getModelConfig(env);
   const supabase = getSupabaseConfig(env);
   const dashscope = getDashScopeConfig(env);
+  const { getOcrConfig } = require("./image-ocr");
+  const ocr = getOcrConfig(env);
   const { getRagEmbedConfig } = require("./rag-embeddings");
   const rag = getRagEmbedConfig(env);
   return {
     model,
     supabase,
     dashscope,
+    ocr,
     rag,
     nodeEnv: env.NODE_ENV || "development"
   };

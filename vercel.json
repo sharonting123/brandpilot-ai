@@ -34,7 +34,7 @@
       "maxDuration": 15
     },
     "api/documents/parse.js": {
-      "maxDuration": 30
+      "maxDuration": 60
     }
   },
   "routes": [

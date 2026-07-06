@@ -1281,6 +1281,23 @@ button, select, textarea {
   padding: 10px 20px 0;
 }
 
+.doc-attachments-hint {
+  flex: 1 1 100%;
+  margin: 0 0 4px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--mt-yellow-border);
+  background: var(--mt-yellow-soft);
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.doc-attachments-hint strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
 .doc-chip {
   display: inline-flex;
   align-items: center;
