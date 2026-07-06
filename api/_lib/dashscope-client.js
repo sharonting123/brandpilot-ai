@@ -157,7 +157,8 @@ async function createS2vTask(imageUrl, audioUrl, config = getDashScopeConfig()) 
         audio_url: audioUrl
       },
       parameters: {
-        resolution: config.s2vResolution
+        resolution: config.s2vResolution,
+        style: "speech"
       }
     }),
     signal: AbortSignal.timeout(60000)

@@ -163,6 +163,14 @@
     });
   }
 
+  function proxiedMediaUrl(rawUrl) {
+    if (!rawUrl) return rawUrl;
+    if (global.location && global.location.protocol === "https:" && /^http:\/\//i.test(rawUrl)) {
+      return "/api/digital-human-media?u=" + encodeURIComponent(rawUrl);
+    }
+    return rawUrl;
+  }
+
   function generate(options) {
     options = options || {};
     if (!state.script) {
@@ -210,11 +218,11 @@
         if (data.text) setSubtitle(data.text);
 
         if (state.currentAudioUrl && state.audioEl) {
-          state.audioEl.src = state.currentAudioUrl;
+          state.audioEl.src = proxiedMediaUrl(state.currentAudioUrl);
           state.audioEl.classList.add("visible");
         }
 
-        setStatus("任务已提交（" + (data.taskId || "") + "），预计等待 " + (data.estimatedWaitMin || "5-10") + " 分钟…");
+        setStatus("任务已提交，百炼正在生成对口型视频（约 5–10 分钟），请勿关闭页面…");
         pollTask(data.taskId, Number(data.pollIntervalSec) || 15);
       })
       .catch(function (err) {
@@ -279,11 +287,21 @@
   function showVideo(url) {
     state.currentVideoUrl = url;
     if (!state.videoEl) return;
-    state.videoEl.src = url;
+    var playUrl = proxiedMediaUrl(url);
+    state.videoEl.src = playUrl;
     state.videoEl.classList.add("visible");
+    if (state.audioEl) {
+      state.audioEl.pause();
+      state.audioEl.classList.remove("visible");
+    }
     if (state.canvas) state.canvas.classList.remove("visible");
     if (state.anchorPreview) state.anchorPreview.classList.remove("visible");
     if (state.videoShell) state.videoShell.classList.add("has-video");
+
+    state.videoEl.load();
+    state.videoEl.play().catch(function () {
+      setStatus("对口型视频已生成，请点击播放器播放");
+    });
   }
 
   function hideVideo() {
@@ -299,10 +317,11 @@
 
   function speak() {
     if (state.currentAudioUrl && state.audioEl) {
+      state.audioEl.src = proxiedMediaUrl(state.currentAudioUrl);
       state.audioEl.play().catch(function (err) {
         setStatus("音频播放失败：" + err.message);
       });
-      setStatus("正在播放百炼 TTS 音频…");
+      setStatus("正在播放 TTS 预览（无口型，对口型请等视频生成完成）");
       return;
     }
 
@@ -351,7 +370,7 @@
       return;
     }
     var a = document.createElement("a");
-    a.href = state.currentVideoUrl;
+    a.href = proxiedMediaUrl(state.currentVideoUrl);
     a.download = "BrandPilot_DigitalHuman_" + new Date().toISOString().slice(0, 10) + ".mp4";
     a.target = "_blank";
     a.rel = "noopener";
