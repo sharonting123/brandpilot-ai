@@ -2,14 +2,12 @@
  * 图表附带策略：避免与问题无关的「月度 GTV 趋势」反复出现。
  */
 
-const GTV_TREND_RE = /GTV|gtv|月度.*趋势|月.*趋势|H1.*趋势|半年.*趋势/;
-
 const GTV_QUESTION_RE =
   /GTV|gtv|月度|月趋势|半年|H1|经分|三因子|take\s*rate|补贴率|活跃用户|购买频次|客单价|月环比|月增长|趋势/;
 
 function isGtvTrendChart(chart) {
   const title = String((chart && chart.title) || "");
-  return GTV_TREND_RE.test(title);
+  return /趋势/.test(title) && /GTV|gtv|月度|H1|半年/.test(title);
 }
 
 function extractToolsFromTrace(agentTrace) {

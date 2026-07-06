@@ -85,8 +85,7 @@ async function loadSupabaseContext(config = getSupabaseConfig(process.env), opti
     assets: rowsByKey.assets || []
   };
 
-  // 调试态：不再用 fixture 补齐空字段，也不再补呷哺呷哺竞品 fixture，直接返回真实查询结果
-  return context;
+  return withPeerFallback(context);
 }
 
 function withPeerFixture(context) {
@@ -100,6 +99,24 @@ function withPeerFixture(context) {
     peerCityMonthlyFacts: context.peerCityMonthlyFacts?.length
       ? context.peerCityMonthlyFacts
       : peerFixture.cityMonthlyFacts
+  };
+}
+
+function withPeerFallback(context) {
+  if (context.brandProfile && context.brandProfile.brand_id !== "haidilao") return context;
+  const missingPeer =
+    !context.peerBrandProfile ||
+    !context.peerBrandMonthlyFacts?.length ||
+    !context.peerCityMonthlyFacts?.length;
+  if (!missingPeer) return context;
+
+  const patched = withPeerFixture(context);
+  return {
+    ...patched,
+    warnings: [
+      ...(patched.warnings || []),
+      "呷哺呷哺竞品表未返回完整数据，已使用内置 2026-06 demo peer 数据兜底。"
+    ]
   };
 }
 

@@ -27,7 +27,14 @@ function pickMonthKey(rows, monthNum) {
 
 function rowsForMonth(rows, monthKey) {
   if (!monthKey) return rows || [];
-  return (rows || []).filter((r) => String(r.month) === monthKey);
+  const exact = (rows || []).filter((r) => String(r.month) === monthKey);
+  if (exact.length) return exact;
+  const prefix = monthPrefix(monthKey);
+  return (rows || []).filter((r) => monthPrefix(r.month) === prefix);
+}
+
+function monthPrefix(value) {
+  return String(value || "").slice(0, 7);
 }
 
 function safeRatio(numerator, denominator) {

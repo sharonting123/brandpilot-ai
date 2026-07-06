@@ -103,20 +103,41 @@ function buildPlatformCharts(platforms) {
 
 function buildBrandPeerCharts(peerData) {
   if (!peerData) return [];
+  const monthLabel = formatMonthLabel(peerData.month);
   return [{
-    type: "comparison",
-    title: "品牌竞品 · 海底捞 vs 呷哺呷哺",
+    type: "bar",
+    title: "品牌 GTV 对比（万元，" + monthLabel + "）",
+    description: "只比较交易规模，单位统一为万元。",
     data: {
       labels: [peerData.ownBrand.name, peerData.peerBrand.name],
       datasets: [
-        { label: "GTV（万元）", data: [peerData.ownBrand.gtv / 10000, peerData.peerBrand.gtv / 10000] },
-        { label: "客单价（元）", data: [peerData.ownBrand.avgOrderValue, peerData.peerBrand.avgOrderValue] },
-        { label: "核销率 (%)", data: [peerData.ownBrand.verifiedRate * 100, peerData.peerBrand.verifiedRate * 100] }
+        { label: "GTV（万元）", data: [peerData.ownBrand.gtv / 10000, peerData.peerBrand.gtv / 10000] }
       ]
     }
   }, {
     type: "bar",
-    title: "同城市 GMV 对比（万元）",
+    title: "品牌客单价对比（元，" + monthLabel + "）",
+    description: "只比较平均客单价，单位统一为元。",
+    data: {
+      labels: [peerData.ownBrand.name, peerData.peerBrand.name],
+      datasets: [
+        { label: "客单价（元）", data: [peerData.ownBrand.avgOrderValue, peerData.peerBrand.avgOrderValue] }
+      ]
+    }
+  }, {
+    type: "bar",
+    title: "品牌核销率对比（%，" + monthLabel + "）",
+    description: "只比较支付订单到核销订单的转化结果，单位统一为百分比。",
+    data: {
+      labels: [peerData.ownBrand.name, peerData.peerBrand.name],
+      datasets: [
+        { label: "核销率（%）", data: [peerData.ownBrand.verifiedRate * 100, peerData.peerBrand.verifiedRate * 100] }
+      ]
+    }
+  }, {
+    type: "bar",
+    title: "同城市 GMV 对比（万元，" + monthLabel + "）",
+    description: "按共同覆盖城市比较 GMV，单位统一为万元。",
     data: {
       labels: peerData.cities.map((item) => item.city),
       datasets: [
@@ -125,6 +146,12 @@ function buildBrandPeerCharts(peerData) {
       ]
     }
   }];
+}
+
+function formatMonthLabel(month) {
+  const text = String(month || "");
+  const match = text.match(/^(\d{4})-(\d{2})/);
+  return match ? match[1] + "年" + Number(match[2]) + "月" : "当前周期";
 }
 
 function buildDeterministicAnswer(brandName, platforms, peerData, focus) {
