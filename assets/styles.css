@@ -1322,14 +1322,33 @@ button, select, textarea {
 /* ===== 右侧可视化面板 ===== */
 .viz-panel {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
   overflow: hidden;
   padding: 0;
   background: var(--bg);
 }
 
+.viz-live-panel {
+  flex-shrink: 0;
+  margin-bottom: 20px;
+  padding: 14px;
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, var(--mt-yellow-soft), #fffdf5);
+  border: 1px solid var(--mt-yellow-border);
+  box-shadow: var(--shadow-sm);
+}
+
+.viz-live-panel[hidden] {
+  display: none !important;
+}
+
 .mode-panel {
   display: none;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 24px 28px;
 }
@@ -1382,14 +1401,6 @@ button, select, textarea {
 }
 
 /* ===== 分析侧实时联动（美团黄） ===== */
-.viz-live-panel {
-  margin-bottom: 20px;
-  padding: 14px;
-  border-radius: var(--radius);
-  background: linear-gradient(135deg, var(--mt-yellow-soft), #fffdf5);
-  border: 1px solid var(--mt-yellow-border);
-  box-shadow: var(--shadow-sm);
-}
 
 .viz-live-filter {
   margin-bottom: 12px;

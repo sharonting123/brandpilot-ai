@@ -1,6 +1,6 @@
 const { handleError, HttpError, sendJson } = require("./_lib/http");
 const { optionalUser } = require("./_lib/auth");
-const { getContext } = require("./_lib/supabase-context");
+const { getContext } = require("./_lib/agent-tools");
 const { buildDrillSource } = require("./_lib/ar-scene-builder");
 
 module.exports = async function handler(req, res) {

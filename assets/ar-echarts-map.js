@@ -65,13 +65,17 @@
     }).filter(Boolean);
   }
 
+  function hasEchartsGl() {
+    try {
+      return Boolean(global.echarts && global.echarts.seriesTypes && global.echarts.seriesTypes.bar3D);
+    } catch (err) {
+      return false;
+    }
+  }
+
   function buildOption(cities, selectedCity) {
     var barData = buildBarData(cities, selectedCity);
-    var use3d = Boolean(global.echarts);
-
-    if (global.echarts && typeof global.echarts.registerMap === "function" && state.registered) {
-      // registered
-    }
+    var use3d = hasEchartsGl();
 
     if (use3d && barData.length) {
       return {
@@ -283,8 +287,16 @@
         global.echarts.registerMap("china", geoJson);
         state.registered = true;
       }
-      state.chart.setOption(buildOption(cities || [], selectedCity), true);
+      var citiesList = cities || [];
+      try {
+        state.chart.setOption(buildOption(citiesList, selectedCity), true);
+      } catch (err) {
+        console.warn("3D 地图渲染失败，降级 2D:", err.message || err);
+        state.chart.setOption(build2dOption(citiesList, selectedCity, buildBarData(citiesList, selectedCity)), true);
+      }
       bindEvents(state.chart);
+      setTimeout(onResize, 0);
+      setTimeout(onResize, 150);
       return true;
     }).catch(function (err) {
       console.warn("中国地图 GeoJSON 加载失败:", err);

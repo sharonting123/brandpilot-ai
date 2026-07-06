@@ -348,11 +348,11 @@
       '<div class="message-content"><p>你好！我是 <strong>' + escapeHtml(assistantName()) + '</strong>，你的专属品牌经营顾问。登录后对话会自动保存到左侧「历史对话」。</p>' +
       '<p class="chat-hint">先输入问题并发送；提交后右侧默认展示<strong>分析报告</strong>。涉及<strong>城市/竞品/经营分析</strong>时可切换 <strong>AR 展厅</strong> 下钻，顶部<strong>联动分析条</strong>随选中城市实时刷新指标。</p>' +
       '<div class="example-prompts">' +
-      '<button class="example-btn" data-prompt="帮海底捞做一份2026年上半年的经营分析">📋 2026上半年经营分析</button>' +
       '<button class="example-btn" data-prompt="海底捞2026年6月从搜索到核销的转化链路哪里损耗最大？">🔍 6月搜索流量链路诊断</button>' +
       '<button class="example-btn" data-prompt="海底捞2026年6月在美团和抖音的表现对比一下">📊 6月竞对平台对比</button>' +
       '<button class="example-btn" data-prompt="海底捞和呷哺呷哺2026年6月经营表现对比一下">🏷️ 品牌竞品对比</button>' +
       '<button class="example-btn" data-prompt="海底捞2026年6月的GMV和核销率是多少？">📈 6月数据查询</button>' +
+      '<button class="example-btn" data-prompt="帮海底捞做一份2026年上半年的经营分析">📋 2026上半年经营分析</button>' +
       "</div></div></div></div>";
     bindExampleButtons();
   }
@@ -400,6 +400,7 @@
 
   function shouldUseArExperience(data) {
     if (!data) return false;
+    if (data.scene && data.scene.cities && data.scene.cities.length > 0) return true;
     var caps = data.capabilities || {};
     if (caps.regionAnalysis === false) return false;
     if (caps.regionAnalysis === true) return Boolean(data.scene);
@@ -426,7 +427,6 @@
     if (useAr) {
       syncExtendedLayers(data);
       switchMode("ar");
-      setTimeout(syncAnalysisFromScene, 150);
     } else {
       switchMode("analysis");
       if (vizLivePanel) vizLivePanel.hidden = true;
@@ -446,13 +446,32 @@
       panel.classList.toggle("active", panel.getAttribute("data-mode-panel") === currentMode);
     });
 
+    if (vizLivePanel) {
+      // AR 展厅自带指标与筛选，避免顶部联动条挤占地图高度
+      vizLivePanel.hidden = currentMode === "ar" || !lastResponse || !shouldUseArExperience(lastResponse);
+    }
+
     if (currentMode === "ar") {
       ensureArReady();
       if (lastResponse && lastResponse.scene && window.BrandPilotAR) {
         window.BrandPilotAR.update(lastResponse.scene);
-        setTimeout(syncAnalysisFromScene, 0);
+        setTimeout(function () {
+          if (window.BrandPilotAR) {
+            if (typeof window.BrandPilotAR.showCityMap === "function") {
+              window.BrandPilotAR.showCityMap(false);
+            }
+            window.BrandPilotAR.resize();
+          }
+          if (window.BrandPilotEchartsMap && typeof window.BrandPilotEchartsMap.resize === "function") {
+            window.BrandPilotEchartsMap.resize();
+          }
+        }, 120);
       }
       if (window.BrandPilotAR) window.BrandPilotAR.resize();
+    }
+
+    if (currentMode === "analysis" && lastResponse && shouldUseArExperience(lastResponse)) {
+      syncAnalysisFromScene();
     }
   }
 
@@ -496,7 +515,9 @@
 
   function handleArSelectionChange(payload) {
     if (!payload || !payload.scope) return;
-    syncAnalysisLivePanel(payload);
+    if (currentMode === "analysis") {
+      syncAnalysisLivePanel(payload);
+    }
   }
 
   function formatLiveCompact(value) {

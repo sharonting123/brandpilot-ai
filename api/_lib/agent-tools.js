@@ -323,7 +323,7 @@ const TOOL_REGISTRY = {
   },
   getBrandPeerBenchmark: {
     name: "getBrandPeerBenchmark",
-    description: "获取品牌竞品对比数据：海底捞 vs 呷哺呷哺（GTV、客单价、核销率、同城市 GMV）。",
+    description: "获取品牌竞品对比数据：海底捞 vs 呷哺呷哺（GTV、门店数、客单价、核销率、同城市 GMV）。",
     fn: getBrandPeerBenchmark
   },
   getBrandAssets: {

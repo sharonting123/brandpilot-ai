@@ -210,10 +210,16 @@
   }
 
   function resetSelection() {
+    showCityMap(true);
+  }
+
+  function showCityMap(clearSelection) {
     state.drillLevel = DRILL.CITY;
-    state.selectedCity = "";
-    state.selectedDistrictId = "";
-    state.selectedPoiId = "";
+    if (clearSelection) {
+      state.selectedCity = "";
+      state.selectedDistrictId = "";
+      state.selectedPoiId = "";
+    }
     if (state.three) {
       state.three.orbit = { theta: 0.55, phi: 0.92, radius: 17 };
     }
@@ -323,9 +329,10 @@
       state.three.frameId = 0;
 
       if (global.BrandPilotEchartsMap && echartsEl) {
+        var cities = getCities();
         global.BrandPilotEchartsMap.render(
           echartsEl,
-          getCities(),
+          cities,
           state.selectedCity,
           function (cityName) {
             selectCity(cityName, false);
@@ -333,7 +340,18 @@
           function (cityName) {
             selectCity(cityName, true);
           }
-        );
+        ).then(function (ok) {
+          if (!ok && hint) {
+            hint.textContent = "中国地图加载失败，请刷新页面或检查网络";
+          } else if (hint) {
+            hint.textContent = "ECharts 中国地图 · 点击城市选中 · 再点下钻商圈";
+          }
+          if (global.BrandPilotEchartsMap && typeof global.BrandPilotEchartsMap.resize === "function") {
+            global.BrandPilotEchartsMap.resize();
+          }
+        });
+      } else if (hint && (!global.BrandPilotEchartsMap || !global.echarts)) {
+        hint.textContent = "地图组件加载中…";
       }
       return;
     }
@@ -1778,6 +1796,7 @@
     init: init,
     update: update,
     resetSelection: resetSelection,
+    showCityMap: showCityMap,
     enterXR: enterXR,
     resize: resize,
     dispose: dispose,
