@@ -2491,8 +2491,10 @@ button, select, textarea {
 
 .ar-viewport {
   position: relative;
-  flex: 1;
-  min-height: 280px;
+  flex: 1 1 360px;
+  min-height: 360px;
+  height: 360px;
+  max-height: 52vh;
   background: linear-gradient(180deg, #fafafa 0%, #f0f0f0 100%);
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);

@@ -461,9 +461,9 @@
               window.BrandPilotAR.showCityMap(false);
             }
             window.BrandPilotAR.resize();
-          }
-          if (window.BrandPilotEchartsMap && typeof window.BrandPilotEchartsMap.resize === "function") {
-            window.BrandPilotEchartsMap.resize();
+            if (typeof window.BrandPilotAR.scheduleMapResize === "function") {
+              window.BrandPilotAR.scheduleMapResize();
+            }
           }
         }, 120);
       }

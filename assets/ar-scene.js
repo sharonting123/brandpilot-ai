@@ -63,21 +63,45 @@
       render();
       return;
     }
+    primeSceneFromData(sceneData);
+    render();
+
     ensureDrillSource(sceneData).then(function () {
-      if (global.BrandPilotDrillMetrics) {
-        state.timeFilter = global.BrandPilotDrillMetrics.initFilterFromPeriod(
-          sceneData.displayPeriod,
-          sceneData.drillSource
-        );
-      }
-      rebuildSceneFromFilter();
-      if (sceneData.focusCity) {
-        state.selectedCity = sceneData.focusCity;
-      } else if (!state.selectedCity && getCities().length) {
-        state.selectedCity = getCities()[0].name;
-      }
-      syncSelectionDefaults();
+      primeSceneFromData(sceneData);
       render();
+      scheduleMapResize();
+    });
+  }
+
+  function primeSceneFromData(sceneData) {
+    if (global.BrandPilotDrillMetrics) {
+      state.timeFilter = global.BrandPilotDrillMetrics.initFilterFromPeriod(
+        sceneData.displayPeriod,
+        sceneData.drillSource
+      );
+    }
+    if (sceneData.drillSource) {
+      rebuildSceneFromFilter();
+    }
+    if (sceneData.focusCity) {
+      state.selectedCity = sceneData.focusCity;
+    } else if (!state.selectedCity && getCities().length) {
+      state.selectedCity = getCities()[0].name;
+    }
+    syncSelectionDefaults();
+  }
+
+  function scheduleMapResize() {
+    var delays = [0, 80, 240, 600];
+    delays.forEach(function (ms) {
+      setTimeout(function () {
+        if (global.BrandPilotEchartsMap && typeof global.BrandPilotEchartsMap.resize === "function") {
+          global.BrandPilotEchartsMap.resize();
+        }
+        if (state.drillLevel === DRILL.CITY) {
+          syncMapView(state.currentScene);
+        }
+      }, ms);
     });
   }
 
@@ -330,6 +354,11 @@
 
       if (global.BrandPilotEchartsMap && echartsEl) {
         var cities = getCities();
+        if (!cities.length && hint) {
+          hint.textContent = "城市数据加载中…";
+        } else if (!global.echarts && hint) {
+          hint.textContent = "地图库加载中，请稍候或刷新页面…";
+        }
         global.BrandPilotEchartsMap.render(
           echartsEl,
           cities,
@@ -1831,6 +1860,7 @@
     },
     getTimeFilter: function () {
       return Object.assign({}, state.timeFilter);
-    }
+    },
+    scheduleMapResize: scheduleMapResize
   };
 })(window);

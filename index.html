@@ -6,8 +6,12 @@
   <meta name="description" content="BrandPilot AI: 连锁餐饮品牌经营分析 Agent 编排系统，含 NL2SQL / RAG / 商圈地图" />
   <title>BrandPilot AI — 悦悦 · 品牌经营顾问</title>
   <link rel="stylesheet" href="assets/styles.css?v=meituan" />
-  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/echarts-gl@2.0.9/dist/echarts-gl.min.js"></script>
+  <script src="https://cdn.bootcdn.net/ajax/libs/echarts/5.5.1/echarts.min.js"></script>
+  <script>
+    if (!window.echarts) {
+      document.write('<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"><\/script>');
+    }
+  </script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
@@ -172,8 +176,8 @@
   <script src="assets/auth.js?v=username-fix" defer></script>
   <script src="assets/china-map-layout.js?v=echarts-map" defer></script>
   <script src="assets/ar-drill-metrics.js?v=time-filter" defer></script>
-  <script src="assets/ar-echarts-map.js?v=map-fix" defer></script>
-  <script src="assets/ar-scene.js?v=map-fix" defer></script>
-  <script src="assets/app.js?v=map-fix" defer></script>
+  <script src="assets/ar-echarts-map.js?v=map-fix2" defer></script>
+  <script src="assets/ar-scene.js?v=map-fix2" defer></script>
+  <script src="assets/app.js?v=map-fix2" defer></script>
 </body>
 </html>

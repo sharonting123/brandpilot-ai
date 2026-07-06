@@ -13,6 +13,7 @@
     container: null,
     geoReady: null,
     registered: false,
+    resizeObserver: null,
     onSelect: null,
     onDrill: null,
     lastSelected: ""
@@ -66,105 +67,33 @@
   }
 
   function hasEchartsGl() {
-    try {
-      return Boolean(global.echarts && global.echarts.seriesTypes && global.echarts.seriesTypes.bar3D);
-    } catch (err) {
-      return false;
-    }
+    return false;
+  }
+
+  function waitForContainerSize(container, maxMs) {
+    maxMs = maxMs || 3000;
+    return new Promise(function (resolve) {
+      var start = Date.now();
+      function tick() {
+        if (!container) return resolve(false);
+        if (container.offsetWidth > 20 && container.offsetHeight > 20) return resolve(true);
+        if (Date.now() - start > maxMs) return resolve(false);
+        requestAnimationFrame(tick);
+      }
+      tick();
+    });
+  }
+
+  function ensureResizeObserver(container) {
+    if (!container || state.resizeObserver || typeof ResizeObserver === "undefined") return;
+    state.resizeObserver = new ResizeObserver(function () {
+      onResize();
+    });
+    state.resizeObserver.observe(container);
   }
 
   function buildOption(cities, selectedCity) {
     var barData = buildBarData(cities, selectedCity);
-    var use3d = hasEchartsGl();
-
-    if (use3d && barData.length) {
-      return {
-        backgroundColor: "transparent",
-        tooltip: {
-          trigger: "item",
-          backgroundColor: "rgba(255, 255, 255, 0.96)",
-          borderColor: "#f0d878",
-          textStyle: { color: "#222222", fontSize: 12 },
-          formatter: function (params) {
-            if (!params.data) return params.name || "";
-            var d = params.data;
-            var vr = d.verifiedRate != null ? (d.verifiedRate * 100).toFixed(1) + "%" : "-";
-            var roi = d.roi != null ? Number(d.roi).toFixed(1) : "-";
-            var gmv = d.gmv != null ? formatCompact(d.gmv) : "-";
-            return (
-              "<strong>" + escapeHtml(params.name || "") + "</strong><br/>" +
-              "GMV " + gmv + "<br/>" +
-              "核销率 " + vr + "<br/>" +
-              "ROI " + roi + "<br/>" +
-              "<span style='opacity:.7'>单击选中 · 再点下钻商圈</span>"
-            );
-          }
-        },
-        geo3D: {
-          map: "china",
-          roam: true,
-          regionHeight: 1.8,
-          itemStyle: {
-            color: "#f0f0f0",
-            opacity: 1,
-            borderWidth: 0.6,
-            borderColor: "#dddddd"
-          },
-          emphasis: {
-            itemStyle: { color: "#ffe08a" },
-            label: { show: false }
-          },
-          label: { show: false },
-          light: {
-            main: { intensity: 1.05, shadow: true, alpha: 50, beta: 10 },
-            ambient: { intensity: 0.55 }
-          },
-          viewControl: {
-            distance: 78,
-            minDistance: 45,
-            maxDistance: 120,
-            alpha: 42,
-            beta: -8,
-            panMouseButton: "right",
-            rotateMouseButton: "left"
-          },
-          groundPlane: {
-            show: false
-          }
-        },
-        series: [
-          {
-            type: "bar3D",
-            coordinateSystem: "geo3D",
-            data: barData,
-            barSize: 0.55,
-            minHeight: 0.4,
-            shading: "lambert",
-            bevelSize: 0.12,
-            bevelSmoothness: 2,
-            label: {
-              show: true,
-              formatter: "{b}",
-              position: "top",
-              distance: 2,
-              textStyle: {
-                color: "#222222",
-                fontSize: 11,
-                fontWeight: 700,
-                backgroundColor: "rgba(255,255,255,0.9)",
-                padding: [3, 6],
-                borderRadius: 4
-              }
-            },
-            emphasis: {
-              label: { show: true },
-              itemStyle: { color: "#f5b800" }
-            }
-          }
-        ]
-      };
-    }
-
     return build2dOption(cities, selectedCity, barData);
   }
 
@@ -186,7 +115,21 @@
         trigger: "item",
         backgroundColor: "rgba(255, 255, 255, 0.96)",
         borderColor: "#f0d878",
-        textStyle: { color: "#222222" }
+        textStyle: { color: "#222222" },
+        formatter: function (params) {
+          if (!params.data) return params.name || "";
+          var d = params.data;
+          var vr = d.verifiedRate != null ? (d.verifiedRate * 100).toFixed(1) + "%" : "-";
+          var roi = d.roi != null ? Number(d.roi).toFixed(1) : "-";
+          var gmv = d.gmv != null ? formatCompact(d.gmv) : "-";
+          return (
+            "<strong>" + escapeHtml(params.name || "") + "</strong><br/>" +
+            "GMV " + gmv + "<br/>" +
+            "核销率 " + vr + "<br/>" +
+            "ROI " + roi + "<br/>" +
+            "<span style='opacity:.7'>单击选中 · 再点下钻商圈</span>"
+          );
+        }
       },
       geo: {
         map: "china",
@@ -226,7 +169,7 @@
             show: true,
             formatter: "{b}",
             position: "right",
-            color: "#e0f2fe",
+            color: "#222222",
             fontSize: 11
           },
           itemStyle: {
@@ -269,37 +212,41 @@
   }
 
   function render(container, cities, selectedCity, onSelect, onDrill) {
-    if (!container || !global.echarts) return Promise.resolve(false);
+    if (!container) return Promise.resolve(false);
+    if (!global.echarts) return Promise.resolve(false);
     state.onSelect = onSelect;
     state.onDrill = onDrill;
     state.lastSelected = selectedCity || "";
 
-    if (!state.chart || state.container !== container) {
-      dispose();
-      state.container = container;
-      state.chart = global.echarts.init(container, null, { renderer: "canvas" });
-      global.addEventListener("resize", onResize);
-    }
+    return waitForContainerSize(container).then(function (ready) {
+      if (!ready) {
+        console.warn("地图容器尺寸为 0，稍后重试");
+        return false;
+      }
+      if (!state.chart || state.container !== container) {
+        dispose();
+        state.container = container;
+        state.chart = global.echarts.init(container, null, { renderer: "canvas" });
+        ensureResizeObserver(container);
+        global.addEventListener("resize", onResize);
+      }
 
-    return loadChinaGeo().then(function (geoJson) {
-      if (!state.chart) return false;
-      if (!state.registered) {
-        global.echarts.registerMap("china", geoJson);
-        state.registered = true;
-      }
-      var citiesList = cities || [];
-      try {
+      return loadChinaGeo().then(function (geoJson) {
+        if (!state.chart) return false;
+        if (!state.registered) {
+          global.echarts.registerMap("china", geoJson);
+          state.registered = true;
+        }
+        var citiesList = cities || [];
         state.chart.setOption(buildOption(citiesList, selectedCity), true);
-      } catch (err) {
-        console.warn("3D 地图渲染失败，降级 2D:", err.message || err);
-        state.chart.setOption(build2dOption(citiesList, selectedCity, buildBarData(citiesList, selectedCity)), true);
-      }
-      bindEvents(state.chart);
-      setTimeout(onResize, 0);
-      setTimeout(onResize, 150);
-      return true;
+        bindEvents(state.chart);
+        setTimeout(onResize, 0);
+        setTimeout(onResize, 150);
+        setTimeout(onResize, 400);
+        return true;
+      });
     }).catch(function (err) {
-      console.warn("中国地图 GeoJSON 加载失败:", err);
+      console.warn("中国地图渲染失败:", err);
       return false;
     });
   }
@@ -320,6 +267,10 @@
 
   function dispose() {
     global.removeEventListener("resize", onResize);
+    if (state.resizeObserver) {
+      state.resizeObserver.disconnect();
+      state.resizeObserver = null;
+    }
     if (state.chart) {
       state.chart.dispose();
       state.chart = null;
