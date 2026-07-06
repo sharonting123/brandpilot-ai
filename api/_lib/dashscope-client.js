@@ -7,7 +7,17 @@
 
 const DASHSCOPE_BASE = "https://dashscope.aliyuncs.com/api/v1";
 const DEFAULT_AVATAR_URL =
-  "https://www.brdpilot.com/assets/digital-human-anchor.jpg";
+  "https://www.brdpilot.com/assets/digital-human-anchor-hd.jpg";
+
+/** wan2.2-s2v 参考图规范（见阿里云百炼文档） */
+const AVATAR_IMAGE_SPECS = {
+  minEdgePx: 400,
+  maxEdgePx: 7000,
+  formats: ["jpg", "jpeg", "png", "bmp", "webp"],
+  recommendedAspect: "1:1 或 3:4 半身/肖像，正面单人",
+  recommendedSize: "720×720 或 1440×1797",
+  currentSize: "1024×1024"
+};
 
 function getDashScopeConfig(env = process.env) {
   const apiKey = env.DASHSCOPE_API_KEY || env.BAILIAN_API_KEY || "";
@@ -264,6 +274,7 @@ async function parseJson(response) {
 }
 
 module.exports = {
+  AVATAR_IMAGE_SPECS,
   DEFAULT_AVATAR_URL,
   getDashScopeConfig,
   synthesizeSpeech,

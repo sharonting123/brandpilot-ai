@@ -56,10 +56,14 @@
       .then(function (data) {
         state.dashscopeConfigured = Boolean(data.dashscopeConfigured);
         if (data.digitalHumanAvatarUrl && state.anchorPreview) {
-          state.anchorPreview.src = data.digitalHumanAvatarUrl;
+          state.anchorPreview.src = "assets/digital-human-anchor.jpg";
         }
         if (state.dashscopeConfigured) {
-          setStatus("主播形象已就绪 · 点击「生成百炼数字人」");
+          var specs = data.digitalHumanAvatarSpecs;
+          var specHint = specs
+            ? "（参考图 " + specs.currentSize + "，支持 " + specs.minEdgePx + "–" + specs.maxEdgePx + "px）"
+            : "";
+          setStatus("主播形象已就绪" + specHint + " · 点击「生成百炼数字人」");
         } else {
           setStatus("未配置 DASHSCOPE_API_KEY · 仅可试听浏览器 TTS");
         }
