@@ -1117,6 +1117,25 @@ button, select, textarea {
   aspect-ratio: 16 / 9;
 }
 
+.dh-anchor-preview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+  display: none;
+  background: #0b1f4a;
+}
+
+.dh-anchor-preview.visible {
+  display: block;
+}
+
+.dh-video-shell.has-video .dh-anchor-preview {
+  display: none;
+}
+
 .dh-video,
 .dh-canvas-fallback {
   position: absolute;

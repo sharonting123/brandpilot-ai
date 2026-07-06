@@ -13,6 +13,7 @@
     videoEl: null,
     audioEl: null,
     videoShell: null,
+    anchorPreview: null,
     subtitleOverlay: null,
     script: null,
     sceneIndex: 0,
@@ -34,6 +35,7 @@
     state.videoEl = options.videoEl || null;
     state.audioEl = options.audioEl || null;
     state.videoShell = options.videoShell || null;
+    state.anchorPreview = options.anchorPreview || null;
     state.subtitleOverlay = options.subtitleOverlay || null;
     state.statusEl = options.statusEl;
     state.subtitleEl = options.subtitleEl;
@@ -41,7 +43,7 @@
 
     if (state.canvas) {
       state.ctx = state.canvas.getContext("2d");
-      drawFallback("待命");
+      state.canvas.classList.remove("visible");
     }
     hideVideo();
     loadRuntimeConfig();
@@ -53,8 +55,11 @@
       .then(function (resp) { return resp.json(); })
       .then(function (data) {
         state.dashscopeConfigured = Boolean(data.dashscopeConfigured);
+        if (data.digitalHumanAvatarUrl && state.anchorPreview) {
+          state.anchorPreview.src = data.digitalHumanAvatarUrl;
+        }
         if (state.dashscopeConfigured) {
-          setStatus("百炼已配置 · 可生成对口型数字人");
+          setStatus("主播形象已就绪 · 点击「生成百炼数字人」");
         } else {
           setStatus("未配置 DASHSCOPE_API_KEY · 仅可试听浏览器 TTS");
         }
@@ -150,6 +155,8 @@
     state.currentVideoUrl = null;
     state.currentSubtitles = [];
     hideVideo();
+    if (state.canvas) state.canvas.classList.remove("visible");
+    if (state.anchorPreview) state.anchorPreview.classList.add("visible");
     drawFallback("生成中");
     setStatus("正在调用百炼 TTS + wan2.2-s2v…");
 
@@ -252,6 +259,7 @@
     state.videoEl.src = url;
     state.videoEl.classList.add("visible");
     if (state.canvas) state.canvas.classList.remove("visible");
+    if (state.anchorPreview) state.anchorPreview.classList.remove("visible");
     if (state.videoShell) state.videoShell.classList.add("has-video");
   }
 
@@ -261,7 +269,8 @@
       state.videoEl.removeAttribute("src");
       state.videoEl.classList.remove("visible");
     }
-    if (state.canvas) state.canvas.classList.add("visible");
+    if (state.canvas) state.canvas.classList.remove("visible");
+    if (state.anchorPreview) state.anchorPreview.classList.add("visible");
     if (state.videoShell) state.videoShell.classList.remove("has-video");
   }
 

@@ -28,6 +28,7 @@
   var dhVideo = document.getElementById("dhVideo");
   var dhAudio = document.getElementById("dhAudio");
   var dhVideoShell = document.getElementById("dhVideoShell");
+  var dhAnchorPreview = document.getElementById("dhAnchorPreview");
   var dhSubtitleOverlay = document.getElementById("dhSubtitleOverlay");
   var dhStatus = document.getElementById("dhStatus");
   var dhSubtitle = document.getElementById("dhSubtitle");
@@ -139,6 +140,7 @@
         videoEl: dhVideo,
         audioEl: dhAudio,
         videoShell: dhVideoShell,
+        anchorPreview: dhAnchorPreview,
         subtitleOverlay: dhSubtitleOverlay,
         statusEl: dhStatus,
         subtitleEl: dhSubtitle,

@@ -7,7 +7,7 @@
 
 const DASHSCOPE_BASE = "https://dashscope.aliyuncs.com/api/v1";
 const DEFAULT_AVATAR_URL =
-  "https://img.alicdn.com/imgextra/i3/O1CN011FObkp1T7Ttowoq4F_!!6000000002335-0-tps-1440-1797.jpg";
+  "https://www.brdpilot.com/assets/digital-human-anchor.png";
 
 function getDashScopeConfig(env = process.env) {
   const apiKey = env.DASHSCOPE_API_KEY || env.BAILIAN_API_KEY || "";
