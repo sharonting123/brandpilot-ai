@@ -12,17 +12,26 @@
     "api/events.js": {
       "maxDuration": 10
     },
-    "api/digital-human-media.js": {
-      "maxDuration": 120
-    },
-    "api/digital-human.js": {
-      "maxDuration": 300
-    },
     "api/health.js": {
       "maxDuration": 10
     },
     "api/config.js": {
       "maxDuration": 5
+    },
+    "api/auth/register.js": {
+      "maxDuration": 15
+    },
+    "api/auth/login.js": {
+      "maxDuration": 15
+    },
+    "api/auth/me.js": {
+      "maxDuration": 10
+    },
+    "api/sessions.js": {
+      "maxDuration": 15
+    },
+    "api/sessions/messages.js": {
+      "maxDuration": 15
     }
   },
   "routes": [
@@ -33,6 +42,10 @@
     {
       "src": "/assets/(.*)",
       "dest": "/assets/$1"
+    },
+    {
+      "src": "/login",
+      "dest": "/login.html"
     },
     {
       "src": "/(.*)",

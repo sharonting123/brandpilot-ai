@@ -58,13 +58,14 @@ DeepSeek OpenAI-compatible 示例：
 MODEL_API_BASE_URL=https://api.deepseek.com/v1
 MODEL_API_KEY=你的 DeepSeek Key
 MODEL_NAME=deepseek-v4-pro
-MODEL_MAX_TOKENS=4096
+MODEL_MAX_TOKENS=65536
+MODEL_TIMEOUT_MS=240000
 ```
 
 ## Supabase 设置
 
 1. 创建 Supabase project。
-2. 打开 SQL Editor，按顺序执行 `supabase/01_core_tables.sql` 到 `supabase/07_seed_h1_enriched_metrics.sql`。
+2. 打开 SQL Editor，按顺序执行 `supabase/01_core_tables.sql` 到 `supabase/08_chat_auth.sql`。
 3. 执行 `supabase/06_verify.sql`，确认表行数和海底捞链路事件能查出来。
 4. 在 Project Settings 里拿到：
    - `SUPABASE_URL`
@@ -181,8 +182,13 @@ docker compose ps
 ### AI 层
 
 - **NL2SQL**：`api/_lib/nl2sql.js`，自然语言映射到只读查询模板，返回 SQL + 行结果；`data_query` 优先使用，LLM 失败时自动降级。
-- **RAG**：`api/_lib/rag.js`，检索内置经营框架 + `brand_assets`，工具名为 `retrieveKnowledge`，回答可引用 citations。
+- **RAG**：`api/_lib/rag.js` + `api/_lib/rag-embeddings.js`
+  - 数据源：内置经营框架（`BUILTIN_CHUNKS`）+ Supabase `brand_assets`
+  - 检索链路：**关键词召回** + **Embedding 向量召回**（百炼 `text-embedding-v3`）→ **Rerank 精排**（`gte-rerank-v2`）
+  - 未配置 `DASHSCOPE_API_KEY` 时自动降级为纯关键词检索
+  - 工具名 `retrieveKnowledge`，返回 `citations` 与 `retrievalMode`（如 `hybrid+embedding+rerank`）
 - **Agent 事件持久化**：`api/_lib/event-store.js`，每次 `/api/chat` 完成后写入 `brand_proposals` / `agent_events`；Supabase 不可用时降级到内存缓冲。
+- **用户登录与对话历史**：`api/auth/*` + `api/sessions`，账号密码注册登录（JWT），会话/消息写入 `app_users` / `chat_sessions` / `chat_messages`（需 `SUPABASE_SERVICE_ROLE_KEY` + `AUTH_SECRET`）。
 - **事件查询**：`GET /api/events` 返回最近 Agent 事件。
 
 ### AR 层
@@ -194,10 +200,8 @@ docker compose ps
 ### 数字人层（百炼 DashScope）
 
 - `api/_lib/live-script.js` 根据提案/回答生成分镜口播脚本。
-- `api/_lib/dashscope-client.js` + `POST /api/digital-human`：
-  - **Qwen-TTS**（`qwen3-tts-flash`）合成中文语音；
-  - **wan2.2-s2v** 将参考人像 + 音频生成**对口型视频**（异步任务，单段音频建议 &lt; 20 秒）。
-- 前端 `assets/digital-human.js`：提交任务、轮询 `taskId`、`<video>` 播放、字幕叠加、下载 MP4。
+- `api/_lib/dashscope-client.js` + `POST /api/digital-human`：**Qwen-TTS**（`qwen3-tts-flash`）合成中文长口播，长文本自动分段连续播放。
+- 前端 `assets/digital-human.js`：提交口播、音频播放、字幕叠加。
 - 环境变量：`DASHSCOPE_API_KEY`（必填）；可选 `DIGITAL_HUMAN_AVATAR_URL` 自定义人像。
 
 ```bash
@@ -208,11 +212,28 @@ DIGITAL_HUMAN_AVATAR_URL=https://your-cdn/avatar.jpg  # 可选
 
 未配置 Key 时，数字人面板仍可展示脚本，并可用浏览器 TTS 试听。
 
+### 多语言工具链（Python / C++ / JS）
+
+线上 Vercel 只能跑 **Node.js**，但本地和开发环境已接入 Python、C++ 辅助模块，口播分段按优先级回退：
+
+| 层级 | 路径 | 作用 |
+|------|------|------|
+| Python | `scripts/text_pipeline.py` | 口播规范化、按标点智能切段（百炼单段 &lt;20s） |
+| C++ | `native/s2v_segment.cpp` | 可选本地加速分段，编译见 `native/README.md` |
+| Node.js | `api/_lib/text-segment.js` | 统一入口：Python → C++ → JS 三级回退 |
+| 前端 | `assets/markdown.js` | 提案/分析 Markdown 结构化渲染（表格、列表、摘要） |
+
+本地编译 C++ 分段器：
+
+```bash
+cd native && g++ -O2 -std=c++17 -o s2v_segment.exe s2v_segment.cpp
+```
+
 ## 生产级能力清单
 
 - API 输入限制：`/api/agent-run` 限制 64KB JSON 请求体并校验品牌上下文。
 - 限流：默认每 IP 每分钟 12 次 Agent 调用，可用 `AGENT_RATE_LIMIT_PER_MINUTE` 调整。
-- 超时：Supabase 查询默认 5 秒超时，模型调用默认 55 秒超时。
+- 超时：Supabase 查询默认 5 秒超时，模型调用默认 240 秒超时（`MODEL_TIMEOUT_MS`，Vercel 函数上限 300 秒）。
 - 错误契约：API 返回稳定错误码，前端可直接展示 `message`。
 - 安全头：本地 Node 服务和 API 均设置基础安全响应头。
 - 健康检查：`/api/health` 做配置级探测，`/api/health?deep=1` 会真实访问 Supabase REST。

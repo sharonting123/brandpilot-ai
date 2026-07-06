@@ -338,7 +338,7 @@ async function proposalComposerAgent(state, modelConfig) {
   try {
     const modelDraft = await requestJsonModel({
       modelConfig,
-      maxTokens: Math.min(modelConfig.maxTokens, 4096),
+      maxTokens: modelConfig.maxTokens,
       system: [
         "你是 BrandPilot AI 的提案包装 Agent，只负责把已完成的多 Agent 结果改写成清晰的半年度品牌提案。",
         "禁止编造外部事实；必须保留数据口径限制；必须围绕海底捞 2026 H1 半年度提案。",

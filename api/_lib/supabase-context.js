@@ -1,4 +1,5 @@
 const { getSupabaseConfig } = require("./env");
+const { DATE_RANGE, generateHaidilaoDrillFixture, filterByDateRange, filterMonthsByRange } = require("./drill-data");
 
 async function loadSupabaseContext(config = getSupabaseConfig(process.env), options = {}) {
   const brandId = options.brandId || "haidilao";
@@ -17,17 +18,22 @@ async function loadSupabaseContext(config = getSupabaseConfig(process.env), opti
     Authorization: `Bearer ${config.anonKey}`,
     "Content-Type": "application/json"
   };
+  const dateFrom = options.dateFrom || DATE_RANGE.from;
+  const dateTo = options.dateTo || DATE_RANGE.to;
   const queries = {
     brandProfile: `${endpoint}/rest/v1/dim_brand?brand_id=eq.${encodeURIComponent(brandId)}&select=*&limit=1`,
-    pois: `${endpoint}/rest/v1/dim_poi?brand_id=eq.${encodeURIComponent(brandId)}&select=*&limit=20`,
-    deals: `${endpoint}/rest/v1/dim_deal?brand_id=eq.${encodeURIComponent(brandId)}&select=*&limit=20`,
+    pois: `${endpoint}/rest/v1/dim_poi?brand_id=eq.${encodeURIComponent(brandId)}&select=*&limit=200`,
+    deals: `${endpoint}/rest/v1/dim_deal?brand_id=eq.${encodeURIComponent(brandId)}&select=*&limit=50`,
     funnelEvents: `${endpoint}/rest/v1/vw_meituan_funnel_demo?select=*&order=occurred_at.asc&limit=30`,
-    searchFacts: `${endpoint}/rest/v1/fact_search_keyword_daily?brand_id=eq.${encodeURIComponent(brandId)}&select=*&order=date.desc&limit=30`,
-    poiFacts: `${endpoint}/rest/v1/fact_poi_daily?select=*&order=date.desc&limit=30`,
-    campaignFacts: `${endpoint}/rest/v1/fact_deal_campaign_daily?select=*&order=date.desc&limit=30`,
-    brandMonthly: `${endpoint}/rest/v1/fact_brand_monthly?brand_id=eq.${encodeURIComponent(brandId)}&select=*&order=month.desc&limit=12`,
-    cityMonthly: `${endpoint}/rest/v1/fact_city_brand_monthly?brand_id=eq.${encodeURIComponent(brandId)}&select=*&order=month.desc&limit=30`,
-    competitorBenchmarks: `${endpoint}/rest/v1/fact_competitor_benchmark_monthly?brand_id=eq.${encodeURIComponent(brandId)}&select=*&order=month.desc&limit=12`,
+    searchFacts: `${endpoint}/rest/v1/fact_search_keyword_daily?brand_id=eq.${encodeURIComponent(brandId)}&date=gte.${dateFrom}&date=lte.${dateTo}&select=*&order=date.desc&limit=500`,
+    poiFacts: `${endpoint}/rest/v1/fact_poi_daily?date=gte.${dateFrom}&date=lte.${dateTo}&select=*&order=date.desc&limit=2000`,
+    campaignFacts: `${endpoint}/rest/v1/fact_deal_campaign_daily?date=gte.${dateFrom}&date=lte.${dateTo}&select=*&order=date.desc&limit=500`,
+    brandMonthly: `${endpoint}/rest/v1/fact_brand_monthly?brand_id=eq.${encodeURIComponent(brandId)}&month=gte.${dateFrom}&month=lte.${dateTo}&select=*&order=month.asc&limit=80`,
+    cityMonthly: `${endpoint}/rest/v1/fact_city_brand_monthly?brand_id=eq.${encodeURIComponent(brandId)}&month=gte.${dateFrom}&month=lte.${dateTo}&select=*&order=month.asc&limit=500`,
+    competitorBenchmarks: `${endpoint}/rest/v1/fact_competitor_benchmark_monthly?brand_id=eq.${encodeURIComponent(brandId)}&month=gte.${dateFrom}&month=lte.${dateTo}&select=*&order=month.desc&limit=80`,
+    peerBrandProfile: `${endpoint}/rest/v1/dim_brand?brand_id=eq.xiabuxiabu&select=*&limit=1`,
+    peerBrandMonthly: `${endpoint}/rest/v1/fact_brand_monthly?brand_id=eq.xiabuxiabu&month=gte.${dateFrom}&month=lte.${dateTo}&select=*&order=month.desc&limit=80`,
+    peerCityMonthly: `${endpoint}/rest/v1/fact_city_brand_monthly?brand_id=eq.xiabuxiabu&month=gte.${dateFrom}&month=lte.${dateTo}&select=*&order=month.asc&limit=500`,
     assets: `${endpoint}/rest/v1/brand_assets?brand_id=eq.${encodeURIComponent(brandId)}&select=asset_type,title,content,metadata&order=created_at.desc&limit=10`
   };
 
@@ -38,27 +44,48 @@ async function loadSupabaseContext(config = getSupabaseConfig(process.env), opti
   const errors = entries.flatMap(([key, result]) => (result.error ? [`${key}: ${result.error}`] : []));
   const hasData = entries.some(([, result]) => result.rows.length > 0);
 
+  const poiIds = new Set((rowsByKey.pois || []).map((row) => row.poi_id));
+  const poiFacts = (rowsByKey.poiFacts || []).filter((row) => poiIds.has(row.poi_id));
+
   const context = {
     connected: errors.length < entries.length,
     dataMode: hasData ? "supabase" : "fixture",
     errors,
     warnings: hasData ? [] : ["Supabase 未返回可用数据，已降级到内置海底捞演示数据。"],
+    dateRange: { from: dateFrom, to: dateTo },
     brandProfile: rowsByKey.brandProfile?.[0] || null,
     pois: rowsByKey.pois || [],
     deals: rowsByKey.deals || [],
     funnelEvents: rowsByKey.funnelEvents || [],
     dailyFacts: {
-      searchFacts: rowsByKey.searchFacts || [],
-      poiFacts: rowsByKey.poiFacts || [],
-      campaignFacts: rowsByKey.campaignFacts || []
+      searchFacts: filterByDateRange(rowsByKey.searchFacts || [], dateFrom, dateTo),
+      poiFacts: filterByDateRange(poiFacts, dateFrom, dateTo),
+      campaignFacts: filterByDateRange(rowsByKey.campaignFacts || [], dateFrom, dateTo)
     },
-    monthlyFacts: rowsByKey.brandMonthly || [],
-    cityMonthlyFacts: rowsByKey.cityMonthly || [],
-    competitorBenchmarks: rowsByKey.competitorBenchmarks || [],
+    monthlyFacts: filterMonthsByRange(rowsByKey.brandMonthly || [], dateFrom, dateTo),
+    cityMonthlyFacts: filterMonthsByRange(rowsByKey.cityMonthly || [], dateFrom, dateTo),
+    competitorBenchmarks: filterMonthsByRange(rowsByKey.competitorBenchmarks || [], dateFrom, dateTo),
+    peerBrandProfile: rowsByKey.peerBrandProfile?.[0] || null,
+    peerBrandMonthlyFacts: rowsByKey.peerBrandMonthly || [],
+    peerCityMonthlyFacts: rowsByKey.peerCityMonthly || [],
     assets: rowsByKey.assets || []
   };
 
-  return hasData ? context : withFixture(context);
+  return withPeerFixture(hasData ? context : withFixture(context));
+}
+
+function withPeerFixture(context) {
+  const peerFixture = getXiabuxiabuFixture();
+  return {
+    ...context,
+    peerBrandProfile: context.peerBrandProfile || peerFixture.brandProfile,
+    peerBrandMonthlyFacts: context.peerBrandMonthlyFacts?.length
+      ? context.peerBrandMonthlyFacts
+      : peerFixture.monthlyFacts,
+    peerCityMonthlyFacts: context.peerCityMonthlyFacts?.length
+      ? context.peerCityMonthlyFacts
+      : peerFixture.cityMonthlyFacts
+  };
 }
 
 async function supabaseGet(url, headers, timeoutMs) {
@@ -97,7 +124,36 @@ function withFixture(context) {
   };
 }
 
+function getXiabuxiabuFixture() {
+  return {
+    brandProfile: {
+      brand_id: "xiabuxiabu",
+      brand_name: "呷哺呷哺",
+      category: "小火锅",
+      brand_level: "全国连锁",
+      headquarter_city: "北京",
+      store_count: 900,
+      ka_owner: "KA 城市经理",
+      cooperation_status: "稳定合作"
+    },
+    monthlyFacts: [
+      { month: "2026-06-30", brand_id: "xiabuxiabu", active_users: 168000, purchase_frequency: 1.22, avg_order_value: 203.4, gtv: 75682320, paid_orders: 372100, verified_orders: 299601, repeat_purchase_rate: 0.241, commission_revenue: 2812400, ad_revenue: 1185600, merchant_revenue: 3998000, subsidy_amount: 1281600, operating_cost: 986000, ad_merchant_penetration: 0.186, take_rate: 0.0528, subsidy_rate: 0.017, data_confidence: "demo_model" }
+    ],
+    cityMonthlyFacts: [
+      { month: "2026-06-30", brand_id: "xiabuxiabu", city: "上海", store_count: 72, search_impressions: 920000, poi_visits: 148600, paid_orders: 49800, verified_orders: 39840, gmv: 16800000, coupon_reduce_amount: 286400, ad_spend: 268000, roi: 48.6, avg_order_value: 208 },
+      { month: "2026-06-30", brand_id: "xiabuxiabu", city: "北京", store_count: 78, search_impressions: 860000, poi_visits: 136200, paid_orders: 46200, verified_orders: 36960, gmv: 15240000, coupon_reduce_amount: 251800, ad_spend: 246000, roi: 47.8, avg_order_value: 205 },
+      { month: "2026-06-30", brand_id: "xiabuxiabu", city: "深圳", store_count: 48, search_impressions: 640000, poi_visits: 101800, paid_orders: 34600, verified_orders: 27340, gmv: 11280000, coupon_reduce_amount: 198600, ad_spend: 186000, roi: 46.2, avg_order_value: 198 },
+      { month: "2026-06-30", brand_id: "xiabuxiabu", city: "成都", store_count: 52, search_impressions: 548000, poi_visits: 89600, paid_orders: 31800, verified_orders: 25440, gmv: 9840000, coupon_reduce_amount: 168400, ad_spend: 158000, roi: 49.1, avg_order_value: 192 },
+      { month: "2026-06-30", brand_id: "xiabuxiabu", city: "杭州", store_count: 40, search_impressions: 462000, poi_visits: 74200, paid_orders: 22600, verified_orders: 18080, gmv: 7420000, coupon_reduce_amount: 132600, ad_spend: 124000, roi: 45.4, avg_order_value: 195 }
+    ]
+  };
+}
+
 function getHaidilaoFixture() {
+  return generateHaidilaoDrillFixture();
+}
+
+function getHaidilaoFixtureLegacy() {
   return {
     brandProfile: {
       brand_id: "haidilao",
@@ -126,7 +182,7 @@ function getHaidilaoFixture() {
         poi_name: "海底捞上海静安大悦城店",
         city: "上海",
         district: "静安",
-        business_area: "南京西路",
+        business_area: "静安大悦城",
         category: "火锅",
         poi_status: "active"
       },
@@ -136,7 +192,7 @@ function getHaidilaoFixture() {
         poi_name: "海底捞北京朝阳合生汇店",
         city: "北京",
         district: "朝阳",
-        business_area: "国贸双井",
+        business_area: "朝阳合生汇",
         category: "火锅",
         poi_status: "active"
       },
@@ -146,7 +202,7 @@ function getHaidilaoFixture() {
         poi_name: "海底捞深圳南山万象天地店",
         city: "深圳",
         district: "南山",
-        business_area: "科技园",
+        business_area: "万象天地",
         category: "火锅",
         poi_status: "active"
       }
@@ -338,9 +394,10 @@ function getHaidilaoFixture() {
       { month: "2026-06-30", brand_id: "haidilao", city: "杭州", store_count: 49, search_impressions: 625000, poi_visits: 103500, paid_orders: 34200, verified_orders: 28728, gmv: 10944000, coupon_reduce_amount: 154300, ad_spend: 206000, roi: 53.13, avg_order_value: 320 }
     ],
     competitorBenchmarks: [
-      { month: "2026-06-30", brand_id: "haidilao", competitor: "美团到餐", market_share: 0.6, avg_order_value: 319.6, verification_rate: 0.853, subsidy_rate: 0.014, ad_take_rate: 0.0187, content_share: 0.28, data_confidence: "demo_directional" },
-      { month: "2026-06-30", brand_id: "haidilao", competitor: "抖音到店", market_share: 0.3, avg_order_value: 286, verification_rate: 0.57, subsidy_rate: 0.026, ad_take_rate: 0.0095, content_share: 0.52, data_confidence: "demo_directional" },
-      { month: "2026-06-30", brand_id: "haidilao", competitor: "私域会员", market_share: 0.1, avg_order_value: 352, verification_rate: 0.91, subsidy_rate: 0.006, ad_take_rate: 0, content_share: 0.2, data_confidence: "demo_directional" }
+      { month: "2026-06-30", brand_id: "haidilao", competitor: "美团", market_share: 0.67, avg_order_value: 319.6, verification_rate: 0.853, subsidy_rate: 0.014, ad_take_rate: 0.0187, content_share: 0.28, data_confidence: "demo_directional" },
+      { month: "2026-06-30", brand_id: "haidilao", competitor: "抖音", market_share: 0.33, avg_order_value: 286, verification_rate: 0.57, subsidy_rate: 0.026, ad_take_rate: 0.0095, content_share: 0.52, data_confidence: "demo_directional" },
+      { month: "2026-05-31", brand_id: "haidilao", competitor: "美团", market_share: 0.66, avg_order_value: 314.2, verification_rate: 0.852, subsidy_rate: 0.015, ad_take_rate: 0.018, content_share: 0.27, data_confidence: "demo_directional" },
+      { month: "2026-05-31", brand_id: "haidilao", competitor: "抖音", market_share: 0.34, avg_order_value: 279, verification_rate: 0.55, subsidy_rate: 0.028, ad_take_rate: 0.009, content_share: 0.54, data_confidence: "demo_directional" }
     ],
     funnelEvents: [
       { event_type: "home_open", activity_class: "MainActivity", route_uri: "imeituan://www.meituan.com/" },
@@ -374,5 +431,6 @@ function getHaidilaoFixture() {
 
 module.exports = {
   getHaidilaoFixture,
+  getXiabuxiabuFixture,
   loadSupabaseContext
 };

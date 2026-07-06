@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="登录 BrandPilot AI，保存对话记录，随时回看经营分析与提案。" />
+  <title>登录 · BrandPilot AI</title>
+  <link rel="stylesheet" href="assets/styles.css?v=meituan" />
+</head>
+<body class="login-page-body">
+  <div class="login-page">
+    <div class="login-page-logo">
+      <span class="brand-icon">BP</span>
+      <div>
+        <h1>BrandPilot AI</h1>
+        <p>连锁餐饮品牌的 AI 经营分析助手</p>
+      </div>
+    </div>
+
+    <div class="auth-switch" id="authSwitch" data-active="login">
+      <div class="auth-switch-col auth-switch-col--left">
+        <div class="auth-switch-slot auth-switch-slot--login-form">
+          <h2>欢迎回来</h2>
+          <p class="auth-switch-desc">登录后，对话记录与经营分析将自动保存，随时续接上次工作</p>
+          <form class="auth-form" id="loginForm" autocomplete="on">
+            <label>用户名
+              <input name="username" autocomplete="username" required minlength="3" maxlength="32" pattern="[A-Za-z0-9_]+" placeholder="3–32 位字母、数字或下划线" />
+            </label>
+            <label>密码
+              <input name="password" type="password" autocomplete="current-password" required minlength="6" placeholder="至少 6 位" />
+            </label>
+            <p class="auth-error" id="loginError" hidden></p>
+            <button type="submit" class="primary-button auth-submit">登录</button>
+          </form>
+        </div>
+
+        <div class="auth-switch-slot auth-switch-slot--login-promo" hidden>
+          <h2>已有账号</h2>
+          <p>登录即可继续查看历史对话、图表与经营提案</p>
+          <button type="button" class="auth-switch-ghost-btn" data-switch="login">登录</button>
+        </div>
+      </div>
+
+      <div class="auth-switch-col auth-switch-col--right">
+        <div class="auth-switch-slot auth-switch-slot--register-promo">
+          <h2>开始使用</h2>
+          <p>免费注册，对话与分析记录云端同步，多设备随时查看</p>
+          <button type="button" class="auth-switch-ghost-btn" data-switch="register">立即注册</button>
+        </div>
+
+        <div class="auth-switch-slot auth-switch-slot--register-form" hidden>
+          <h2>创建账号</h2>
+          <p class="auth-switch-desc">一分钟完成注册，开启智能问数、链路诊断与经营提案</p>
+          <form class="auth-form" id="registerForm" autocomplete="on">
+            <label>用户名
+              <input name="username" autocomplete="username" required minlength="3" maxlength="32" pattern="[A-Za-z0-9_]+" placeholder="3–32 位字母、数字或下划线，不可重复" />
+            </label>
+            <p class="auth-field-hint" id="registerUsernameHint" hidden></p>
+            <label>密码
+              <input name="password" type="password" autocomplete="new-password" required minlength="6" placeholder="至少 6 位" />
+            </label>
+            <label>确认密码
+              <input name="password2" type="password" autocomplete="new-password" required minlength="6" placeholder="再次输入密码" />
+            </label>
+            <p class="auth-error" id="registerError" hidden></p>
+            <button type="submit" class="primary-button auth-submit">注册</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="auth-switch-mobile-tabs" role="tablist" aria-label="登录或注册">
+      <button type="button" class="auth-switch-mobile-tab active" data-switch="login" role="tab">登录</button>
+      <button type="button" class="auth-switch-mobile-tab" data-switch="register" role="tab">注册</button>
+    </div>
+
+  </div>
+
+  <script src="assets/auth.js" defer></script>
+  <script src="assets/login.js" defer></script>
+</body>
+</html>

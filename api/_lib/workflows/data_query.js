@@ -3,9 +3,12 @@
  * 用户问具体数字 → 查对应表 → 直接回答 + 可选小图表
  */
 
+const { shouldShowGtvTrendChart } = require("../chart-policy");
 const { TOOL_REGISTRY } = require("../agent-tools");
 const { buildSharedTools } = require("../ai-tools-factory");
 const { buildChatMessages } = require("../workflow-utils");
+const { tracePush, reportProgress, buildStepStart } = require("../workflow-progress");
+const { emptyTokenUsage, mergeTokenUsage, extractUsageFromGenerateResult } = require("../token-usage");
 
 function getSystemPrompt(brandName) {
   return [
@@ -67,13 +70,15 @@ function buildTrendChart(monthlyRaw) {
 }
 
 async function execute(params) {
-  const { message, modelConfig, brandName = "海底捞", intentParams = {} } = params;
+  const { message, modelConfig, brandName = "海底捞", intentParams = {}, onProgress } = params;
   const startedAt = Date.now();
   const agentTrace = [];
 
   let monthlyRaw = null;
   let answer = "";
+  let tokenUsage = emptyTokenUsage();
   const toolStart = Date.now();
+  reportProgress(onProgress, buildStepStart("数据查询 Agent", "执行 NL2SQL 与数据检索…"));
 
   if (!modelConfig || !modelConfig.configured) {
     const fallback = await runNl2SqlFallback(message, brandName, "模型未配置");
@@ -107,10 +112,21 @@ async function execute(params) {
       tools: toolsDefined,
       maxSteps: 6,
       temperature: 0.3,
-      maxOutputTokens: modelConfig.maxTokens
+      maxOutputTokens: modelConfig.maxTokens,
+      onStepFinish: (event) => {
+        const tools = (event.toolCalls || []).map((tc) => tc.toolName).filter(Boolean);
+        if (!tools.length) return;
+        reportProgress(onProgress, {
+          name: "工具调用",
+          tool: tools.join(" → "),
+          summary: "完成 " + tools.join("、"),
+          durationMs: 0
+        });
+      }
     });
 
     answer = result.text;
+    tokenUsage = mergeTokenUsage(tokenUsage, extractUsageFromGenerateResult(result));
 
     if (result.steps) {
       for (const step of result.steps) {
@@ -119,7 +135,7 @@ async function execute(params) {
             if (tc.toolName === "aggregateMonthly" && tc.result) {
               monthlyRaw = tc.result;
             }
-            agentTrace.push({
+            tracePush(agentTrace, onProgress, {
               name: "工具调用",
               tool: tc.toolName,
               summary: "调用 " + tc.toolName + " 完成",
@@ -130,7 +146,7 @@ async function execute(params) {
       }
     }
 
-    agentTrace.push({
+    tracePush(agentTrace, onProgress, {
       name: "数据查询Agent",
       tool: "推理完成",
       summary: "完成数据查询和回答",
@@ -140,8 +156,8 @@ async function execute(params) {
     const fallback = await runNl2SqlFallback(message, brandName, error.message);
     answer = fallback.answer;
     monthlyRaw = fallback.monthlyRaw;
-    agentTrace.push(...fallback.agentTrace);
-    agentTrace.push({
+    (fallback.agentTrace || []).forEach((step) => tracePush(agentTrace, onProgress, step));
+    tracePush(agentTrace, onProgress, {
       name: "数据查询Agent",
       tool: "nl2sql_fallback",
       summary: "LLM 调用失败，已用 NL2SQL 降级",
@@ -149,13 +165,17 @@ async function execute(params) {
     });
   }
 
-  const charts = monthlyRaw ? buildTrendChart(monthlyRaw) : buildFallbackCharts();
+  const charts =
+    monthlyRaw && shouldShowGtvTrendChart({ message, workflow: "data_query", toolsUsed: ["aggregateMonthly"] })
+      ? buildTrendChart(monthlyRaw)
+      : [];
 
   return {
     workflow: "data_query",
     answer,
     agentTrace,
     charts,
+    tokenUsage,
     totalDurationMs: Date.now() - startedAt
   };
 }
@@ -172,7 +192,10 @@ async function runNl2SqlFallback(message, brandName, reason) {
 
   return {
     monthlyRaw,
-    charts: buildTrendChart(monthlyRaw),
+    charts:
+      shouldShowGtvTrendChart({ message, workflow: "data_query", toolsUsed: ["aggregateMonthly"] })
+        ? buildTrendChart(monthlyRaw)
+        : [],
     agentTrace: [
       {
         name: "NL2SQL",
@@ -197,17 +220,6 @@ async function runNl2SqlFallback(message, brandName, reason) {
       reason ? "> 已走 NL2SQL 路径：" + reason : ""
     ].filter(Boolean).join("\n")
   };
-}
-
-function buildFallbackCharts() {
-  return [{
-    type: "line",
-    title: "月度 GTV 趋势",
-    data: {
-      labels: ["1月", "2月", "3月", "4月", "5月", "6月"],
-      datasets: [{ label: "GTV（万元）", data: [8626, 9421, 8926, 8871, 10073, 11045] }]
-    }
-  }];
 }
 
 module.exports = { execute };

@@ -5,6 +5,8 @@
  */
 
 const { buildChatMessages } = require("../workflow-utils");
+const { tracePush, reportProgress, buildStepStart } = require("../workflow-progress");
+const { emptyTokenUsage, mergeTokenUsage, extractUsageFromGenerateResult } = require("../token-usage");
 
 function getSystemPrompt(brandName, params) {
   return [
@@ -65,7 +67,7 @@ function buildFunnelChart(funnelStr) {
 }
 
 async function execute(params) {
-  const { message, modelConfig, brandName = "海底捞", intentParams = {} } = params;
+  const { message, modelConfig, brandName = "海底捞", intentParams = {}, onProgress } = params;
   const startedAt = Date.now();
   const agentTrace = [];
 
@@ -84,7 +86,9 @@ async function execute(params) {
 
   let funnelRaw = null;
   let answer = "";
+  let tokenUsage = emptyTokenUsage();
   const toolStart = Date.now();
+  reportProgress(onProgress, buildStepStart("链路诊断 Agent", "计算漏斗并生成诊断结论…"));
 
   try {
     const result = await generateText({
@@ -94,10 +98,21 @@ async function execute(params) {
       tools: toolsDefined,
       maxSteps: 6,
       temperature: 0.3,
-      maxOutputTokens: modelConfig.maxTokens
+      maxOutputTokens: modelConfig.maxTokens,
+      onStepFinish: (event) => {
+        const tools = (event.toolCalls || []).map((tc) => tc.toolName).filter(Boolean);
+        if (!tools.length) return;
+        reportProgress(onProgress, {
+          name: "工具调用",
+          tool: tools.join(" → "),
+          summary: "完成 " + tools.join("、"),
+          durationMs: 0
+        });
+      }
     });
 
     answer = result.text;
+    tokenUsage = mergeTokenUsage(tokenUsage, extractUsageFromGenerateResult(result));
 
     if (result.steps) {
       for (const step of result.steps) {
@@ -106,7 +121,7 @@ async function execute(params) {
             if (tc.toolName === "computeFunnel" && tc.result) {
               funnelRaw = tc.result;
             }
-            agentTrace.push({
+            tracePush(agentTrace, onProgress, {
               name: "工具调用",
               tool: tc.toolName,
               summary: "调用 " + tc.toolName + " 完成",
@@ -117,7 +132,7 @@ async function execute(params) {
       }
     }
 
-    agentTrace.push({
+    tracePush(agentTrace, onProgress, {
       name: "链路诊断Agent",
       tool: "推理完成",
       summary: "完成漏斗分析和损耗诊断",
@@ -153,7 +168,7 @@ async function execute(params) {
       "> 确定性分析模式，建议配置 MODEL_API_KEY 获得 AI 增强诊断。"
     ].join("\n");
 
-    agentTrace.push({
+    tracePush(agentTrace, onProgress, {
       name: "链路诊断Agent",
       tool: "fallback",
       summary: "LLM 调用失败：" + error.message + "，使用确定性分析",
@@ -168,6 +183,7 @@ async function execute(params) {
     answer,
     agentTrace,
     charts,
+    tokenUsage,
     totalDurationMs: Date.now() - startedAt
   };
 }

@@ -6,8 +6,11 @@
 
 const { TOOL_REGISTRY } = require("../agent-tools");
 const { buildSharedTools } = require("../ai-tools-factory");
+const { shouldShowGtvTrendChart } = require("../chart-policy");
+const { tracePush, reportProgress, buildStepStart } = require("../workflow-progress");
 const { buildChatMessages } = require("../workflow-utils");
 const { getAgentMaxTokens, getStructuredMaxTokens } = require("../token-budget");
+const { emptyTokenUsage, mergeTokenUsage, extractUsageFromGenerateResult } = require("../token-usage");
 
 /**
  * 获取年度提案工作流的 system prompt
@@ -106,7 +109,7 @@ async function generateStructuredProposal(agentAnswer, modelConfig, brandName, p
     "按 schema 填充所有字段，用中文。charts 数组构造 Chart.js 可用的图表数据。"
   ].join("\n");
 
-  const { object } = await generateObject({
+  const result = await generateObject({
     model,
     schema: ProposalSchema,
     system,
@@ -114,20 +117,25 @@ async function generateStructuredProposal(agentAnswer, modelConfig, brandName, p
     maxOutputTokens: getStructuredMaxTokens(modelConfig)
   });
 
-  return object;
+  return {
+    object: result.object,
+    tokenUsage: extractUsageFromGenerateResult(result)
+  };
 }
 
 /**
  * 执行年度提案工作流
  */
 async function execute(params) {
-  const { message, modelConfig, brandName = "海底捞", intentParams = {} } = params;
+  const { message, modelConfig, brandName = "海底捞", intentParams = {}, onProgress } = params;
   const startedAt = Date.now();
   const agentTrace = [];
 
   let agentAnswer = "";
   let toolCallsMade = [];
+  let tokenUsage = emptyTokenUsage();
   const toolStart = Date.now();
+  reportProgress(onProgress, buildStepStart("年度提案 Agent", "拉取品牌数据并生成提案…"));
 
   if (!modelConfig || !modelConfig.configured) {
     const brandData = await TOOL_REGISTRY.queryBrandData.fn({ brandId: "haidilao" });
@@ -139,7 +147,7 @@ async function execute(params) {
     });
     agentAnswer = buildFallbackAnswer(brandName, intentParams, brandData, funnelData, monthlyData) +
       "\n\n## 知识检索\n" + knowledge;
-    agentTrace.push({
+    tracePush(agentTrace, onProgress, {
       name: "确定性分析Agent",
       tool: "queryBrandData → computeFunnel → aggregateMonthly → retrieveKnowledge",
       summary: "模型未配置，使用确定性分析与 RAG",
@@ -150,7 +158,11 @@ async function execute(params) {
       workflow: "annual_proposal",
       answer: agentAnswer,
       agentTrace,
-      charts: buildFallbackCharts(brandName),
+      charts: buildFallbackCharts(brandName, shouldShowGtvTrendChart({
+        message,
+        workflow: "annual_proposal",
+        toolsUsed: ["aggregateMonthly"]
+      })),
       proposal: buildFallbackProposal(brandName),
       totalDurationMs: Date.now() - startedAt
     };
@@ -177,10 +189,21 @@ async function execute(params) {
       tools: toolsDefined,
       maxSteps: 5,
       temperature: 0.3,
-      maxOutputTokens: getAgentMaxTokens(modelConfig)
+      maxOutputTokens: getAgentMaxTokens(modelConfig),
+      onStepFinish: (event) => {
+        const tools = (event.toolCalls || []).map((tc) => tc.toolName).filter(Boolean);
+        if (!tools.length) return;
+        reportProgress(onProgress, {
+          name: "工具调用",
+          tool: tools.join(" → "),
+          summary: "完成 " + tools.join("、"),
+          durationMs: 0
+        });
+      }
     });
 
     agentAnswer = result.text;
+    tokenUsage = mergeTokenUsage(tokenUsage, extractUsageFromGenerateResult(result));
 
     if (result.steps) {
       for (const step of result.steps) {
@@ -192,14 +215,14 @@ async function execute(params) {
       }
     }
 
-    agentTrace.push({
+    tracePush(agentTrace, onProgress, {
       name: "推理Agent",
       tool: toolCallsMade.map((t) => t.toolName).join(" → "),
       summary: "调用了 " + toolCallsMade.length + " 个工具完成推理",
       durationMs: Date.now() - toolStart
     });
   } catch (error) {
-    agentTrace.push({
+    tracePush(agentTrace, onProgress, {
       name: "推理Agent",
       tool: "fallback",
       summary: "LLM 调用失败：" + error.message + "，使用确定性分析",
@@ -219,21 +242,23 @@ async function execute(params) {
   if (modelConfig.configured && elapsedBeforeStruct < 38000) {
     try {
       const genStart = Date.now();
-      const promptText = String(agentAnswer || "").slice(0, 6000);
-      structuredProposal = await generateStructuredProposal(
+      const promptText = String(agentAnswer || "");
+      const structuredResult = await generateStructuredProposal(
         promptText,
         modelConfig,
         brandName,
         intentParams
       );
-      agentTrace.push({
+      structuredProposal = structuredResult.object;
+      tokenUsage = mergeTokenUsage(tokenUsage, structuredResult.tokenUsage);
+      tracePush(agentTrace, onProgress, {
         name: "提案结构化Agent",
         tool: "generateObject",
         summary: "成功提取结构化提案",
         durationMs: Date.now() - genStart
       });
     } catch (error) {
-      agentTrace.push({
+      tracePush(agentTrace, onProgress, {
         name: "提案结构化Agent",
         tool: "fallback",
         summary: "结构化提取失败：" + error.message + "，使用对话式回答",
@@ -241,7 +266,7 @@ async function execute(params) {
       });
     }
   } else if (modelConfig.configured) {
-    agentTrace.push({
+    tracePush(agentTrace, onProgress, {
       name: "提案结构化Agent",
       tool: "skipped",
       summary: "主推理耗时 " + elapsedBeforeStruct + "ms，跳过结构化提取以防超时",
@@ -251,10 +276,16 @@ async function execute(params) {
 
   // 构建图表
   let charts = [];
+  const toolsUsed = toolCallsMade.map((t) => t.toolName);
+  const includeGtvTrend = shouldShowGtvTrendChart({
+    message,
+    workflow: "annual_proposal",
+    toolsUsed
+  });
   if (structuredProposal && structuredProposal.charts) {
     charts = structuredProposal.charts;
   } else {
-    charts = buildFallbackCharts(brandName);
+    charts = buildFallbackCharts(brandName, includeGtvTrend);
   }
 
   return {
@@ -263,6 +294,7 @@ async function execute(params) {
     agentTrace,
     charts,
     proposal: structuredProposal || buildFallbackProposal(brandName),
+    tokenUsage,
     totalDurationMs: Date.now() - startedAt
   };
 }
@@ -331,22 +363,14 @@ function buildFallbackProposal(brandName) {
   };
 }
 
-function buildFallbackCharts(brandName) {
-  return [
+function buildFallbackCharts(brandName, includeGtvTrend) {
+  const charts = [
     {
       type: "funnel",
       title: brandName + " 搜索到核销转化漏斗",
       data: {
         labels: ["搜索曝光", "搜索点击", "POI点击", "套餐详情", "下单提交", "支付订单", "核销订单"],
         datasets: [{ label: "用户数", data: [5120000, 486400, 205000, 94500, 33900, 21600, 18400] }]
-      }
-    },
-    {
-      type: "line",
-      title: "H1 月度 GTV 趋势（万元）",
-      data: {
-        labels: ["1月", "2月", "3月", "4月", "5月", "6月"],
-        datasets: [{ label: "GTV", data: [8626, 9421, 8926, 8871, 10073, 11045] }]
       }
     },
     {
@@ -358,6 +382,19 @@ function buildFallbackCharts(brandName) {
       }
     }
   ];
+
+  if (includeGtvTrend) {
+    charts.splice(1, 0, {
+      type: "line",
+      title: "H1 月度 GTV 趋势（万元）",
+      data: {
+        labels: ["1月", "2月", "3月", "4月", "5月", "6月"],
+        datasets: [{ label: "GTV", data: [8626, 9421, 8926, 8871, 10073, 11045] }]
+      }
+    });
+  }
+
+  return charts;
 }
 
 module.exports = { execute };

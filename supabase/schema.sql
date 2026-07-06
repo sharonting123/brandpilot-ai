@@ -464,11 +464,11 @@ insert into public.dim_poi (
   poi_status
 )
 values
-  ('hdl-sh-jingan-001', 'haidilao', '海底捞上海静安大悦城店', '上海', '静安', '南京西路', '火锅', 'Demo：上海核心商圈门店', 'active'),
-  ('hdl-bj-chaoyang-001', 'haidilao', '海底捞北京朝阳合生汇店', '北京', '朝阳', '国贸双井', '火锅', 'Demo：北京核心商圈门店', 'active'),
-  ('hdl-sz-nanshan-001', 'haidilao', '海底捞深圳南山万象天地店', '深圳', '南山', '科技园', '火锅', 'Demo：深圳白领商圈门店', 'active'),
+  ('hdl-sh-jingan-001', 'haidilao', '海底捞上海静安大悦城店', '上海', '静安', '静安大悦城', '火锅', 'Demo：上海核心商圈门店', 'active'),
+  ('hdl-bj-chaoyang-001', 'haidilao', '海底捞北京朝阳合生汇店', '北京', '朝阳', '朝阳合生汇', '火锅', 'Demo：北京核心商圈门店', 'active'),
+  ('hdl-sz-nanshan-001', 'haidilao', '海底捞深圳南山万象天地店', '深圳', '南山', '万象天地', '火锅', 'Demo：深圳白领商圈门店', 'active'),
   ('hdl-cd-jinjiang-001', 'haidilao', '海底捞成都春熙路店', '成都', '锦江', '春熙路', '火锅', 'Demo：成都休闲商圈门店', 'active'),
-  ('hdl-hz-binjiang-001', 'haidilao', '海底捞杭州滨江龙湖店', '杭州', '滨江', '滨江高新', '火锅', 'Demo：杭州高新商圈门店', 'active')
+  ('hdl-hz-binjiang-001', 'haidilao', '海底捞杭州滨江龙湖店', '杭州', '滨江', '滨江龙湖', '火锅', 'Demo：杭州高新商圈门店', 'active')
 on conflict (poi_id) do update
 set
   brand_id = excluded.brand_id,

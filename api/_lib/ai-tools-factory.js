@@ -42,6 +42,14 @@ async function buildSharedTools(toolNames = []) {
         }),
         execute: async (args) => TOOL_REGISTRY.getCompetitorBenchmark.fn(args)
       }),
+    getBrandPeerBenchmark: () =>
+      tool({
+        description: TOOL_REGISTRY.getBrandPeerBenchmark.description,
+        parameters: z.object({
+          brandId: z.string().default("haidilao").describe("品牌 ID")
+        }),
+        execute: async (args) => TOOL_REGISTRY.getBrandPeerBenchmark.fn(args)
+      }),
     getBrandAssets: () =>
       tool({
         description: TOOL_REGISTRY.getBrandAssets.description,

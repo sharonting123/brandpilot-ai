@@ -1,34 +1,45 @@
 /**
- * competitor_benchmark 工作流：竞对对比
- * 查竞对基准表 → 对比分析（美团到餐 vs 抖音到店 vs 私域会员） → 给差异化建议
+ * competitor_benchmark 工作流
+ * - 平台对比：美团 vs 抖音
+ * - 品牌竞品：海底捞 vs 呷哺呷哺
  */
 
 const { buildChatMessages } = require("../workflow-utils");
+const { tracePush, reportProgress, buildStepStart } = require("../workflow-progress");
+const {
+  buildPlatformBenchmarks,
+  buildBrandPeerBenchmarks,
+  detectComparisonFocus
+} = require("../brand-peer");
+const { getContext } = require("../agent-tools");
+const { emptyTokenUsage, mergeTokenUsage, extractUsageFromGenerateResult } = require("../token-usage");
 
-function getSystemPrompt(brandName, params) {
-  const competitors = (params.competitors || []).length
-    ? params.competitors.join("、")
-    : "美团到餐、抖音到店、私域会员";
+function getSystemPrompt(brandName, intentParams) {
+  const focus = detectComparisonFocus("", intentParams);
+  const focusLine =
+    focus === "brand"
+      ? "本次重点做品牌竞品对比（海底捞 vs 呷哺呷哺）。"
+      : focus === "platform"
+        ? "本次重点做平台对比（美团 vs 抖音）。"
+        : "本次需同时覆盖平台对比（美团 vs 抖音）与品牌竞品（海底捞 vs 呷哺呷哺）。";
 
   return [
-    "你是 BrandPilot AI 的竞对分析专家，正在为「" + brandName + "」做多平台竞对对比。",
-    "对比维度：" + competitors,
+    "你是 BrandPilot AI 的竞对分析专家，正在为「" + brandName + "」做对比分析。",
+    focusLine,
     "",
     "你的任务：",
-    "1. 用 getCompetitorBenchmark 工具获取竞对基准数据",
-    "2. 从市场份额、核销率、客单价、补贴率、广告费率、内容份额等维度对比",
-    "3. 识别各平台的核心优势和短板",
-    "4. 给" + brandName + "的差异化经营建议",
+    "1. 拉取平台对比数据（美团 vs 抖音）",
+    "2. 拉取品牌竞品数据（海底捞 vs 呷哺呷哺）",
+    "3. 分别给出平台差异与品牌差异，并输出差异化经营建议",
     "",
     "对比框架：",
-    "- 美团到餐：高意图搜索、高核销率、高广告变现效率",
-    "- 抖音到店：高内容流量、低核销率、强补贴依赖",
-    "- 私域会员：高客单价、最高核销率、零广告费",
+    "- 平台对比：美团高意图搜索、高核销；抖音高内容流量、低核销、补贴更高",
+    "- 品牌竞品：对比 GMV/GTV、客单价、核销率、ROI，识别海底捞相对呷哺呷哺的优势城市",
     "",
     "回复结构：",
-    "1. 【数据总览】各平台核心指标一览",
-    "2. 【维度对比】按市场份额、核销率、客单价、补贴率逐项分析",
-    "3. 【差异化建议】3-4条针对" + brandName + "的差异化经营策略",
+    "1. 【平台对比】美团 vs 抖音",
+    "2. 【品牌竞品】海底捞 vs 呷哺呷哺",
+    "3. 【差异化建议】3-4 条可执行策略",
     "",
     "禁止编造数据，只使用工具返回的真实数值。"
   ].join("\n");
@@ -36,43 +47,119 @@ function getSystemPrompt(brandName, params) {
 
 async function buildToolDefinitions() {
   const { buildSharedTools } = require("../ai-tools-factory");
-  return buildSharedTools(["getCompetitorBenchmark", "retrieveKnowledge", "runNl2Sql"]);
+  return buildSharedTools(["getCompetitorBenchmark", "getBrandPeerBenchmark", "retrieveKnowledge", "runNl2Sql"]);
 }
 
-function buildComparisonChart(benchmarksStr) {
-  try {
-    const data = JSON.parse(benchmarksStr);
-    const benchmarks = data.benchmarks || [];
-    const labels = benchmarks.map((b) => b.competitor);
+function buildPlatformCharts(platforms) {
+  const labels = platforms.map((item) => item.name);
+  return [{
+    type: "comparison",
+    title: "平台对比 · 美团 vs 抖音",
+    data: {
+      labels,
+      datasets: [
+        { label: "渠道份额 (%)", data: platforms.map((item) => (item.marketShare || 0) * 100) },
+        { label: "核销率 (%)", data: platforms.map((item) => (item.verificationRate || 0) * 100) },
+        { label: "补贴率 (%)", data: platforms.map((item) => (item.subsidyRate || 0) * 100) }
+      ]
+    }
+  }, {
+    type: "bar",
+    title: "平台客单价对比（元）",
+    data: {
+      labels,
+      datasets: [{ label: "客单价", data: platforms.map((item) => item.avgOrderValue || 0) }]
+    }
+  }];
+}
 
-    return [{
-      type: "comparison",
-      title: "平台核心指标对比",
-      data: {
-        labels,
-        datasets: [
-          { label: "市场份额 (%)", data: benchmarks.map((b) => (b.marketShare || 0) * 100) },
-          { label: "核销率 (%)", data: benchmarks.map((b) => (b.verificationRate || 0) * 100) },
-          { label: "补贴率 (%)", data: benchmarks.map((b) => (b.subsidyRate || 0) * 100) }
-        ]
-      }
-    }, {
-      type: "bar",
-      title: "平台客单价对比（元）",
-      data: {
-        labels,
-        datasets: [{ label: "客单价", data: benchmarks.map((b) => b.avgOrderValue || 0) }]
-      }
-    }];
-  } catch {
-    return [];
-  }
+function buildBrandPeerCharts(peerData) {
+  if (!peerData) return [];
+  const labels = [peerData.ownBrand.name, peerData.peerBrand.name];
+  return [{
+    type: "comparison",
+    title: "品牌竞品 · 海底捞 vs 呷哺呷哺",
+    data: {
+      labels,
+      datasets: [
+        { label: "GTV（万元）", data: [peerData.ownBrand.gtv / 10000, peerData.peerBrand.gtv / 10000] },
+        { label: "客单价（元）", data: [peerData.ownBrand.avgOrderValue, peerData.peerBrand.avgOrderValue] },
+        { label: "核销率 (%)", data: [peerData.ownBrand.verifiedRate * 100, peerData.peerBrand.verifiedRate * 100] }
+      ]
+    }
+  }, {
+    type: "bar",
+    title: "同城市 GMV 对比（万元）",
+    data: {
+      labels: peerData.cities.map((item) => item.city),
+      datasets: [
+        { label: peerData.ownBrand.name, data: peerData.cities.map((item) => (item.own.gmv || 0) / 10000) },
+        { label: peerData.peerBrand.name, data: peerData.cities.map((item) => (item.peer.gmv || 0) / 10000) }
+      ]
+    }
+  }];
+}
+
+function buildDeterministicAnswer(brandName, platforms, peerData) {
+  const platformRows = platforms.map((item) =>
+    "| " + item.name + " | " + ((item.marketShare || 0) * 100).toFixed(0) + "% | " +
+    (item.avgOrderValue || 0).toFixed(0) + "元 | " +
+    ((item.verificationRate || 0) * 100).toFixed(1) + "% | " +
+    ((item.subsidyRate || 0) * 100).toFixed(1) + "% |"
+  ).join("\n");
+
+  const peer = peerData || buildBrandPeerBenchmarks({});
+  const cityRows = (peer.cities || []).map((item) =>
+    "| " + item.city + " | " + ((item.own.gmv || 0) / 10000).toFixed(0) + "万 | " +
+    ((item.peer.gmv || 0) / 10000).toFixed(0) + "万 | " +
+    ((item.own.verifiedRate || 0) * 100).toFixed(1) + "% | " +
+    ((item.peer.verifiedRate || 0) * 100).toFixed(1) + "% |"
+  ).join("\n");
+
+  return [
+    "# " + brandName + " 竞对对比分析（确定性分析）",
+    "",
+    "## 平台对比 · 美团 vs 抖音",
+    "| 平台 | 渠道份额 | 客单价 | 核销率 | 补贴率 |",
+    "|------|---------|--------|--------|--------|",
+    platformRows,
+    "",
+    "- **美团**：高意图搜索、核销率更高，是核心成交阵地。",
+    "- **抖音**：内容流量占比更高，但核销率与客单价偏低，补贴依赖更强。",
+    "",
+    "## 品牌竞品 · 海底捞 vs 呷哺呷哺",
+    "| 品牌 | GTV | 客单价 | 核销率 |",
+    "|------|-----|--------|--------|",
+    "| 海底捞 | " + ((peer.ownBrand.gtv || 0) / 100000000).toFixed(2) + "亿 | " +
+      (peer.ownBrand.avgOrderValue || 0).toFixed(0) + "元 | " +
+      ((peer.ownBrand.verifiedRate || 0) * 100).toFixed(1) + "% |",
+    "| 呷哺呷哺 | " + ((peer.peerBrand.gtv || 0) / 100000000).toFixed(2) + "亿 | " +
+      (peer.peerBrand.avgOrderValue || 0).toFixed(0) + "元 | " +
+      ((peer.peerBrand.verifiedRate || 0) * 100).toFixed(1) + "% |",
+    "",
+    "### 同城市 GMV / 核销率",
+    "| 城市 | 海底捞 GMV | 呷哺 GMV | 海底捞核销 | 呷哺核销 |",
+    "|------|-----------|---------|-----------|---------|",
+    cityRows,
+    "",
+    "## 差异化建议",
+    "- **美团阵地**：继续放大高核销套餐与搜索广告，巩固成交效率优势。",
+    "- **抖音承接**：以种草曝光为主，核销引导至美团或会员私域。",
+    "- **品牌溢价**：海底捞在客单价与 GMV 上领先，重点守住高线城市核心商圈。",
+    "- **竞品防守**：呷哺在部分城市 ROI 接近，需关注套餐价差与错峰策略。",
+    "",
+    "> 确定性分析模式，建议配置 MODEL_API_KEY 获得 AI 增强分析。"
+  ].join("\n");
 }
 
 async function execute(params) {
-  const { message, modelConfig, brandName = "海底捞", intentParams = {} } = params;
+  const { message, modelConfig, brandName = "海底捞", intentParams = {}, onProgress } = params;
   const startedAt = Date.now();
   const agentTrace = [];
+
+  const loadedContext = await getContext("haidilao");
+  const platforms = buildPlatformBenchmarks(loadedContext.competitorBenchmarks || []);
+  const peerData = buildBrandPeerBenchmarks(loadedContext);
 
   const [{ generateText }, { createOpenAI }] = await Promise.all([
     import("ai"),
@@ -87,9 +174,10 @@ async function execute(params) {
   const toolsDefined = await buildToolDefinitions();
   const systemPrompt = getSystemPrompt(brandName, intentParams);
 
-  let benchmarksRaw = null;
   let answer = "";
+  let tokenUsage = emptyTokenUsage();
   const toolStart = Date.now();
+  reportProgress(onProgress, buildStepStart("竞对分析 Agent", "拉取平台与品牌竞品数据…"));
 
   try {
     const result = await generateText({
@@ -97,73 +185,47 @@ async function execute(params) {
       system: systemPrompt,
       messages: buildChatMessages(params.history, message),
       tools: toolsDefined,
-      maxSteps: 4,
+      maxSteps: 5,
       temperature: 0.3,
-      maxOutputTokens: modelConfig.maxTokens
+      maxOutputTokens: modelConfig.maxTokens,
+      onStepFinish: (event) => {
+        const tools = (event.toolCalls || []).map((tc) => tc.toolName).filter(Boolean);
+        if (!tools.length) return;
+        reportProgress(onProgress, {
+          name: "工具调用",
+          tool: tools.join(" → "),
+          summary: "完成 " + tools.join("、"),
+          durationMs: 0
+        });
+      }
     });
 
     answer = result.text;
+    tokenUsage = mergeTokenUsage(tokenUsage, extractUsageFromGenerateResult(result));
 
     if (result.steps) {
       for (const step of result.steps) {
-        if (step.toolCalls) {
-          for (const tc of step.toolCalls) {
-            if (tc.toolName === "getCompetitorBenchmark" && tc.result) {
-              benchmarksRaw = tc.result;
-            }
-            agentTrace.push({
-              name: "工具调用",
-              tool: tc.toolName,
-              summary: "调用 " + tc.toolName + " 完成",
-              durationMs: 0
-            });
-          }
+        if (!step.toolCalls) continue;
+        for (const tc of step.toolCalls) {
+          tracePush(agentTrace, onProgress, {
+            name: "工具调用",
+            tool: tc.toolName,
+            summary: "调用 " + tc.toolName + " 完成",
+            durationMs: 0
+          });
         }
       }
     }
 
-    agentTrace.push({
+    tracePush(agentTrace, onProgress, {
       name: "竞对分析Agent",
       tool: "推理完成",
-      summary: "完成竞对对比分析和差异化建议",
+      summary: "完成平台与品牌竞品对比分析",
       durationMs: Date.now() - toolStart
     });
   } catch (error) {
-    const { TOOL_REGISTRY } = require("../agent-tools");
-    benchmarksRaw = await TOOL_REGISTRY.getCompetitorBenchmark.fn({ brandId: "haidilao" });
-
-    const data = JSON.parse(benchmarksRaw);
-    const benchmarks = data.benchmarks || [];
-    const rows = benchmarks.map((b) =>
-      "| " + b.competitor + " | " + ((b.marketShare || 0) * 100).toFixed(0) + "% | " +
-      (b.avgOrderValue || 0).toFixed(0) + "元 | " +
-      ((b.verificationRate || 0) * 100).toFixed(1) + "% | " +
-      ((b.subsidyRate || 0) * 100).toFixed(1) + "% |"
-    ).join("\n");
-
-    answer = [
-      "# " + brandName + " 多平台竞对对比分析（确定性分析）",
-      "",
-      "## 数据总览",
-      "| 平台 | 市场份额 | 客单价 | 核销率 | 补贴率 |",
-      "|------|---------|--------|--------|--------|",
-      rows,
-      "",
-      "## 维度分析",
-      "- **美团到餐**：市场份额60%，核销率85.3%，高意图搜索优势明显，是核心经营阵地。",
-      "- **抖音到店**：市场份额30%，核销率57%，内容流量大但购买决策质量低，强依赖补贴。",
-      "- **私域会员**：市场份额10%，核销率91%，客单价最高，零广告费但用户规模有限。",
-      "",
-      "## 差异化建议",
-      "- **美团阵地深耕**：利用高核销率优势继续放大搜索广告和套餐经营。",
-      "- **抖音差异化承接**：在抖音做品牌曝光和种草，但引导核销到美团或私域。",
-      "- **私域会员升级**：打通美团交易数据和会员权益互通，做大私域规模。",
-      "- **补贴策略优化**：美团补贴率1.4% vs 抖音2.6%，不宜在美团大幅提补贴。",
-      "",
-      "> 确定性分析模式，建议配置 MODEL_API_KEY 获得 AI 增强分析。"
-    ].join("\n");
-
-    agentTrace.push({
+    answer = buildDeterministicAnswer(brandName, platforms, peerData);
+    tracePush(agentTrace, onProgress, {
       name: "竞对分析Agent",
       tool: "fallback",
       summary: "LLM 调用失败：" + error.message + "，使用确定性分析",
@@ -171,30 +233,19 @@ async function execute(params) {
     });
   }
 
-  const charts = benchmarksRaw ? buildComparisonChart(benchmarksRaw) : buildFallbackCharts();
+  const charts = [
+    ...buildPlatformCharts(platforms),
+    ...buildBrandPeerCharts(peerData)
+  ];
 
   return {
     workflow: "competitor_benchmark",
     answer,
     agentTrace,
     charts,
+    tokenUsage,
     totalDurationMs: Date.now() - startedAt
   };
-}
-
-function buildFallbackCharts() {
-  return [{
-    type: "comparison",
-    title: "平台核心指标对比",
-    data: {
-      labels: ["美团到餐", "抖音到店", "私域会员"],
-      datasets: [
-        { label: "市场份额 (%)", data: [60, 30, 10] },
-        { label: "核销率 (%)", data: [85.3, 57, 91] },
-        { label: "补贴率 (%)", data: [1.4, 2.6, 0.6] }
-      ]
-    }
-  }];
 }
 
 module.exports = { execute };

@@ -27,10 +27,13 @@ const apiHandlers = {
   "/api/config": require("./api/config"),
   "/api/agent-run": require("./api/agent-run"),
   "/api/chat": require("./api/chat"),
-  "/api/digital-human-media": require("./api/digital-human-media"),
-  "/api/digital-human": require("./api/digital-human"),
   "/api/events": require("./api/events"),
-  "/api/health": require("./api/health")
+  "/api/health": require("./api/health"),
+  "/api/auth/register": require("./api/auth/register"),
+  "/api/auth/login": require("./api/auth/login"),
+  "/api/auth/me": require("./api/auth/me"),
+  "/api/sessions": require("./api/sessions"),
+  "/api/sessions/messages": require("./api/sessions/messages")
 };
 
 const server = http.createServer(async (req, res) => {
@@ -43,6 +46,9 @@ const server = http.createServer(async (req, res) => {
     }
 
     let rel = decodeURIComponent(url.pathname === "/" ? "/index.html" : url.pathname);
+    if (url.pathname === "/login") {
+      rel = "login.html";
+    }
     rel = rel.replace(/^\/+/, "");
     const file = path.resolve(root, rel);
     if (!file.startsWith(path.resolve(root))) {

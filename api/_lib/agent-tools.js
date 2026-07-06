@@ -203,24 +203,40 @@ async function aggregateMonthly(params) {
 async function getCompetitorBenchmark(params) {
   const brandId = params.brandId || "haidilao";
   const context = await getContext(brandId);
-  const benchmarks = context.competitorBenchmarks || [];
+  const { buildPlatformBenchmarks } = require("./brand-peer");
+  const platformBenchmarks = buildPlatformBenchmarks(context.competitorBenchmarks || []);
 
   return JSON.stringify({
-    benchmarks: benchmarks.map((b) => ({
-      competitor: b.competitor,
-      month: b.month,
-      marketShare: b.market_share,
-      avgOrderValue: b.avg_order_value,
-      verificationRate: b.verification_rate,
-      subsidyRate: b.subsidy_rate,
-      adTakeRate: b.ad_take_rate,
-      contentShare: b.content_share,
-      dataConfidence: b.data_confidence
+    compareType: "platform",
+    title: "平台对比 · 美团 vs 抖音",
+    platformBenchmarks,
+    benchmarks: platformBenchmarks.map((item) => ({
+      competitor: item.name,
+      month: item.month,
+      marketShare: item.marketShare,
+      avgOrderValue: item.avgOrderValue,
+      verificationRate: item.verificationRate,
+      subsidyRate: item.subsidyRate,
+      adTakeRate: item.adTakeRate,
+      contentShare: item.contentShare
     })),
     summary: {
-      competitorCount: benchmarks.length,
-      dataConfidence: benchmarks[0] ? benchmarks[0].data_confidence : "unknown"
+      competitorCount: platformBenchmarks.length,
+      dataConfidence: (context.competitorBenchmarks || [])[0]?.data_confidence || "unknown"
     }
+  });
+}
+
+async function getBrandPeerBenchmark(params) {
+  const brandId = params.brandId || "haidilao";
+  const context = await getContext(brandId);
+  const { buildBrandPeerBenchmarks } = require("./brand-peer");
+  const peerData = buildBrandPeerBenchmarks(context);
+
+  return JSON.stringify({
+    compareType: "brand",
+    title: "品牌竞品 · 海底捞 vs 呷哺呷哺",
+    ...peerData
   });
 }
 
@@ -302,8 +318,13 @@ const TOOL_REGISTRY = {
   },
   getCompetitorBenchmark: {
     name: "getCompetitorBenchmark",
-    description: "获取品牌在各平台（美团到餐、抖音到店、私域会员等）的竞对基准数据。",
+    description: "获取平台对比数据：美团 vs 抖音（渠道份额、核销率、客单价、补贴率）。",
     fn: getCompetitorBenchmark
+  },
+  getBrandPeerBenchmark: {
+    name: "getBrandPeerBenchmark",
+    description: "获取品牌竞品对比数据：海底捞 vs 呷哺呷哺（GTV、客单价、核销率、同城市 GMV）。",
+    fn: getBrandPeerBenchmark
   },
   getBrandAssets: {
     name: "getBrandAssets",
@@ -329,6 +350,7 @@ module.exports = {
   computeFunnel,
   aggregateMonthly,
   getCompetitorBenchmark,
+  getBrandPeerBenchmark,
   getBrandAssets,
   runNl2Sql,
   retrieveKnowledge,

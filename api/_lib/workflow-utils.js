@@ -11,7 +11,7 @@ function buildChatMessages(history, message) {
     .map(function (item) {
       return {
         role: item.role,
-        content: String(item.content).slice(0, 800)
+        content: String(item.content)
       };
     });
 

@@ -4,3 +4,7 @@
 node_modules
 dist
 coverage
+tmp-*.json
+
+.vercel
+.env*

@@ -1,8 +1,17 @@
 /**
  * RAG 知识检索层
- * 基于 brand_assets + 内置经营分析知识块做关键词检索，
- * 为 Agent 提供可引用证据，不编造外部事实。
+ * 混合检索：关键词召回 + Embedding 向量召回 → Rerank 精排
+ * 数据源：内置知识块 + Supabase brand_assets
  */
+
+const {
+  getRagEmbedConfig,
+  isEmbeddingConfigured,
+  isRerankConfigured,
+  vectorRecall,
+  mergeCandidates,
+  rerankChunks
+} = require("./rag-embeddings");
 
 const BUILTIN_CHUNKS = [
   {
@@ -114,6 +123,26 @@ function assetsToChunks(assets, brandId) {
   }));
 }
 
+function keywordRecall(chunks, query, recallSize) {
+  const queryTokens = tokenize(query);
+  return chunks
+    .map((chunk) => ({
+      ...chunk,
+      score: scoreChunk(chunk, queryTokens)
+    }))
+    .filter((chunk) => chunk.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, recallSize);
+}
+
+function buildRetrievalMode({ embeddingUsed, rerankUsed, keywordOnly }) {
+  if (keywordOnly) return "keyword";
+  const parts = ["hybrid"];
+  if (embeddingUsed) parts.push("embedding");
+  if (rerankUsed) parts.push("rerank");
+  return parts.join("+");
+}
+
 /**
  * 检索相关知识块
  */
@@ -122,6 +151,8 @@ async function retrieveKnowledge(params = {}) {
   const brandId = params.brandId || "haidilao";
   const query = String(params.query || params.question || "").trim();
   const topK = Math.max(1, Math.min(Number(params.topK) || 4, 8));
+  const ragConfig = getRagEmbedConfig();
+  const recallSize = Math.max(topK * 2, ragConfig.recallSize);
 
   if (!query) {
     return JSON.stringify({ error: "query 不能为空", chunks: [] });
@@ -133,36 +164,84 @@ async function retrieveKnowledge(params = {}) {
     ...assetsToChunks(context.assets, brandId)
   ];
 
-  const queryTokens = tokenize(query);
-  const ranked = chunks
-    .map((chunk) => ({
+  let embeddingUsed = false;
+  let rerankUsed = false;
+  let retrievalWarning = null;
+
+  const keywordRanked = keywordRecall(chunks, query, recallSize);
+  let embeddingRanked = [];
+
+  if (isEmbeddingConfigured()) {
+    try {
+      embeddingRanked = await vectorRecall(query, chunks, recallSize);
+      embeddingUsed = embeddingRanked.length > 0;
+    } catch (error) {
+      retrievalWarning = "Embedding 召回失败，已回退关键词：" + error.message;
+      console.warn(retrievalWarning);
+    }
+  }
+
+  let candidates = mergeCandidates(keywordRanked, embeddingRanked, recallSize);
+
+  if (!candidates.length && keywordRanked.length) {
+    candidates = keywordRanked;
+  }
+  if (!candidates.length && embeddingRanked.length) {
+    candidates = embeddingRanked;
+  }
+  if (!candidates.length) {
+    candidates = chunks.slice(0, Math.min(topK, chunks.length)).map((chunk) => ({
       ...chunk,
-      score: scoreChunk(chunk, queryTokens)
-    }))
-    .filter((chunk) => chunk.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, topK);
+      score: 0.01
+    }));
+  }
+
+  let ranked = candidates;
+  if (isRerankConfigured() && candidates.length > 1) {
+    try {
+      ranked = await rerankChunks(query, candidates, topK);
+      rerankUsed = true;
+    } catch (error) {
+      retrievalWarning = (retrievalWarning ? retrievalWarning + "；" : "") +
+        "Rerank 失败，使用融合排序：" + error.message;
+      console.warn(retrievalWarning);
+      ranked = candidates.slice(0, topK);
+    }
+  } else {
+    ranked = candidates.slice(0, topK);
+  }
 
   const passages = ranked.map((chunk, index) => ({
-    rank: index + 1,
+    rank: chunk.rank || index + 1,
     id: chunk.id,
     type: chunk.type,
     title: chunk.title,
     content: chunk.content,
-    score: Number(chunk.score.toFixed(2)),
+    score: Number((chunk.rerankScore ?? chunk.rrfScore ?? chunk.embeddingScore ?? chunk.score ?? 0).toFixed(4)),
+    recallSources: chunk.recallSources || [],
     citation: `[${index + 1}] ${chunk.title}`
   }));
+
+  const retrievalMode = buildRetrievalMode({
+    embeddingUsed,
+    rerankUsed,
+    keywordOnly: !embeddingUsed && !rerankUsed
+  });
 
   return JSON.stringify({
     query,
     topK,
     hitCount: passages.length,
+    retrievalMode,
+    embeddingModel: embeddingUsed ? ragConfig.embeddingModel : null,
+    rerankModel: rerankUsed ? ragConfig.rerankModel : null,
     passages,
     citations: passages.map((p) => p.citation),
     dataMode: context.dataMode,
+    warning: retrievalWarning,
     explanation:
       passages.length > 0
-        ? `检索到 ${passages.length} 条相关知识，请在回答中引用 citations。`
+        ? `混合检索（${retrievalMode}）命中 ${passages.length} 条，请在回答中引用 citations。`
         : "未命中知识库，可继续用工具查数，但不要编造外部事实。"
   });
 }
@@ -171,5 +250,6 @@ module.exports = {
   retrieveKnowledge,
   BUILTIN_CHUNKS,
   scoreChunk,
-  tokenize
+  tokenize,
+  keywordRecall
 };

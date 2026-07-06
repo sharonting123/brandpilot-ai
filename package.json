@@ -12,6 +12,7 @@
     "check": "node scripts/check-js.js",
     "workflow:test": "node scripts/workflow-test.js",
     "smoke": "node scripts/smoke-test.js",
+    "rag:test": "node scripts/rag-test.js",
     "deploy": "vercel --prod"
   },
   "engines": {
