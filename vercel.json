@@ -13,7 +13,7 @@
       "maxDuration": 10
     },
     "api/digital-human.js": {
-      "maxDuration": 120
+      "maxDuration": 300
     },
     "api/health.js": {
       "maxDuration": 10

@@ -138,6 +138,31 @@
     });
   }
 
+  function parseApiResponse(resp) {
+    return resp.text().then(function (text) {
+      var data = null;
+      if (text) {
+        try {
+          data = JSON.parse(text);
+        } catch (parseError) {
+          if (resp.status === 504 || resp.status === 502) {
+            throw new Error("数字人服务超时（" + resp.status + "），请稍后重试。");
+          }
+          if (resp.status >= 500) {
+            throw new Error("数字人服务异常（" + resp.status + "），请稍后重试。");
+          }
+          throw new Error((text.slice(0, 160) || "服务器返回异常") + "（非 JSON 响应）");
+        }
+      } else {
+        data = {};
+      }
+      if (!resp.ok) {
+        throw new Error((data && data.message) || (data && data.error) || "请求失败 (" + resp.status + ")");
+      }
+      return data;
+    });
+  }
+
   function generate(options) {
     options = options || {};
     if (!state.script) {
@@ -176,10 +201,7 @@
       })
     })
       .then(function (resp) {
-        return resp.json().then(function (data) {
-          if (!resp.ok) throw new Error(data.message || data.error || "提交失败");
-          return data;
-        });
+        return parseApiResponse(resp);
       })
       .then(function (data) {
         state.currentTaskId = data.taskId;
@@ -212,10 +234,7 @@
     var tick = function () {
       fetch("/api/digital-human?taskId=" + encodeURIComponent(taskId))
         .then(function (resp) {
-          return resp.json().then(function (data) {
-            if (!resp.ok) throw new Error(data.message || data.error || "查询失败");
-            return data;
-          });
+          return parseApiResponse(resp);
         })
         .then(function (data) {
           var status = data.taskStatus || "UNKNOWN";

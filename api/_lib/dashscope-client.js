@@ -50,8 +50,11 @@ function authHeaders(apiKey, extra = {}) {
   };
 }
 
-function ossResolveHeaders(apiKey) {
-  return authHeaders(apiKey, { "X-DashScope-OssResourceResolve": "enable" });
+function ossResolveHeaders(apiKey, extra = {}) {
+  return authHeaders(apiKey, {
+    "X-DashScope-OssResourceResolve": "enable",
+    ...extra
+  });
 }
 
 /**
