@@ -425,8 +425,8 @@
     setResultPanelsEnabled(true, { hasAr: useAr });
     renderVisualization(data);
     if (useAr) {
-      syncExtendedLayers(data);
       switchMode("ar");
+      syncExtendedLayers(data);
     } else {
       switchMode("analysis");
       if (vizLivePanel) vizLivePanel.hidden = true;

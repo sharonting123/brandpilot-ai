@@ -89,7 +89,7 @@ async function runChatRequest(ctx) {
   const requestId = makeRequestId();
   const progress = createProgressEmitter(emit);
 
-  const intentId = progress.start("意图识别路由", "先看看你在问哪类经营问题…");
+  const intentId = progress.start("意图识别路由", "意图识别中…");
   const intentStart = Date.now();
   const intent = await recognizeIntent(message, modelConfig);
   const intentTrace = {

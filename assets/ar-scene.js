@@ -92,14 +92,14 @@
   }
 
   function scheduleMapResize() {
-    var delays = [0, 80, 240, 600];
+    var delays = [0, 80, 240, 600, 1200];
     delays.forEach(function (ms) {
       setTimeout(function () {
-        if (global.BrandPilotEchartsMap && typeof global.BrandPilotEchartsMap.resize === "function") {
-          global.BrandPilotEchartsMap.resize();
-        }
         if (state.drillLevel === DRILL.CITY) {
           syncMapView(state.currentScene);
+        }
+        if (global.BrandPilotEchartsMap && typeof global.BrandPilotEchartsMap.resize === "function") {
+          global.BrandPilotEchartsMap.resize();
         }
       }, ms);
     });

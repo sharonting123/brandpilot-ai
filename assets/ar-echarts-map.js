@@ -1,10 +1,10 @@
 /**
- * ECharts 中国地图沙盘（阿里 DataV GeoJSON + bar3D）
+ * ECharts 中国地图沙盘（阿里 DataV GeoJSON + effectScatter）
  */
 (function (global) {
   "use strict";
 
-  var GEO_LOCAL = "assets/geo/china.json";
+  var GEO_LOCAL = "/assets/geo/china.json";
   var GEO_CDN = "https://geo.datav.aliyun.com/areas_v3/bound/100000.json";
   var CITY_GEO = (global.BrandPilotChinaMap && global.BrandPilotChinaMap.CITY_CENTERS) || {};
 
@@ -16,7 +16,10 @@
     resizeObserver: null,
     onSelect: null,
     onDrill: null,
-    lastSelected: ""
+    lastSelected: "",
+    renderToken: 0,
+    pendingCities: [],
+    pendingSelected: ""
   };
 
   function loadChinaGeo() {
@@ -24,12 +27,38 @@
     state.geoReady = fetch(GEO_LOCAL)
       .then(function (resp) {
         if (resp.ok) return resp.json();
-        return fetch(GEO_CDN).then(function (r) { return r.json(); });
+        return fetch(GEO_CDN).then(function (r) {
+          if (!r.ok) throw new Error("geo fetch failed");
+          return r.json();
+        });
       })
       .catch(function () {
-        return fetch(GEO_CDN).then(function (r) { return r.json(); });
+        return fetch(GEO_CDN).then(function (r) {
+          if (!r.ok) throw new Error("geo cdn failed");
+          return r.json();
+        });
       });
     return state.geoReady;
+  }
+
+  function isContainerReady(container) {
+    if (!container || !container.isConnected) return false;
+    var panel = container.closest("#panelAr");
+    if (panel && !panel.classList.contains("active")) return false;
+    return container.offsetWidth > 20 && container.offsetHeight > 20;
+  }
+
+  function waitForContainerSize(container, maxMs) {
+    maxMs = maxMs || 8000;
+    return new Promise(function (resolve) {
+      var start = Date.now();
+      function tick() {
+        if (isContainerReady(container)) return resolve(true);
+        if (Date.now() - start > maxMs) return resolve(false);
+        requestAnimationFrame(tick);
+      }
+      tick();
+    });
   }
 
   function cityCoord(cityName) {
@@ -66,24 +95,6 @@
     }).filter(Boolean);
   }
 
-  function hasEchartsGl() {
-    return false;
-  }
-
-  function waitForContainerSize(container, maxMs) {
-    maxMs = maxMs || 3000;
-    return new Promise(function (resolve) {
-      var start = Date.now();
-      function tick() {
-        if (!container) return resolve(false);
-        if (container.offsetWidth > 20 && container.offsetHeight > 20) return resolve(true);
-        if (Date.now() - start > maxMs) return resolve(false);
-        requestAnimationFrame(tick);
-      }
-      tick();
-    });
-  }
-
   function ensureResizeObserver(container) {
     if (!container || state.resizeObserver || typeof ResizeObserver === "undefined") return;
     state.resizeObserver = new ResizeObserver(function () {
@@ -94,11 +105,7 @@
 
   function buildOption(cities, selectedCity) {
     var barData = buildBarData(cities, selectedCity);
-    return build2dOption(cities, selectedCity, barData);
-  }
-
-  function build2dOption(cities, selectedCity, barData) {
-    var scatter = (barData || buildBarData(cities, selectedCity)).map(function (item) {
+    var scatter = barData.map(function (item) {
       return {
         name: item.name,
         value: item.value.slice(0, 2).concat([item.gmv || 0]),
@@ -135,27 +142,18 @@
         map: "china",
         roam: true,
         zoom: 1.15,
+        center: [104.5, 35.5],
         label: { show: false },
         itemStyle: {
-          areaColor: "#f5f5f5",
-          borderColor: "#dddddd",
+          areaColor: "#f0f0f0",
+          borderColor: "#cccccc",
           borderWidth: 0.8
         },
         emphasis: {
-          itemStyle: { areaColor: "#fff8e0" }
+          itemStyle: { areaColor: "#fff8e0", borderColor: "#ffc300" }
         }
       },
       series: [
-        {
-          type: "map",
-          map: "china",
-          geoIndex: 0,
-          silent: true,
-          itemStyle: {
-            areaColor: "transparent",
-            borderColor: "transparent"
-          }
-        },
         {
           type: "effectScatter",
           coordinateSystem: "geo",
@@ -211,18 +209,34 @@
     });
   }
 
-  function render(container, cities, selectedCity, onSelect, onDrill) {
+  function scheduleRenderRetry(container, cities, selectedCity, onSelect, onDrill, attempt) {
+    attempt = attempt || 0;
+    if (attempt > 8 || !container || !container.isConnected) return;
+    setTimeout(function () {
+      render(container, cities, selectedCity, onSelect, onDrill, attempt + 1);
+    }, 120 + attempt * 120);
+  }
+
+  function render(container, cities, selectedCity, onSelect, onDrill, retryAttempt) {
+    retryAttempt = retryAttempt || 0;
     if (!container) return Promise.resolve(false);
     if (!global.echarts) return Promise.resolve(false);
+
+    var token = ++state.renderToken;
     state.onSelect = onSelect;
     state.onDrill = onDrill;
     state.lastSelected = selectedCity || "";
+    state.pendingCities = cities || [];
+    state.pendingSelected = selectedCity || "";
 
     return waitForContainerSize(container).then(function (ready) {
+      if (token !== state.renderToken) return false;
       if (!ready) {
-        console.warn("地图容器尺寸为 0，稍后重试");
+        console.warn("地图容器尚未就绪，稍后重试");
+        scheduleRenderRetry(container, cities, selectedCity, onSelect, onDrill, retryAttempt);
         return false;
       }
+
       if (!state.chart || state.container !== container) {
         dispose();
         state.container = container;
@@ -232,7 +246,7 @@
       }
 
       return loadChinaGeo().then(function (geoJson) {
-        if (!state.chart) return false;
+        if (token !== state.renderToken || !state.chart) return false;
         if (!state.registered) {
           global.echarts.registerMap("china", geoJson);
           state.registered = true;
@@ -240,6 +254,7 @@
         var citiesList = cities || [];
         state.chart.setOption(buildOption(citiesList, selectedCity), true);
         bindEvents(state.chart);
+        onResize();
         setTimeout(onResize, 0);
         setTimeout(onResize, 150);
         setTimeout(onResize, 400);
@@ -247,22 +262,51 @@
       });
     }).catch(function (err) {
       console.warn("中国地图渲染失败:", err);
+      scheduleRenderRetry(container, cities, selectedCity, onSelect, onDrill, retryAttempt);
       return false;
     });
   }
 
   function update(cities, selectedCity) {
-    if (!state.chart) return;
+    state.pendingCities = cities || [];
+    state.pendingSelected = selectedCity || state.pendingSelected;
+    if (!state.chart) {
+      if (state.container) {
+        render(
+          state.container,
+          state.pendingCities,
+          state.pendingSelected,
+          state.onSelect,
+          state.onDrill
+        );
+      }
+      return;
+    }
     state.lastSelected = selectedCity || state.lastSelected;
     state.chart.setOption(buildOption(cities || [], selectedCity), false);
+    onResize();
   }
 
   function onResize() {
-    if (state.chart) state.chart.resize();
+    if (!state.chart || !state.container) return;
+    if (!isContainerReady(state.container)) return;
+    state.chart.resize();
   }
 
   function resize() {
-    onResize();
+    if (state.chart && state.container && isContainerReady(state.container)) {
+      onResize();
+      return;
+    }
+    if (state.container && global.echarts) {
+      render(
+        state.container,
+        state.pendingCities,
+        state.pendingSelected,
+        state.onSelect,
+        state.onDrill
+      );
+    }
   }
 
   function dispose() {
@@ -277,6 +321,7 @@
     }
     state.container = null;
     state.lastSelected = "";
+    state.renderToken += 1;
   }
 
   global.BrandPilotEchartsMap = {
