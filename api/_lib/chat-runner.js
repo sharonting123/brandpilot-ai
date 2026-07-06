@@ -10,7 +10,6 @@ const { appendMessages } = require("./chat-store");
 const { resetContextCache, getContext } = require("./agent-tools");
 const { persistWorkflowRun } = require("./event-store");
 const { filterWorkflowCharts } = require("./chart-policy");
-const { buildArScene, summarizeArScene, involvesRegionAnalysis } = require("./ar-scene-builder");
 const { buildDataSpec, attachDataSpecToCharts } = require("./data-spec");
 const { streamTextChunks } = require("./sse");
 const {
@@ -44,12 +43,6 @@ function emitFriendlyStart(emit, id, name, summary) {
     name: friendlyStepName(name),
     summary: friendlyStepSummary({ name, summary })
   });
-}
-
-function slimSceneForPersist(scene) {
-  if (!scene || typeof scene !== "object") return scene;
-  const { drillSource, ...rest } = scene;
-  return { ...rest, drillSourceOmitted: Boolean(drillSource) };
 }
 
 function createProgressEmitter(emit) {
@@ -147,17 +140,8 @@ async function runChatRequest(ctx) {
 
   let dataMode = "empty";
   let warnings = [];
-  let scene = null;
   let dataSpec = null;
-  const regionRelevant = involvesRegionAnalysis(
-    message,
-    intent.workflow,
-    intent.params || {}
-  );
-  const sceneId = progress.start(
-    "场景数据",
-    regionRelevant ? "准备 AR 展厅和门店数据…" : "检查地区维度…"
-  );
+  const contextId = progress.start("经营数据", "加载品牌经营数据…");
   const contextStart = Date.now();
   const context = await getContext(brandId);
   dataMode = context.dataMode || "empty";
@@ -169,31 +153,21 @@ async function runChatRequest(ctx) {
     context,
     dataMode
   });
-  if (regionRelevant) {
-    scene = buildArScene(context, workflowResult, {
-      message,
-      workflow: intent.workflow,
-      intentParams: intent.params || {},
-      dataSpec
-    });
-    if (scene) scene.dataSpec = dataSpec;
-  }
 
-  const sceneTrace = {
-    name: "场景数据",
+  const contextTrace = {
+    name: "经营数据",
     tool: dataMode === "supabase" ? "Supabase" : "empty",
-    summary: scene
-      ? summarizeArScene(scene)
-      : regionRelevant
-        ? "沙盘数据暂不可用"
-        : "不涉及地区，已展示分析报告",
+    summary:
+      dataMode === "supabase"
+        ? "已连接 Supabase 经营底表"
+        : "当前无可用经营数据",
     durationMs: Date.now() - contextStart
   };
   if (emit) {
-    emitFriendlyStep(emit, { id: sceneId, status: "done", ...sceneTrace });
+    emitFriendlyStep(emit, { id: contextId, status: "done", ...contextTrace });
   }
 
-  let agentTrace = [intentTrace, ...(workflowResult.agentTrace || []), sceneTrace];
+  let agentTrace = [intentTrace, ...(workflowResult.agentTrace || []), contextTrace];
 
   const persistId = progress.start("事件持久化", "把这次分析记下来…");
   const persistStart = Date.now();
@@ -293,7 +267,6 @@ async function runChatRequest(ctx) {
     answer,
     charts: responseCharts,
     proposal: workflowResult.proposal || null,
-    scene,
     dataSpec,
     persistence: {
       mode: persistResult.mode,
@@ -307,9 +280,7 @@ async function runChatRequest(ctx) {
     capabilities: {
       nl2sql: true,
       rag: true,
-      eventPersistence: true,
-      regionAnalysis: regionRelevant,
-      arScene: Boolean(scene)
+      eventPersistence: true
     },
     totalDurationMs: Date.now() - startedAt
   };
@@ -328,7 +299,6 @@ async function runChatRequest(ctx) {
             workflowLabel: response.workflowLabel,
             proposal: response.proposal,
             charts: response.charts,
-            scene: slimSceneForPersist(response.scene),
             capabilities: response.capabilities,
             dataSpec: response.dataSpec,
             intent: response.intent,

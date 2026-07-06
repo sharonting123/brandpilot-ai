@@ -153,7 +153,6 @@
     if (downloadWordButton) downloadWordButton.addEventListener("click", handleDownloadWord);
     if (downloadMarkdownButton) downloadMarkdownButton.addEventListener("click", handleDownloadMarkdown);
     bindModeSwitch();
-    bindArControls();
     bindExampleButtons();
     chatInput.addEventListener("input", autoResizeInput);
 
@@ -271,9 +270,6 @@
         vizCharts.innerHTML = "";
         vizCharts.style.display = "none";
         setResultPanelsEnabled(false);
-        if (arMeta) {
-          arMeta.textContent = "发送问题后，3D 展示城市 → 商圈 → 门店，支持下钻查看指标。";
-        }
       }
       return refreshSessionList();
     });
@@ -322,11 +318,9 @@
         }
       });
       if (lastResponse) {
-        var restoreAr = shouldUseArExperience(lastResponse);
-        setResultPanelsEnabled(true, { hasAr: restoreAr });
+        setResultPanelsEnabled(true);
         renderVisualization(lastResponse);
-        if (restoreAr) syncExtendedLayers(lastResponse);
-        switchMode(restoreAr ? "ar" : "analysis");
+        switchMode("analysis");
       } else {
         setResultPanelsEnabled(false);
       }
@@ -346,7 +340,7 @@
       createAssistantAvatar().outerHTML +
       '<div class="message-body">' +
       '<div class="message-content"><p>你好！我是 <strong>' + escapeHtml(assistantName()) + '</strong>，你的专属品牌经营顾问。登录后对话会自动保存到左侧「历史对话」。</p>' +
-      '<p class="chat-hint">先输入问题并发送；提交后右侧默认展示<strong>分析报告</strong>。涉及<strong>城市/竞品/经营分析</strong>时可切换 <strong>AR 展厅</strong> 下钻，顶部<strong>联动分析条</strong>随选中城市实时刷新指标。</p>' +
+      '<p class="chat-hint">先输入问题并发送；提交后右侧会展示<strong>分析报告</strong>与图表。</p>' +
       '<div class="example-prompts">' +
       '<button class="example-btn" data-prompt="海底捞2026年6月从搜索到核销的转化链路哪里损耗最大？">🔍 6月搜索流量链路诊断</button>' +
       '<button class="example-btn" data-prompt="海底捞2026年6月在美团和抖音的表现对比一下">📊 6月竞对平台对比</button>' +
@@ -379,136 +373,56 @@
     });
   }
 
-  function setResultPanelsEnabled(enabled, options) {
-    options = options || {};
+  function setResultPanelsEnabled(enabled) {
     resultPanelsEnabled = Boolean(enabled);
 
     if (appContainer) {
       appContainer.classList.toggle("app-container--chat-only", !resultPanelsEnabled);
     }
     if (modeSwitch) {
-      modeSwitch.hidden = !resultPanelsEnabled;
+      modeSwitch.hidden = true;
     }
 
     if (!resultPanelsEnabled) {
       currentMode = "analysis";
-      return;
     }
-
-    updateExtendedModeTabs(Boolean(options.hasAr));
   }
 
-  function shouldUseArExperience(data) {
-    if (!data) return false;
-    var caps = data.capabilities || {};
-    if (!caps.regionAnalysis || !caps.arScene) return false;
-    if (data.scene && data.scene.regionRelevant) return true;
+  function shouldUseArExperience() {
     return false;
   }
 
-  function updateExtendedModeTabs(hasAr) {
-    if (!modeSwitch) return;
-    var arBtn = modeSwitch.querySelector('[data-mode="ar"]');
-    if (arBtn) arBtn.hidden = !hasAr;
-    if (!hasAr && currentMode === "ar") {
-      switchMode("analysis");
-    }
+  function updateExtendedModeTabs() {
+    if (modeSwitch) modeSwitch.hidden = true;
   }
 
   function revealResultExperience(data) {
     if (!data) return;
 
-    var useAr = shouldUseArExperience(data);
-    setResultPanelsEnabled(true, { hasAr: useAr });
+    setResultPanelsEnabled(true);
     renderVisualization(data);
     switchMode("analysis");
     if (vizLivePanel) vizLivePanel.hidden = true;
-    if (useAr) {
-      syncExtendedLayers(data);
-    }
   }
 
   function switchMode(mode) {
     if (!resultPanelsEnabled && mode !== "analysis") return;
-    if (mode === "ar" && lastResponse && !shouldUseArExperience(lastResponse)) {
-      mode = "analysis";
-    }
-    currentMode = mode || "analysis";
-    modeSwitch.querySelectorAll(".mode-btn").forEach(function (btn) {
-      btn.classList.toggle("active", btn.getAttribute("data-mode") === currentMode);
-    });
+    currentMode = "analysis";
     document.querySelectorAll("[data-mode-panel]").forEach(function (panel) {
-      panel.classList.toggle("active", panel.getAttribute("data-mode-panel") === currentMode);
+      panel.classList.toggle("active", panel.getAttribute("data-mode-panel") === "analysis");
     });
-
-    if (vizLivePanel) {
-      vizLivePanel.hidden = true;
-    }
-
-    if (currentMode === "ar") {
-      ensureArReady();
-      if (lastResponse && lastResponse.scene && window.BrandPilotAR) {
-        window.BrandPilotAR.update(lastResponse.scene);
-        setTimeout(function () {
-          if (window.BrandPilotAR) {
-            if (typeof window.BrandPilotAR.showCityMap === "function") {
-              window.BrandPilotAR.showCityMap(false);
-            }
-            window.BrandPilotAR.resize();
-            if (typeof window.BrandPilotAR.scheduleMapResize === "function") {
-              window.BrandPilotAR.scheduleMapResize();
-            }
-          }
-        }, 120);
-      }
-      if (window.BrandPilotAR) window.BrandPilotAR.resize();
-    }
+    if (vizLivePanel) vizLivePanel.hidden = true;
   }
 
-  function bindArControls() {
-    if (enterXrButton && navigator.xr) {
-      navigator.xr.isSessionSupported("immersive-vr").then(function (supported) {
-        enterXrButton.hidden = !supported;
-      }).catch(function () {
-        enterXrButton.hidden = true;
-      });
-    }
-    if (enterXrButton) {
-      enterXrButton.addEventListener("click", function () {
-        ensureArReady();
-        if (!window.BrandPilotAR) return;
-        window.BrandPilotAR.enterXR().catch(function (err) {
-          alert(err.message || "无法进入 WebXR");
-        });
-      });
-    }
-    if (resetArButton) {
-      resetArButton.addEventListener("click", function () {
-        ensureArReady();
-        if (window.BrandPilotAR && typeof window.BrandPilotAR.resetSelection === "function") {
-          window.BrandPilotAR.resetSelection();
-        } else if (lastResponse && lastResponse.scene && window.BrandPilotAR) {
-          window.BrandPilotAR.update(lastResponse.scene);
-        }
-      });
-    }
-  }
+  function bindArControls() {}
 
   function ensureArReady() {
-    if (!window.BrandPilotAR || !arStage) return false;
-    var ready = window.BrandPilotAR.init(arStage);
-    if (ready && typeof window.BrandPilotAR.setSelectionHandler === "function") {
-      window.BrandPilotAR.setSelectionHandler(handleArSelectionChange);
-    }
-    return ready;
+    return false;
   }
 
-  function handleArSelectionChange(payload) {
-    if (!payload || !payload.scope) return;
-    if (currentMode === "analysis") {
-      syncAnalysisLivePanel(payload);
-    }
-  }
+  function handleArSelectionChange() {}
+
+  function syncExtendedLayers() {}
 
   function formatLiveCompact(value) {
     var number = Number(value || 0);
@@ -1146,7 +1060,6 @@
     var persist = data.persistence || {};
     capability.innerHTML =
       "<span>智能查数</span><span>经营手册</span>" +
-      (caps.regionAnalysis && caps.arScene ? "<span>AR 展厅</span>" : "") +
       '<span class="' + (persist.persisted ? "ok" : "warn") + '">' +
       (persist.persisted ? "分析已保存" : "分析暂存本地") +
       "</span>";
@@ -1249,7 +1162,7 @@
   // ===== 可视化渲染 =====
   function renderVisualization(data) {
     destroyCharts();
-    currentDataSpec = data.dataSpec || (data.scene && data.scene.dataSpec) || null;
+    currentDataSpec = data.dataSpec || null;
     vizEmpty.style.display = "none";
 
     if (data.proposal) {
@@ -1316,38 +1229,6 @@
     }
   }
 
-  function syncExtendedLayers(data) {
-    if (!shouldUseArExperience(data)) {
-      if (arMeta) {
-        arMeta.textContent = "当前问题不涉及地区维度，请查看左侧分析报告。";
-      }
-      return;
-    }
-    if (data.scene) {
-      ensureArReady();
-      if (window.BrandPilotAR) {
-        window.BrandPilotAR.update(data.scene);
-        if (arMeta) {
-          var metaParts = [];
-          if (data.scene.topicLabel) metaParts.push(data.scene.topicLabel);
-          if (data.scene.dataSpec && data.scene.dataSpec.shortLine) {
-            metaParts.push(data.scene.dataSpec.shortLine);
-          } else if (data.scene.topicHint) {
-            metaParts.push(data.scene.topicHint);
-          }
-          if (!metaParts.length) {
-            metaParts.push(
-              ((data.scene.districts && data.scene.districts.length) || 0) + " 个商圈 · " +
-              ((data.scene.pois && data.scene.pois.length) || 0) + " 家门店"
-            );
-          }
-          arMeta.textContent = metaParts.join(" · ");
-        }
-      }
-    } else if (arMeta) {
-      arMeta.textContent = "AR 场景加载中，请稍候…";
-    }
-  }
 
   function renderProposal(proposal, dataSpec) {
     proposalTitle.textContent = proposal.title || "经营提案";

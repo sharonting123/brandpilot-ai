@@ -19,7 +19,7 @@ function buildChatMessages(history, message) {
 }
 
 const ANSWER_SCOPE_RULE =
-  "仅基于工具返回的数据回答用户所问内容；未明确询问城市/商圈/门店下钻时，不要追加城市对比表、分城市拆解或下钻式分析。";
+  "仅基于工具返回的数据回答用户所问内容；不要追加用户未询问的维度、城市对比表或分城市拆解。";
 
 module.exports = {
   buildChatMessages,

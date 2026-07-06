@@ -3,18 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="BrandPilot AI: 连锁餐饮品牌经营分析 Agent 编排系统，含 NL2SQL / RAG / 商圈地图" />
+  <meta name="description" content="BrandPilot AI: 连锁餐饮品牌经营分析 Agent 编排系统，含 NL2SQL / RAG" />
   <title>BrandPilot AI — 悦悦 · 品牌经营顾问</title>
   <link rel="stylesheet" href="assets/styles.css?v=meituan" />
-  <script src="https://cdn.bootcdn.net/ajax/libs/echarts/5.5.1/echarts.min.js"></script>
-  <script>
-    if (!window.echarts) {
-      document.write('<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"><\/script>');
-    }
-  </script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 </head>
 <body class="auth-pending">
   <div class="app-shell">
@@ -23,7 +16,7 @@
         <span class="brand-icon">BP</span>
         <div>
           <h1 class="chat-title">BrandPilot AI</h1>
-          <p class="chat-subtitle">经营分析 · AR 展厅</p>
+          <p class="chat-subtitle">经营分析</p>
         </div>
       </div>
       <div class="topbar-status">
@@ -64,10 +57,6 @@
           </div>
         </div>
 
-        <div class="mode-switch" id="modeSwitch" role="tablist" aria-label="右侧面板模式" hidden>
-          <button class="mode-btn active" data-mode="analysis" type="button">分析</button>
-          <button class="mode-btn" data-mode="ar" type="button" hidden>AR 展厅</button>
-        </div>
 
         <div class="chat-messages" id="chatMessages">
           <div class="message assistant">
@@ -80,7 +69,6 @@
                 <ul>
                   <li><strong>智能查数</strong> — 用大白话问经营数据</li>
                   <li><strong>经营手册</strong> — 结合品牌框架给建议</li>
-                  <li><strong>AR 展厅</strong> — 问题涉及城市/商圈/门店时，3D 沙盘下钻查看</li>
                 </ul>
                 <p>支持<strong>多轮追问</strong>，历史上下文会带入后续分析。演示数据均标注<strong>统计周期</strong>与<strong>数据口径</strong>，可从示例开始：</p>
                 <div class="example-prompts">
@@ -122,7 +110,7 @@
           <div class="viz-empty" id="vizEmpty">
             <div class="empty-icon">📊</div>
             <h2>可视化面板</h2>
-            <p>发送第一个问题后，这里会展示分析报告与图表；涉及地区的问题可切换 AR 展厅。</p>
+            <p>发送第一个问题后，这里会展示分析报告与图表。</p>
           </div>
 
           <div class="viz-toolbar" id="vizToolbar" hidden>
@@ -147,26 +135,6 @@
           <div class="viz-charts" id="vizCharts"></div>
           <div class="viz-answer" id="vizAnswer" style="display:none;"></div>
         </section>
-
-        <section class="mode-panel" id="panelAr" data-mode-panel="ar">
-          <div class="ar-toolbar">
-            <div>
-              <h2>AR 经营沙盘</h2>
-              <p id="arMeta">发送问题后生成沙盘；顶部可切换统计月份/区间，点击城市卡片联动指标，再下钻商圈与门店。</p>
-            </div>
-            <div class="ar-actions">
-              <button id="enterXrButton" class="ghost-button" type="button" hidden>进入 VR</button>
-              <button id="resetArButton" class="ghost-button" type="button">重置视角</button>
-            </div>
-          </div>
-          <div class="ar-stage" id="arStage"></div>
-          <div class="ar-legend">
-            <span><i class="dot green"></i>ECharts 中国地图</span>
-            <span><i class="dot blue"></i>商圈六边形</span>
-            <span><i class="dot amber"></i>门店球体</span>
-            <span><i class="dot purple"></i>下方同步指标</span>
-          </div>
-        </section>
       </main>
     </div>
   </div>
@@ -174,10 +142,6 @@
   <script src="assets/assistant.js" defer></script>
   <script src="assets/markdown.js" defer></script>
   <script src="assets/auth.js?v=username-fix" defer></script>
-  <script src="assets/china-map-layout.js?v=echarts-map" defer></script>
-  <script src="assets/ar-drill-metrics.js?v=time-filter" defer></script>
-  <script src="assets/ar-echarts-map.js?v=map-fix3" defer></script>
-  <script src="assets/ar-scene.js?v=map-fix3" defer></script>
-  <script src="assets/app.js?v=analysis-only" defer></script>
+  <script src="assets/app.js?v=no-ar" defer></script>
 </body>
 </html>
