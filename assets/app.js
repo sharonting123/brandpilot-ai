@@ -16,23 +16,18 @@
   var vizToolbar = document.getElementById("vizToolbar");
   var vizToolbarTitle = document.getElementById("vizToolbarTitle");
   var vizToolbarSubtitle = document.getElementById("vizToolbarSubtitle");
-  var vizLivePanel = document.getElementById("vizLivePanel");
-  var vizLiveFilter = document.getElementById("vizLiveFilter");
-  var vizLiveScope = document.getElementById("vizLiveScope");
-  var vizLiveCities = document.getElementById("vizLiveCities");
   var vizProposal = document.getElementById("vizProposal");
   var proposalTitle = document.getElementById("proposalTitle");
   var proposalBody = document.getElementById("proposalBody");
   var vizCharts = document.getElementById("vizCharts");
   var vizAnswer = document.getElementById("vizAnswer");
   var downloadPdfButton = document.getElementById("downloadPdfButton");
+  var downloadHtmlButton = document.getElementById("downloadHtmlButton");
   var downloadWordButton = document.getElementById("downloadWordButton");
   var downloadMarkdownButton = document.getElementById("downloadMarkdownButton");
-  var modeSwitch = document.getElementById("modeSwitch");
-  var arStage = document.getElementById("arStage");
-  var arMeta = document.getElementById("arMeta");
-  var enterXrButton = document.getElementById("enterXrButton");
-  var resetArButton = document.getElementById("resetArButton");
+  var documentUploadButton = document.getElementById("documentUploadButton");
+  var documentUploadInput = document.getElementById("documentUploadInput");
+  var chatAttachments = document.getElementById("chatAttachments");
   var authGuest = document.getElementById("authGuest");
   var authUser = document.getElementById("authUser");
   var authUserName = document.getElementById("authUserName");
@@ -50,7 +45,6 @@
   var currentDataSpec = null;
   var lastResponse = null;
   var lastChartDefs = [];
-  var currentMode = "analysis";
   var conversationHistory = [];
   var progressMessageEl = null;
   var streamAnswerText = "";
@@ -150,9 +144,10 @@
     chatInput.addEventListener("keydown", handleInputKey);
     brandSelect.addEventListener("change", handleBrandChange);
     if (downloadPdfButton) downloadPdfButton.addEventListener("click", handleDownloadPdf);
+    if (downloadHtmlButton) downloadHtmlButton.addEventListener("click", handleDownloadHtml);
     if (downloadWordButton) downloadWordButton.addEventListener("click", handleDownloadWord);
     if (downloadMarkdownButton) downloadMarkdownButton.addEventListener("click", handleDownloadMarkdown);
-    bindModeSwitch();
+    bindDocumentUpload();
     bindExampleButtons();
     chatInput.addEventListener("input", autoResizeInput);
 
@@ -305,7 +300,6 @@
               answer: msg.content,
               proposal: msg.metadata.proposal,
               charts: msg.metadata.charts,
-              scene: msg.metadata.scene,
               dataSpec: msg.metadata.dataSpec,
               workflow: msg.metadata.workflow,
               workflowLabel: msg.metadata.workflowLabel,
@@ -320,7 +314,6 @@
       if (lastResponse) {
         setResultPanelsEnabled(true);
         renderVisualization(lastResponse);
-        switchMode("analysis");
       } else {
         setResultPanelsEnabled(false);
       }
@@ -340,7 +333,7 @@
       createAssistantAvatar().outerHTML +
       '<div class="message-body">' +
       '<div class="message-content"><p>你好！我是 <strong>' + escapeHtml(assistantName()) + '</strong>，你的专属品牌经营顾问。登录后对话会自动保存到左侧「历史对话」。</p>' +
-      '<p class="chat-hint">先输入问题并发送；提交后右侧会展示<strong>分析报告</strong>与图表。</p>' +
+      '<p class="chat-hint">先输入问题并发送，或点击 📎 上传文档；右侧会展示<strong>分析报告</strong>，支持 HTML / PDF 导出。</p>' +
       '<div class="example-prompts">' +
       '<button class="example-btn" data-prompt="海底捞2026年6月从搜索到核销的转化链路哪里损耗最大？">🔍 6月搜索流量链路诊断</button>' +
       '<button class="example-btn" data-prompt="海底捞2026年6月在美团和抖音的表现对比一下">📊 6月竞对平台对比</button>' +
@@ -363,37 +356,12 @@
     });
   }
 
-  function bindModeSwitch() {
-    if (!modeSwitch) return;
-    modeSwitch.querySelectorAll(".mode-btn").forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        if (!resultPanelsEnabled) return;
-        switchMode(btn.getAttribute("data-mode"));
-      });
-    });
-  }
-
   function setResultPanelsEnabled(enabled) {
     resultPanelsEnabled = Boolean(enabled);
 
     if (appContainer) {
       appContainer.classList.toggle("app-container--chat-only", !resultPanelsEnabled);
     }
-    if (modeSwitch) {
-      modeSwitch.hidden = true;
-    }
-
-    if (!resultPanelsEnabled) {
-      currentMode = "analysis";
-    }
-  }
-
-  function shouldUseArExperience() {
-    return false;
-  }
-
-  function updateExtendedModeTabs() {
-    if (modeSwitch) modeSwitch.hidden = true;
   }
 
   function revealResultExperience(data) {
@@ -401,290 +369,6 @@
 
     setResultPanelsEnabled(true);
     renderVisualization(data);
-    switchMode("analysis");
-    if (vizLivePanel) vizLivePanel.hidden = true;
-  }
-
-  function switchMode(mode) {
-    if (!resultPanelsEnabled && mode !== "analysis") return;
-    currentMode = "analysis";
-    document.querySelectorAll("[data-mode-panel]").forEach(function (panel) {
-      panel.classList.toggle("active", panel.getAttribute("data-mode-panel") === "analysis");
-    });
-    if (vizLivePanel) vizLivePanel.hidden = true;
-  }
-
-  function bindArControls() {}
-
-  function ensureArReady() {
-    return false;
-  }
-
-  function handleArSelectionChange() {}
-
-  function syncExtendedLayers() {}
-
-  function formatLiveCompact(value) {
-    var number = Number(value || 0);
-    if (number >= 10000) return (number / 10000).toFixed(number >= 100000 ? 0 : 1) + "万";
-    return Math.round(number).toLocaleString("zh-CN");
-  }
-
-  function formatLivePercent(value) {
-    var number = Number(value || 0);
-    return (number * 100).toFixed(number >= 0.1 ? 1 : 2) + "%";
-  }
-
-  function formatLiveNumber(value) {
-    var number = Number(value || 0);
-    if (!Number.isFinite(number)) return "0";
-    return number >= 100 ? Math.round(number).toLocaleString("zh-CN") : number.toFixed(1).replace(/\.0$/, "");
-  }
-
-  function buildScopeMetricCards(scope) {
-    if (!scope || !scope.metrics) return "";
-    var m = scope.metrics;
-    var cards = [];
-    if (scope.level === "brand" || scope.level === "city") {
-      if (m.gtv != null) cards.push({ label: "GTV", value: formatLiveCompact(m.gtv) });
-      if (m.gmv != null) cards.push({ label: "GMV", value: formatLiveCompact(m.gmv) });
-      if (m.verifiedRate != null) cards.push({ label: "核销率", value: formatLivePercent(m.verifiedRate) });
-      if (m.roi != null) cards.push({ label: "ROI", value: formatLiveNumber(m.roi) });
-      if (m.avgOrderValue != null) cards.push({ label: "客单价", value: formatLiveNumber(m.avgOrderValue) + "元" });
-      if (m.storeCount != null) cards.push({ label: "门店数", value: String(m.storeCount) });
-    } else if (scope.level === "district") {
-      cards.push({ label: "门店数", value: String(m.storeCount || 0) });
-      cards.push({ label: "曝光", value: formatLiveCompact(m.exposure || 0) });
-      cards.push({ label: "访问", value: formatLiveCompact(m.visits || 0) });
-      cards.push({ label: "进店率", value: formatLivePercent(m.visitRate || 0) });
-    } else {
-      cards.push({ label: "曝光", value: formatLiveCompact(m.exposure || 0) });
-      cards.push({ label: "访问", value: formatLiveCompact(m.visits || 0) });
-      cards.push({ label: "套餐点击", value: formatLiveCompact(m.dealClicks || 0) });
-      cards.push({ label: "停留", value: formatLiveNumber(m.avgStaySeconds || 0) + "s" });
-    }
-    return cards.map(function (card) {
-      return (
-        '<div class="viz-metric-card">' +
-        '<span class="viz-metric-label">' + escapeHtml(card.label) + "</span>" +
-        '<strong class="viz-metric-value">' + escapeHtml(card.value) + "</strong>" +
-        "</div>"
-      );
-    }).join("");
-  }
-
-  function renderVizLiveFilter(scene, timeFilter) {
-    if (!vizLiveFilter || !scene) return "";
-    if (!scene.drillSource || !window.BrandPilotDrillMetrics) {
-      var label = (scene.dateRange && scene.dateRange.label) || "统计周期";
-      return (
-        '<div class="viz-live-filter-inner">' +
-        '<span class="viz-live-filter-label">统计周期</span>' +
-        '<span class="viz-live-sync-hint">' + escapeHtml(label) + " · 与 AR 沙盘同步加载中</span>" +
-        "</div>"
-      );
-    }
-    var months = window.BrandPilotDrillMetrics.listMonthOptions(scene.drillSource);
-    var filter = timeFilter || window.BrandPilotAR.getTimeFilter();
-    var monthMode = filter.mode !== "range";
-    var monthOptions = months.map(function (item) {
-      var selected = item.value === filter.monthKey ? " selected" : "";
-      return '<option value="' + escapeHtml(item.value) + '"' + selected + ">" + escapeHtml(item.label) + "</option>";
-    }).join("");
-    var presets = [
-      { id: "h1-2026", label: "2026年上半年" },
-      { id: "y2026", label: "2026年至今" },
-      { id: "full", label: "全量累计" }
-    ];
-    var presetOptions = presets.map(function (item) {
-      var selected = filter.preset === item.id ? " selected" : "";
-      return '<option value="' + escapeHtml(item.id) + '"' + selected + ">" + escapeHtml(item.label) + "</option>";
-    }).join("");
-    return (
-      '<div class="viz-live-filter-inner">' +
-      '<span class="viz-live-filter-label">统计周期</span>' +
-      '<div class="viz-live-mode">' +
-      '<button type="button" class="viz-live-mode-btn' + (monthMode ? " active" : "") + '" data-viz-time-mode="month">按月</button>' +
-      '<button type="button" class="viz-live-mode-btn' + (!monthMode ? " active" : "") + '" data-viz-time-mode="range">区间</button>' +
-      "</div>" +
-      '<select class="viz-live-select viz-live-month"' + (monthMode ? "" : ' hidden') + ' data-viz-month-select aria-label="选择月份">' +
-      monthOptions +
-      "</select>" +
-      '<select class="viz-live-select viz-live-range"' + (monthMode ? ' hidden' : "") + ' data-viz-range-preset aria-label="区间预设">' +
-      presetOptions +
-      "</select>" +
-      '<span class="viz-live-sync-hint">与 AR 沙盘同步</span>' +
-      "</div>"
-    );
-  }
-
-  function readVizTimeFilterFromDom() {
-    if (!vizLiveFilter) return null;
-    var modeBtn = vizLiveFilter.querySelector(".viz-live-mode-btn.active");
-    var mode = modeBtn ? modeBtn.getAttribute("data-viz-time-mode") : "month";
-    if (mode === "month") {
-      var monthSelect = vizLiveFilter.querySelector("[data-viz-month-select]");
-      return { mode: "month", monthKey: monthSelect ? monthSelect.value : "", from: "", to: "", preset: "" };
-    }
-    var presetSelect = vizLiveFilter.querySelector("[data-viz-range-preset]");
-    return {
-      mode: "range",
-      monthKey: "",
-      from: "",
-      to: "",
-      preset: presetSelect ? presetSelect.value : "h1-2026"
-    };
-  }
-
-  function bindVizLivePanelEvents() {
-    if (!vizLivePanel || vizLivePanel.dataset.bound) return;
-    vizLivePanel.dataset.bound = "1";
-
-    vizLivePanel.addEventListener("click", function (event) {
-      var modeBtn = event.target.closest("[data-viz-time-mode]");
-      if (modeBtn) {
-        vizLiveFilter.querySelectorAll(".viz-live-mode-btn").forEach(function (btn) {
-          btn.classList.toggle("active", btn === modeBtn);
-        });
-        var isMonth = modeBtn.getAttribute("data-viz-time-mode") === "month";
-        var monthEl = vizLiveFilter.querySelector(".viz-live-month");
-        var rangeEl = vizLiveFilter.querySelector(".viz-live-range");
-        if (monthEl) monthEl.hidden = !isMonth;
-        if (rangeEl) rangeEl.hidden = isMonth;
-        var filter = readVizTimeFilterFromDom();
-        if (filter && window.BrandPilotAR) window.BrandPilotAR.applyTimeFilter(filter);
-        return;
-      }
-      var cityBtn = event.target.closest("[data-viz-city]");
-      if (cityBtn && window.BrandPilotAR) {
-        window.BrandPilotAR.selectCity(cityBtn.getAttribute("data-viz-city"), false);
-      }
-    });
-
-    vizLivePanel.addEventListener("change", function (event) {
-      if (!event.target.closest(".viz-live-filter-inner")) return;
-      var filter = readVizTimeFilterFromDom();
-      if (filter && window.BrandPilotAR) window.BrandPilotAR.applyTimeFilter(filter);
-    });
-  }
-
-  function renderVizLiveCities(scene, selectedCity) {
-    if (!scene || !scene.drillMetrics) return "";
-    var cities = (scene.drillMetrics.cities || []).slice().sort(function (a, b) {
-      return (b.gmv || 0) - (a.gmv || 0);
-    });
-    if (!cities.length) return "";
-    var chips = cities.map(function (city) {
-      var active = city.name === selectedCity ? " active" : "";
-      return (
-        '<button type="button" class="viz-city-chip' + active + '" data-viz-city="' + escapeHtml(city.name) + '">' +
-        "<strong>" + escapeHtml(city.name) + "</strong>" +
-        "<span>GMV " + formatLiveCompact(city.gmv || 0) + "</span>" +
-        "<span>核销 " + formatLivePercent(city.verifiedRate || 0) + "</span>" +
-        "</button>"
-      );
-    }).join("");
-    return (
-      '<div class="viz-live-cities-head">' +
-      "<h4>城市对比 · 点击联动沙盘</h4>" +
-      "<p>选中城市后，上方指标与图表按该城市刷新</p>" +
-      "</div>" +
-      '<div class="viz-city-strip">' + chips + "</div>"
-    );
-  }
-
-  function syncAnalysisLivePanel(payload) {
-    if (vizLivePanel) vizLivePanel.hidden = true;
-  }
-
-  function syncAnalysisFromScene() {
-    if (vizLivePanel) vizLivePanel.hidden = true;
-  }
-
-  function scaleChartForScope(chartDef, scope, scene) {
-    var copy = JSON.parse(JSON.stringify(chartDef));
-    var dm = scene.drillMetrics || {};
-    var periodLabel = scene.dateRange && scene.dateRange.label ? scene.dateRange.label : "";
-
-    if (copy.type === "funnel") {
-      var ratio = scope.level === "brand" ? 1 : scope.level === "city" ? 0.18 : scope.level === "district" ? 0.06 : 0.02;
-      if (copy.data && copy.data.datasets && copy.data.datasets[0]) {
-        copy.data.datasets[0].data = (copy.data.datasets[0].data || []).map(function (val) {
-          return Math.round(Number(val || 0) * ratio);
-        });
-      }
-      if (scope.level !== "brand" && scope.label) {
-        copy.title = scope.label + " · " + (copy.title || "转化漏斗");
-      }
-      return copy;
-    }
-
-    if (/城市.*GMV|GMV.*城市/.test(copy.title || "") && dm.cities && dm.cities.length) {
-      var cities = dm.cities.slice().sort(function (a, b) { return (b.gmv || 0) - (a.gmv || 0); });
-      copy.data.labels = cities.map(function (c) { return c.name; });
-      copy.data.datasets[0].data = cities.map(function (c) { return Math.round((c.gmv || 0) / 10000); });
-      copy.title = "城市 GMV 分布" + (periodLabel ? "（" + periodLabel + "）" : "");
-      return copy;
-    }
-
-    if (/品牌竞品/.test(copy.title || "") && scene.brandPeerBenchmarks) {
-      var peer = scene.brandPeerBenchmarks;
-      copy.data.labels = [peer.ownBrand.name, peer.peerBrand.name];
-      copy.data.datasets = [
-        { label: "GTV（万元）", data: [peer.ownBrand.gtv / 10000, peer.peerBrand.gtv / 10000] },
-        { label: "客单价（元）", data: [peer.ownBrand.avgOrderValue, peer.peerBrand.avgOrderValue] },
-        { label: "核销率 (%)", data: [peer.ownBrand.verifiedRate * 100, peer.peerBrand.verifiedRate * 100] }
-      ];
-      if (periodLabel) copy.title = "品牌竞品 · " + periodLabel;
-      return copy;
-    }
-
-    if (/同城市 GMV/.test(copy.title || "")) {
-      var peerBundle = scene.brandPeerBenchmarks;
-      if (peerBundle && peerBundle.cities && peerBundle.cities.length) {
-        copy.data.labels = peerBundle.cities.map(function (item) { return item.city; });
-        copy.data.datasets = [
-          { label: peerBundle.ownBrand.name, data: peerBundle.cities.map(function (item) { return (item.own.gmv || 0) / 10000; }) },
-          { label: peerBundle.peerBrand.name, data: peerBundle.cities.map(function (item) { return (item.peer.gmv || 0) / 10000; }) }
-        ];
-      } else if (dm.cities && dm.cities.length) {
-        var ownCities = dm.cities.slice().sort(function (a, b) { return (b.gmv || 0) - (a.gmv || 0); });
-        copy.data.labels = ownCities.map(function (c) { return c.name; });
-        copy.data.datasets = [
-          { label: scene.brandName || "海底捞", data: ownCities.map(function (c) { return (c.gmv || 0) / 10000; }) }
-        ];
-      }
-      if (periodLabel) copy.title = "同城市 GMV 对比（" + periodLabel + "）";
-      return copy;
-    }
-
-    if (/平台对比/.test(copy.title || "") && scene.competitors && scene.competitors.length) {
-      var platforms = scene.competitors;
-      copy.data.labels = platforms.map(function (item) { return item.name; });
-      copy.data.datasets = [
-        { label: "渠道份额 (%)", data: platforms.map(function (item) { return (item.marketShare || 0) * 100; }) },
-        { label: "核销率 (%)", data: platforms.map(function (item) { return (item.verificationRate || 0) * 100; }) }
-      ];
-      if (periodLabel) copy.title = "平台对比 · " + periodLabel;
-      return copy;
-    }
-
-    if (/平台客单价/.test(copy.title || "") && scene.competitors && scene.competitors.length) {
-      copy.data.labels = scene.competitors.map(function (item) { return item.name; });
-      copy.data.datasets[0].data = scene.competitors.map(function (item) { return item.avgOrderValue || 0; });
-      return copy;
-    }
-
-    return copy;
-  }
-
-  function updateScopeLinkedCharts(scope, scene) {
-    if (!lastChartDefs || !lastChartDefs.length || !scope || !scene) return;
-    var updated = lastChartDefs.map(function (chartDef) {
-      return scaleChartForScope(chartDef, scope, scene);
-    });
-    lastChartDefs = updated;
-    renderCharts(updated);
   }
 
   // ===== 连接检查 =====
@@ -709,6 +393,54 @@
       });
   }
 
+  function bindDocumentUpload() {
+    if (!documentUploadButton || !documentUploadInput) return;
+
+    documentUploadButton.addEventListener("click", function () {
+      documentUploadInput.click();
+    });
+
+    documentUploadInput.addEventListener("change", function () {
+      var files = documentUploadInput.files;
+      documentUploadInput.value = "";
+      if (!files || !files.length || !window.BrandPilotDocuments) return;
+      statusText.textContent = "解析文档中…";
+      window.BrandPilotDocuments.addFiles(files)
+        .then(function () {
+          window.BrandPilotDocuments.renderChips(chatAttachments);
+          statusText.textContent = "就绪";
+        })
+        .catch(function (error) {
+          alert(error.message || "文档解析失败");
+          statusText.textContent = "就绪";
+        });
+    });
+
+    if (chatAttachments) {
+      chatAttachments.addEventListener("click", function (event) {
+        var btn = event.target.closest("[data-doc-remove]");
+        if (!btn || !window.BrandPilotDocuments) return;
+        window.BrandPilotDocuments.removeAttachment(btn.getAttribute("data-doc-remove"));
+        window.BrandPilotDocuments.renderChips(chatAttachments);
+      });
+    }
+  }
+
+  function formatUserMessageContent(message, attachments) {
+    var html = "<p>" + escapeHtml(message).replace(/\n/g, "<br>") + "</p>";
+    if (attachments && attachments.length) {
+      html += '<div class="message-attachments">';
+      attachments.forEach(function (item) {
+        html +=
+          '<span class="message-attachment-chip">📎 ' +
+          escapeHtml(item.filename || item.name || "文档") +
+          "</span>";
+      });
+      html += "</div>";
+    }
+    return html;
+  }
+
   // ===== 发送消息 =====
   function handleSend() {
     if (isProcessing) return;
@@ -719,11 +451,19 @@
     }
 
     var message = chatInput.value.trim();
-    if (!message) return;
+    var attachments = window.BrandPilotDocuments ? window.BrandPilotDocuments.getAttachments() : [];
+    if (!message && !attachments.length) return;
+    if (!message && attachments.length) {
+      message = "请结合上传文档内容进行分析。";
+    }
 
-    addMessage("user", message);
+    addUserMessage(message, attachments);
     chatInput.value = "";
     autoResizeInput();
+    if (window.BrandPilotDocuments) {
+      window.BrandPilotDocuments.clearAttachments();
+      window.BrandPilotDocuments.renderChips(chatAttachments);
+    }
 
     conversationHistory.push({ role: "user", content: message });
     if (conversationHistory.length > 20) {
@@ -741,6 +481,7 @@
     function runChat() {
       return runChatStream({
         message: message,
+        attachments: attachments,
         brandHint: brandHint,
         history: conversationHistory.slice(0, -1),
         sessionId: currentSessionId
@@ -967,18 +708,38 @@
   }
 
   // ===== 消息渲染 =====
+  function addUserMessage(text, attachments) {
+    var div = document.createElement("div");
+    div.className = "message user";
+
+    var avatar = document.createElement("div");
+    avatar.className = "message-avatar";
+    avatar.textContent = "👤";
+
+    var body = document.createElement("div");
+    body.className = "message-body";
+
+    var content = document.createElement("div");
+    content.className = "message-content";
+    content.innerHTML = formatUserMessageContent(text, attachments);
+
+    body.appendChild(content);
+    div.appendChild(avatar);
+    div.appendChild(body);
+    chatMessages.appendChild(div);
+    scrollToBottom();
+  }
+
   function addMessage(role, text) {
+    if (role === "user") {
+      addUserMessage(text, []);
+      return;
+    }
+
     var div = document.createElement("div");
     div.className = "message " + role;
 
-    var avatar;
-    if (role === "user") {
-      avatar = document.createElement("div");
-      avatar.className = "message-avatar";
-      avatar.textContent = "👤";
-    } else {
-      avatar = createAssistantAvatar();
-    }
+    var avatar = createAssistantAvatar();
 
     var body = document.createElement("div");
     body.className = "message-body";
@@ -1598,6 +1359,39 @@
       });
   }
 
+  var EXPORT_HTML_STYLES =
+    "body{font-family:'Microsoft YaHei','PingFang SC',sans-serif;line-height:1.65;color:#1a1f2e;max-width:920px;margin:0 auto;padding:32px 28px;background:#fff;}" +
+    "h1{font-size:28px;margin:0 0 8px;}h2{font-size:20px;margin:28px 0 12px;border-bottom:1px solid #eee;padding-bottom:6px;}" +
+    "h3{font-size:16px;margin:18px 0 8px;}p,li{font-size:14px;}table{border-collapse:collapse;width:100%;margin:12px 0;}" +
+    "td,th{border:1px solid #dde1e8;padding:8px 10px;text-align:left;font-size:13px;}th{background:#fff8e0;}" +
+    "blockquote{border-left:3px solid #ffc300;margin:12px 0;padding:8px 14px;background:#fffdf5;color:#555;}" +
+    ".export-meta{color:#666;font-size:13px;margin-bottom:24px;}.metric-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;}" +
+    ".metric-card{border:1px solid #eee;border-radius:10px;padding:12px;background:#fafafa;}" +
+    "img{max-width:100%;height:auto;border:1px solid #eee;border-radius:8px;}";
+
+  function wrapExportHtml(innerHtml, title) {
+    return (
+      "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">" +
+      "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">" +
+      "<title>" + escapeHtml(title || "BrandPilot AI 经营分析报告") + "</title>" +
+      "<style>" + EXPORT_HTML_STYLES + "</style></head><body>" +
+      innerHtml +
+      "</body></html>"
+    );
+  }
+
+  function handleDownloadHtml() {
+    var element = buildExportDocument();
+    if (!element) {
+      alert("当前没有可下载的分析内容。");
+      return;
+    }
+    showPdfStatus("正在生成 HTML…");
+    var html = wrapExportHtml(element.innerHTML, "BrandPilot AI 经营分析报告");
+    downloadBlob(html, "text/html", buildExportBaseName() + ".html");
+    showPdfStatus("就绪");
+  }
+
   function handleDownloadWord() {
     var element = buildExportDocument();
     if (!element) {
@@ -1606,15 +1400,7 @@
     }
 
     showPdfStatus("正在生成 Word…");
-    var html =
-      "<!DOCTYPE html><html><head><meta charset=\"utf-8\">" +
-      "<title>BrandPilot AI 经营分析报告</title>" +
-      "<style>body{font-family:'Microsoft YaHei','PingFang SC',sans-serif;line-height:1.6;color:#1a1f2e;}" +
-      "h1{font-size:24px;}h2{font-size:18px;margin-top:24px;}h3{font-size:15px;}" +
-      "table{border-collapse:collapse;width:100%;}td,th{border:1px solid #dde1e8;padding:8px;}" +
-      "img{max-width:100%;}</style></head><body>" +
-      element.innerHTML +
-      "</body></html>";
+    var html = wrapExportHtml(element.innerHTML, "BrandPilot AI 经营分析报告");
     downloadBlob("\ufeff" + html, "application/msword", buildExportBaseName() + ".doc");
     showPdfStatus("就绪");
   }
@@ -1755,7 +1541,7 @@
     header.className = "viz-export-header";
     header.innerHTML =
       "<h1>BrandPilot AI 经营分析报告</h1>" +
-      "<p>" + escapeHtml((vizToolbarSubtitle && vizToolbarSubtitle.textContent) || "") + "</p>";
+      '<p class="export-meta">' + escapeHtml((vizToolbarSubtitle && vizToolbarSubtitle.textContent) || "") + "</p>";
     root.appendChild(header);
 
     if (hasProposal && proposalBody) {

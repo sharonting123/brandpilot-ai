@@ -1274,6 +1274,85 @@ button, select, textarea {
   background: var(--surface);
 }
 
+.chat-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 20px 0;
+}
+
+.doc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--mt-yellow-border);
+  background: var(--mt-yellow-soft);
+  font-size: 12px;
+}
+
+.doc-chip-name {
+  font-weight: 600;
+  color: var(--ink);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc-chip-meta {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.doc-chip-remove {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.doc-upload-button {
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  transition: all var(--transition);
+}
+
+.doc-upload-button:hover {
+  border-color: var(--mt-yellow-border);
+  color: var(--ink);
+  background: var(--mt-yellow-soft);
+}
+
+.message-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.message-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  font-size: 12px;
+}
+
 .chat-input {
   flex: 1;
   padding: 10px 14px;

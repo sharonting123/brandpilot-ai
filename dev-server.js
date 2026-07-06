@@ -32,6 +32,7 @@ const apiHandlers = {
   "/api/auth/register": require("./api/auth/register"),
   "/api/auth/login": require("./api/auth/login"),
   "/api/auth/me": require("./api/auth/me"),
+  "/api/documents/parse": require("./api/documents/parse"),
   "/api/sessions": require("./api/sessions"),
   "/api/sessions/messages": require("./api/sessions/messages")
 };

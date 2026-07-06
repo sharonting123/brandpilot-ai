@@ -32,6 +32,9 @@
     },
     "api/sessions/messages.js": {
       "maxDuration": 15
+    },
+    "api/documents/parse.js": {
+      "maxDuration": 30
     }
   },
   "routes": [

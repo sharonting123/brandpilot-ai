@@ -16,7 +16,7 @@
         <span class="brand-icon">BP</span>
         <div>
           <h1 class="chat-title">BrandPilot AI</h1>
-          <p class="chat-subtitle">经营分析</p>
+          <p class="chat-subtitle">经营分析 · 文档解析</p>
         </div>
       </div>
       <div class="topbar-status">
@@ -69,8 +69,9 @@
                 <ul>
                   <li><strong>智能查数</strong> — 用大白话问经营数据</li>
                   <li><strong>经营手册</strong> — 结合品牌框架给建议</li>
+                  <li><strong>文档解析</strong> — 上传 txt / md / html / docx / pdf 等，结合文档分析</li>
                 </ul>
-                <p>支持<strong>多轮追问</strong>，历史上下文会带入后续分析。演示数据均标注<strong>统计周期</strong>与<strong>数据口径</strong>，可从示例开始：</p>
+                <p>支持<strong>多轮追问</strong>与<strong>HTML 报告导出</strong>。演示数据均标注<strong>统计周期</strong>与<strong>数据口径</strong>，可从示例开始：</p>
                 <div class="example-prompts">
                   <button class="example-btn" data-prompt="海底捞2026年6月从搜索到核销的转化链路哪里损耗最大？">🔍 6月搜索流量链路诊断</button>
                   <button class="example-btn" data-prompt="海底捞2026年6月在美团和抖音的表现对比一下">📊 6月竞对平台对比</button>
@@ -83,7 +84,20 @@
           </div>
         </div>
 
+        <div class="chat-attachments" id="chatAttachments" hidden aria-label="已上传文档"></div>
         <div class="chat-input-area">
+          <input
+            type="file"
+            id="documentUploadInput"
+            hidden
+            multiple
+            accept=".txt,.md,.markdown,.html,.htm,.csv,.json,.docx,.pdf"
+          />
+          <button type="button" id="documentUploadButton" class="doc-upload-button" title="上传文档（txt/md/html/csv/json/docx/pdf）" aria-label="上传文档">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 1 1-8.49-8.49l9.19-9.19a4 4 0 1 1 5.66 5.66l-9.2 9.19a2 2 0 1 1-2.83-2.83l8.49-8.48" />
+            </svg>
+          </button>
           <textarea
             id="chatInput"
             class="chat-input"
@@ -100,12 +114,6 @@
       </section>
 
       <main class="viz-panel" id="vizPanel">
-        <div class="viz-live-panel" id="vizLivePanel" hidden>
-          <div class="viz-live-filter" id="vizLiveFilter" aria-label="统计周期筛选"></div>
-          <div class="viz-live-scope" id="vizLiveScope" aria-label="当前选中指标"></div>
-          <div class="viz-live-cities" id="vizLiveCities" aria-label="城市快捷分析"></div>
-        </div>
-
         <section class="mode-panel active" id="panelAnalysis" data-mode-panel="analysis">
           <div class="viz-empty" id="vizEmpty">
             <div class="empty-icon">📊</div>
@@ -119,6 +127,7 @@
               <p class="viz-toolbar-subtitle" id="vizToolbarSubtitle"></p>
             </div>
             <div class="viz-export-actions">
+              <button id="downloadHtmlButton" class="export-button" type="button" title="下载 HTML 文档">HTML</button>
               <button id="downloadPdfButton" class="pdf-button" type="button" title="下载 PDF 文档">PDF</button>
               <button id="downloadWordButton" class="export-button" type="button" title="下载 Word 文档">Word</button>
               <button id="downloadMarkdownButton" class="export-button" type="button" title="下载 Markdown 文档">Markdown</button>
@@ -142,6 +151,7 @@
   <script src="assets/assistant.js" defer></script>
   <script src="assets/markdown.js" defer></script>
   <script src="assets/auth.js?v=username-fix" defer></script>
-  <script src="assets/app.js?v=no-ar" defer></script>
+  <script src="assets/document-upload.js?v=doc-upload" defer></script>
+  <script src="assets/app.js?v=doc-upload" defer></script>
 </body>
 </html>

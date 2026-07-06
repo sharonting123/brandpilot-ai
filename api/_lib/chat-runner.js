@@ -11,6 +11,7 @@ const { resetContextCache, getContext } = require("./agent-tools");
 const { persistWorkflowRun } = require("./event-store");
 const { filterWorkflowCharts } = require("./chart-policy");
 const { buildDataSpec, attachDataSpecToCharts } = require("./data-spec");
+const { composeMessageWithAttachments } = require("./document-parser");
 const { streamTextChunks } = require("./sse");
 const {
   friendlyStepName,
@@ -69,6 +70,7 @@ function createProgressEmitter(emit) {
 async function runChatRequest(ctx) {
   const {
     message,
+    attachments = [],
     brandId,
     brandName,
     history,
@@ -81,10 +83,11 @@ async function runChatRequest(ctx) {
   const startedAt = Date.now();
   const requestId = makeRequestId();
   const progress = createProgressEmitter(emit);
+  const effectiveMessage = composeMessageWithAttachments(message, attachments);
 
   const intentId = progress.start("意图识别路由", "意图识别中…");
   const intentStart = Date.now();
-  const intent = await recognizeIntent(message, modelConfig);
+  const intent = await recognizeIntent(effectiveMessage, modelConfig);
   const intentTrace = {
     name: "意图识别路由",
     tool: recognitionModeLabel(intent.recognitionMode),
@@ -117,7 +120,9 @@ async function runChatRequest(ctx) {
   );
 
   const workflowResult = await workflowModule.execute({
-    message,
+    message: effectiveMessage,
+    userMessage: message,
+    attachments,
     modelConfig,
     brandName,
     intentParams: intent.params || {},
@@ -147,7 +152,7 @@ async function runChatRequest(ctx) {
   dataMode = context.dataMode || "empty";
   warnings = context.warnings || [];
   dataSpec = buildDataSpec({
-    message,
+    message: effectiveMessage,
     workflow: intent.workflow,
     intentParams: intent.params || {},
     context,
@@ -223,7 +228,7 @@ async function runChatRequest(ctx) {
 
   const responseCharts = attachDataSpecToCharts(
     filterWorkflowCharts(workflowResult.charts || [], {
-      message,
+      message: effectiveMessage,
       workflow: intent.workflow,
       agentTrace
     }),

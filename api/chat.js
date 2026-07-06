@@ -15,10 +15,11 @@ module.exports = async function handler(req, res) {
       throw new HttpError(405, "METHOD_NOT_ALLOWED", "使用 POST /api/chat。");
     }
 
-    const body = await readJson(req, { limitBytes: 128 * 1024 });
+    const body = await readJson(req, { limitBytes: 256 * 1024 });
     const message = String(body.message || "").trim();
-    if (!message) {
-      throw new HttpError(400, "MESSAGE_REQUIRED", "请提供 message 字段。");
+    const attachments = Array.isArray(body.attachments) ? body.attachments : [];
+    if (!message && !attachments.length) {
+      throw new HttpError(400, "MESSAGE_REQUIRED", "请提供 message 或上传文档。");
     }
 
     const sessionId = body.sessionId ? String(body.sessionId) : "";
@@ -31,6 +32,7 @@ module.exports = async function handler(req, res) {
 
     const ctx = {
       message,
+      attachments,
       brandId,
       brandName,
       history,
