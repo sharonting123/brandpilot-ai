@@ -174,18 +174,24 @@
     });
   }
 
-  function renderChips(container) {
+  function renderChips(container, options) {
     if (!container) return;
     if (!state.items.length) {
       container.innerHTML = "";
       container.hidden = true;
+      container.classList.remove("upload-just-completed");
       return;
     }
     container.hidden = false;
+    var opts = options || {};
     var hint =
-      '<p class="doc-attachments-hint">📎 已添加 ' +
-      state.items.length +
-      " 个文档。系统会<strong>切分为段落</strong>，发送时按你的问题选取相关片段（图片会先 OCR 识别）。</p>";
+      opts.justCompleted
+        ? '<p class="doc-attachments-hint doc-attachments-hint--done">✅ 上传完成！已添加 ' +
+          (opts.addedCount || state.items.length) +
+          " 个文档，可输入问题后点发送；图片已 OCR 的会按问题选相关片段。</p>"
+        : '<p class="doc-attachments-hint">📎 已添加 ' +
+          state.items.length +
+          " 个文档。系统会<strong>切分为段落</strong>，发送时按你的问题选取相关片段（图片会先 OCR 识别）。</p>";
     container.innerHTML = hint + state.items.map(function (item) {
       var meta = item.format.toUpperCase() + " · " + item.charCount.toLocaleString("zh-CN") + " 字 · " + item.chunkCount + " 段";
       if (item.sourceType === "ocr") {
@@ -200,6 +206,13 @@
         "</span>"
       );
     }).join("");
+    if (opts.justCompleted) {
+      container.classList.add("upload-just-completed");
+      window.setTimeout(function () {
+        container.classList.remove("upload-just-completed");
+        if (state.items.length) renderChips(container);
+      }, 6000);
+    }
   }
 
   function escapeHtml(value) {

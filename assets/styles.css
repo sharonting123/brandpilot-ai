@@ -1298,6 +1298,43 @@ button, select, textarea {
   font-weight: 600;
 }
 
+.doc-attachments-hint--done {
+  border-color: #52c41a;
+  background: #f6ffed;
+  color: #135200;
+  animation: doc-upload-flash 0.6s ease;
+}
+
+.chat-attachments.upload-just-completed .doc-chip {
+  animation: doc-upload-flash 0.6s ease;
+}
+
+@keyframes doc-upload-flash {
+  0% { box-shadow: 0 0 0 0 rgba(255, 209, 0, 0.45); }
+  70% { box-shadow: 0 0 0 8px rgba(255, 209, 0, 0); }
+  100% { box-shadow: none; }
+}
+
+.doc-upload-button.is-uploading {
+  opacity: 0.65;
+  cursor: wait;
+  position: relative;
+}
+
+.doc-upload-button.is-uploading::after {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  border: 2px solid transparent;
+  border-top-color: var(--mt-yellow);
+  border-radius: 50%;
+  animation: doc-upload-spin 0.8s linear infinite;
+}
+
+@keyframes doc-upload-spin {
+  to { transform: rotate(360deg); }
+}
+
 .doc-chip {
   display: inline-flex;
   align-items: center;
@@ -2036,6 +2073,13 @@ button, select, textarea {
   font-weight: 700;
   margin: 0 0 16px;
   color: var(--mt-black);
+}
+
+.chart-description {
+  margin: -8px 0 14px;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 1.55;
 }
 
 .chart-wrapper canvas {
@@ -3698,4 +3742,3 @@ button, select, textarea {
     display: block !important;
   }
 }
-

@@ -47,6 +47,8 @@
 
   // ===== 状态 =====
   var isProcessing = false;
+  var docUploadBusy = false;
+  var statusProtectedUntil = 0;
   var resultPanelsEnabled = false;
   var chartInstances = [];
   var chartExports = [];
@@ -381,6 +383,18 @@
   }
 
   // ===== 连接检查 =====
+  function setStatusText(text, options) {
+    if (!statusText) return;
+    statusText.textContent = text || "就绪";
+    if (options && options.protectMs) {
+      statusProtectedUntil = Date.now() + options.protectMs;
+    }
+  }
+
+  function isStatusProtected() {
+    return Date.now() < statusProtectedUntil || docUploadBusy || isProcessing;
+  }
+
   function checkConnection() {
     fetch("/api/health")
       .then(function (resp) { return resp.json(); })
@@ -388,17 +402,17 @@
         if (data.status === "ok") {
           connectionDot.classList.add("connected");
           connectionDot.classList.remove("disconnected");
-          statusText.textContent = "就绪";
+          if (!isStatusProtected()) setStatusText("就绪");
         } else {
           connectionDot.classList.add("disconnected");
           connectionDot.classList.remove("connected");
-          statusText.textContent = "降级";
+          if (!isStatusProtected()) setStatusText("降级");
         }
       })
       .catch(function () {
         connectionDot.classList.add("disconnected");
         connectionDot.classList.remove("connected");
-        statusText.textContent = "离线";
+        if (!isStatusProtected()) setStatusText("离线");
       });
   }
 
@@ -406,6 +420,14 @@
     if (!chatInput) return;
     var hasDocs = window.BrandPilotDocuments && window.BrandPilotDocuments.getAttachments().length;
     if (!hasDocs) chatInput.placeholder = defaultChatPlaceholder;
+  }
+
+  function setDocumentUploadBusy(busy) {
+    docUploadBusy = Boolean(busy);
+    if (!documentUploadButton) return;
+    documentUploadButton.classList.toggle("is-uploading", docUploadBusy);
+    documentUploadButton.disabled = docUploadBusy || isProcessing;
+    documentUploadButton.setAttribute("aria-busy", docUploadBusy ? "true" : "false");
   }
 
   function bindDocumentUpload() {
@@ -419,30 +441,38 @@
       var files = documentUploadInput.files;
       documentUploadInput.value = "";
       if (!files || !files.length || !window.BrandPilotDocuments) return;
-      statusText.textContent = window.BrandPilotDocuments.hasPendingImages(files)
-        ? "OCR 识别中…"
-        : "解析文档中…";
+      setDocumentUploadBusy(true);
+      setStatusText(
+        window.BrandPilotDocuments.hasPendingImages(files) ? "OCR 识别中…" : "解析文档中…"
+      );
       window.BrandPilotDocuments.addFiles(files)
         .then(function (added) {
-          window.BrandPilotDocuments.renderChips(chatAttachments);
+          window.BrandPilotDocuments.renderChips(chatAttachments, {
+            justCompleted: true,
+            addedCount: (added && added.length) || 1
+          });
           var count = (added && added.length) || 1;
           var hasOcr = (added || []).some(function (item) { return item.sourceType === "ocr"; });
           var names = (added || []).map(function (item) { return item.filename; }).join("、");
-          statusText.textContent = hasOcr
-            ? "已识别 " + count + " 个文件（OCR）"
-            : "已添加 " + count + " 个文档";
+          setStatusText(
+            hasOcr ? "✅ 已识别 " + count + " 个文件" : "✅ 已添加 " + count + " 个文档",
+            { protectMs: 8000 }
+          );
           if (chatInput) {
             chatInput.placeholder =
               names +
               " 已就绪，输入问题后发送；或直接发送让 AI 分析文档内容";
           }
+          if (chatAttachments && typeof chatAttachments.scrollIntoView === "function") {
+            chatAttachments.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          }
         })
         .catch(function (error) {
           alert(error.message || "文档解析失败");
-          statusText.textContent = "文档解析失败";
-          window.setTimeout(function () {
-            if (statusText.textContent === "文档解析失败") statusText.textContent = "就绪";
-          }, 3000);
+          setStatusText("文档解析失败", { protectMs: 4000 });
+        })
+        .finally(function () {
+          setDocumentUploadBusy(false);
         });
     });
 
@@ -454,7 +484,7 @@
         window.BrandPilotDocuments.renderChips(chatAttachments);
         resetChatInputPlaceholder();
         if (!window.BrandPilotDocuments.getAttachments().length) {
-          statusText.textContent = "就绪";
+          setStatusText("就绪");
         }
       });
     }
@@ -477,7 +507,7 @@
 
   // ===== 发送消息 =====
   function handleSend() {
-    if (isProcessing) return;
+    if (isProcessing || docUploadBusy) return;
 
     if (!window.BrandPilotAuth || !window.BrandPilotAuth.isLoggedIn()) {
       redirectToLogin();
@@ -508,6 +538,7 @@
     isProcessing = true;
     sendButton.disabled = true;
     statusText.textContent = "分析中";
+    setDocumentUploadBusy(false);
 
     var startTime = Date.now();
     var brandHint = brandSelect.value || "haidilao";
@@ -1193,6 +1224,12 @@
       title.className = "chart-title";
       title.textContent = chartDef.title || "图表 " + (index + 1);
       wrapper.appendChild(title);
+      if (chartDef.description) {
+        var desc = document.createElement("p");
+        desc.className = "chart-description";
+        desc.textContent = chartDef.description;
+        wrapper.appendChild(desc);
+      }
 
       if (chartDef.type === "funnel") {
         var funnelEl = renderCustomFunnel(chartDef);
