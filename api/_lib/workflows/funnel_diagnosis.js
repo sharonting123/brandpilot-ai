@@ -34,29 +34,8 @@ function getSystemPrompt(brandName, params) {
 }
 
 async function buildToolDefinitions() {
-  const [{ tool }, { z }] = await Promise.all([
-    import("ai"),
-    import("zod")
-  ]);
-
-  const { TOOL_REGISTRY } = require("../agent-tools");
-
-  return {
-    computeFunnel: tool({
-      description: "计算搜索曝光到核销订单的7阶段转化漏斗，找最大损耗点",
-      parameters: z.object({
-        brandId: z.string().default("haidilao").describe("品牌 ID")
-      }),
-      execute: async (args) => await TOOL_REGISTRY.computeFunnel.fn(args)
-    }),
-    queryBrandData: tool({
-      description: "查询品牌基础数据（POI、套餐等）",
-      parameters: z.object({
-        brandId: z.string().default("haidilao").describe("品牌 ID")
-      }),
-      execute: async (args) => await TOOL_REGISTRY.queryBrandData.fn(args)
-    })
-  };
+  const { buildSharedTools } = require("../ai-tools-factory");
+  return buildSharedTools(["computeFunnel", "queryBrandData", "retrieveKnowledge", "runNl2Sql"]);
 }
 
 function buildFunnelChart(funnelStr) {

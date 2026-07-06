@@ -3,24 +3,22 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="BrandPilot AI: 连锁餐饮品牌经营分析 Agent 编排系统" />
+  <meta name="description" content="BrandPilot AI: 连锁餐饮品牌经营分析 Agent 编排系统，含 NL2SQL / RAG / AR / 数字人" />
   <title>BrandPilot AI — 品牌经营 Agent</title>
   <link rel="stylesheet" href="assets/styles.css" />
-  <!-- Chart.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-  <!-- html2pdf CDN -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 </head>
 <body>
   <div class="app-container">
-    <!-- 左侧对话区 -->
     <aside class="chat-panel" id="chatPanel">
       <div class="chat-header">
         <div class="chat-brand">
           <span class="brand-icon">BP</span>
           <div>
             <h1 class="chat-title">BrandPilot AI</h1>
-            <p class="chat-subtitle">品牌经营 Agent 编排系统</p>
+            <p class="chat-subtitle">经营分析 · AR · 数字人</p>
           </div>
         </div>
         <div class="chat-status">
@@ -29,7 +27,6 @@
         </div>
       </div>
 
-      <!-- 品牌选择 -->
       <div class="brand-selector">
         <label class="selector-label">当前品牌</label>
         <select id="brandSelect" class="selector-input">
@@ -37,21 +34,26 @@
         </select>
       </div>
 
-      <!-- 对话流 -->
+      <div class="mode-switch" id="modeSwitch" role="tablist" aria-label="右侧面板模式">
+        <button class="mode-btn active" data-mode="analysis" type="button">分析</button>
+        <button class="mode-btn" data-mode="ar" type="button">AR 展厅</button>
+        <button class="mode-btn" data-mode="human" type="button">数字人</button>
+      </div>
+
       <div class="chat-messages" id="chatMessages">
-        <!-- 欢迎消息 -->
         <div class="message assistant">
           <div class="message-avatar">🤖</div>
           <div class="message-body">
             <div class="message-content">
-              <p>你好！我是 BrandPilot AI 品牌经营助手。我能帮你：</p>
+              <p>你好！我是 BrandPilot AI。当前版本已接入：</p>
               <ul>
-                <li><strong>品牌年度提案</strong> — 全链路分析 + 策略建议 + 可下载提案</li>
-                <li><strong>链路诊断</strong> — 搜索到核销漏斗分析，找最大损耗点</li>
-                <li><strong>竞对对比</strong> — 美团 vs 抖音 vs 私域多平台对比</li>
-                <li><strong>数据问答</strong> — 查具体数据如 GMV、核销率、ROI 等</li>
+                <li><strong>NL2SQL</strong> — 自然语言精确查数</li>
+                <li><strong>RAG</strong> — 经营框架与品牌资产检索</li>
+                <li><strong>事件持久化</strong> — Agent 轨迹写入 Supabase</li>
+                <li><strong>AR 展厅</strong> — Three.js / WebXR 城市漏斗空间</li>
+                <li><strong>数字人</strong> — TTS 口播 + 视频导出</li>
               </ul>
-              <p>目前支持品牌：<strong>海底捞</strong>。请直接说出你的需求：</p>
+              <p>目前支持品牌：<strong>海底捞</strong>。可从示例开始：</p>
               <div class="example-prompts">
                 <button class="example-btn" data-prompt="帮海底捞做一份2026上半年的年度提案">📋 生成年度提案</button>
                 <button class="example-btn" data-prompt="海底捞从搜索到核销的转化链路哪里损耗最大？">🔍 链路诊断</button>
@@ -63,7 +65,6 @@
         </div>
       </div>
 
-      <!-- 输入区 -->
       <div class="chat-input-area">
         <textarea
           id="chatInput"
@@ -80,45 +81,81 @@
       </div>
     </aside>
 
-    <!-- 右侧可视化面板 -->
     <main class="viz-panel" id="vizPanel">
-      <!-- 空状态 -->
-      <div class="viz-empty" id="vizEmpty">
-        <div class="empty-icon">📊</div>
-        <h2>可视化面板</h2>
-        <p>在左侧输入问题开始分析，图表和提案将显示在这里。</p>
-      </div>
-
-      <!-- 提案内容（annual_proposal 时显示） -->
-      <div class="viz-proposal" id="vizProposal" style="display:none;">
-        <div class="proposal-toolbar">
-          <h2 class="proposal-title" id="proposalTitle">经营提案</h2>
-          <button id="downloadPdfButton" class="pdf-button" title="下载 PDF">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
-            下载 PDF
-          </button>
+      <section class="mode-panel active" id="panelAnalysis" data-mode-panel="analysis">
+        <div class="viz-empty" id="vizEmpty">
+          <div class="empty-icon">📊</div>
+          <h2>可视化面板</h2>
+          <p>在左侧输入问题开始分析，图表、提案、AR 与数字人都会基于本次结果更新。</p>
         </div>
-        <div class="proposal-body" id="proposalBody"></div>
-      </div>
 
-      <!-- 图表区域 -->
-      <div class="viz-charts" id="vizCharts"></div>
+        <div class="viz-proposal" id="vizProposal" style="display:none;">
+          <div class="proposal-toolbar">
+            <h2 class="proposal-title" id="proposalTitle">经营提案</h2>
+            <button id="downloadPdfButton" class="pdf-button" title="下载 PDF">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              下载 PDF
+            </button>
+          </div>
+          <div class="proposal-body" id="proposalBody"></div>
+        </div>
 
-      <!-- 对话式回答（非提案场景） -->
-      <div class="viz-answer" id="vizAnswer" style="display:none;"></div>
+        <div class="viz-charts" id="vizCharts"></div>
+        <div class="viz-answer" id="vizAnswer" style="display:none;"></div>
+      </section>
+
+      <section class="mode-panel" id="panelAr" data-mode-panel="ar">
+        <div class="ar-toolbar">
+          <div>
+            <h2>AR 城市展厅</h2>
+            <p id="arMeta">拖拽旋转，滚轮缩放。生成提案后会同步城市柱与漏斗塔。</p>
+          </div>
+          <div class="ar-actions">
+            <button id="enterXrButton" class="ghost-button" type="button">进入 WebXR</button>
+            <button id="resetArButton" class="ghost-button" type="button">重置视角</button>
+          </div>
+        </div>
+        <div class="ar-stage" id="arStage"></div>
+        <div class="ar-legend">
+          <span><i class="dot green"></i>高 ROI 城市柱</span>
+          <span><i class="dot blue"></i>中 ROI 城市柱</span>
+          <span><i class="dot amber"></i>待提升城市柱</span>
+          <span><i class="dot purple"></i>漏斗塔</span>
+        </div>
+      </section>
+
+      <section class="mode-panel" id="panelHuman" data-mode-panel="human">
+        <div class="dh-layout">
+          <div class="dh-stage-wrap">
+            <canvas id="dhCanvas" width="720" height="420"></canvas>
+            <div class="dh-status" id="dhStatus">待命</div>
+            <div class="dh-subtitle" id="dhSubtitle" aria-live="polite">等待口播内容…</div>
+            <div class="dh-controls">
+              <button id="dhSpeakButton" class="primary-button" type="button">开始播报</button>
+              <button id="dhStopButton" class="ghost-button" type="button">停止</button>
+              <button id="dhRecordButton" class="ghost-button" type="button">导出视频</button>
+              <button id="dhStopRecordButton" class="ghost-button" type="button">结束导出</button>
+            </div>
+          </div>
+          <div class="dh-script" id="dhScriptPanel">
+            <p class="dh-empty">生成提案或完成分析后，这里会出现数字人口播脚本。</p>
+          </div>
+        </div>
+      </section>
     </main>
   </div>
 
-  <!-- 加载提示 -->
   <div class="loading-overlay" id="loadingOverlay" style="display:none;">
     <div class="loading-spinner"></div>
     <p class="loading-text" id="loadingText">Agent 正在分析...</p>
   </div>
 
+  <script src="assets/ar-scene.js" defer></script>
+  <script src="assets/digital-human.js" defer></script>
   <script src="assets/app.js" defer></script>
 </body>
 </html>

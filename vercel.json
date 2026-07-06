@@ -9,6 +9,9 @@
     "api/agent-run.js": {
       "maxDuration": 60
     },
+    "api/events.js": {
+      "maxDuration": 10
+    },
     "api/health.js": {
       "maxDuration": 10
     },

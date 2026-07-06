@@ -242,6 +242,22 @@ async function getBrandAssets(params) {
   });
 }
 
+/**
+ * 工具：NL2SQL 自然语言查数
+ */
+async function runNl2Sql(params) {
+  const nl2sql = require("./nl2sql");
+  return nl2sql.runNl2Sql(params);
+}
+
+/**
+ * 工具：RAG 知识检索
+ */
+async function retrieveKnowledge(params) {
+  const rag = require("./rag");
+  return rag.retrieveKnowledge(params);
+}
+
 // ===== 辅助函数 =====
 
 function sumFields(rows, fields) {
@@ -293,6 +309,16 @@ const TOOL_REGISTRY = {
     name: "getBrandAssets",
     description: "查询品牌的分析框架、案例、预警线、话术模板等知识资产。",
     fn: getBrandAssets
+  },
+  runNl2Sql: {
+    name: "runNl2Sql",
+    description: "把自然语言问题转成只读 SQL 查询计划并返回行结果。适合「6月GMV多少」「上海ROI」这类精确问数。",
+    fn: runNl2Sql
+  },
+  retrieveKnowledge: {
+    name: "retrieveKnowledge",
+    description: "从经营分析知识库与品牌资产中检索相关证据片段（RAG），回答需引用 citations。",
+    fn: retrieveKnowledge
   }
 };
 
@@ -304,5 +330,7 @@ module.exports = {
   aggregateMonthly,
   getCompetitorBenchmark,
   getBrandAssets,
+  runNl2Sql,
+  retrieveKnowledge,
   TOOL_REGISTRY
 };

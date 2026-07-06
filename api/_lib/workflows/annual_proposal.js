@@ -5,6 +5,7 @@
  */
 
 const { TOOL_REGISTRY } = require("../agent-tools");
+const { buildSharedTools } = require("../ai-tools-factory");
 
 /**
  * 获取年度提案工作流的 system prompt
@@ -15,9 +16,11 @@ function getSystemPrompt(brandName, params) {
     "",
     "你的工作任务：",
     "1. 使用工具查询品牌数据、漏斗、月度经分和竞对基准",
-    "2. 基于数据做深入的经营分析，识别主矛盾、机会区和风险点",
-    "3. 给出可执行的策略建议和下半年推进时间线",
-    "4. 最终生成一份结构化提案，包含：指标卡、关键洞察、推荐动作、时间线、资产清单",
+    "2. 用 retrieveKnowledge 检索经营分析框架和品牌知识资产，回答引用 citations",
+    "3. 对精确数字问题可用 runNl2Sql 生成只读 SQL 查询计划",
+    "4. 基于数据做深入的经营分析，识别主矛盾、机会区和风险点",
+    "5. 给出可执行的策略建议和下半年推进时间线",
+    "6. 最终生成一份结构化提案，包含：指标卡、关键洞察、推荐动作、时间线、资产清单",
     "",
     "分析框架：",
     "- GTV 三因子拆解：交易用户数 × 购买频次 × 客单价",
@@ -42,58 +45,16 @@ function getSystemPrompt(brandName, params) {
   ].join("\n");
 }
 
-/**
- * 构建 tool() 定义（供 AI SDK generateText 使用）
- */
 async function buildToolDefinitions() {
-  const [{ tool }, { z }] = await Promise.all([
-    import("ai"),
-    import("zod")
+  return buildSharedTools([
+    "queryBrandData",
+    "computeFunnel",
+    "aggregateMonthly",
+    "getCompetitorBenchmark",
+    "getBrandAssets",
+    "runNl2Sql",
+    "retrieveKnowledge"
   ]);
-
-  const queryBrandDataFn = TOOL_REGISTRY.queryBrandData.fn;
-  const computeFunnelFn = TOOL_REGISTRY.computeFunnel.fn;
-  const aggregateMonthlyFn = TOOL_REGISTRY.aggregateMonthly.fn;
-  const getCompetitorBenchmarkFn = TOOL_REGISTRY.getCompetitorBenchmark.fn;
-  const getBrandAssetsFn = TOOL_REGISTRY.getBrandAssets.fn;
-
-  return {
-    queryBrandData: tool({
-      description: TOOL_REGISTRY.queryBrandData.description,
-      parameters: z.object({
-        brandId: z.string().default("haidilao").describe("品牌 ID")
-      }),
-      execute: async (args) => await queryBrandDataFn(args)
-    }),
-    computeFunnel: tool({
-      description: TOOL_REGISTRY.computeFunnel.description,
-      parameters: z.object({
-        brandId: z.string().default("haidilao").describe("品牌 ID")
-      }),
-      execute: async (args) => await computeFunnelFn(args)
-    }),
-    aggregateMonthly: tool({
-      description: TOOL_REGISTRY.aggregateMonthly.description,
-      parameters: z.object({
-        brandId: z.string().default("haidilao").describe("品牌 ID")
-      }),
-      execute: async (args) => await aggregateMonthlyFn(args)
-    }),
-    getCompetitorBenchmark: tool({
-      description: TOOL_REGISTRY.getCompetitorBenchmark.description,
-      parameters: z.object({
-        brandId: z.string().default("haidilao").describe("品牌 ID")
-      }),
-      execute: async (args) => await getCompetitorBenchmarkFn(args)
-    }),
-    getBrandAssets: tool({
-      description: TOOL_REGISTRY.getBrandAssets.description,
-      parameters: z.object({
-        brandId: z.string().default("haidilao").describe("品牌 ID")
-      }),
-      execute: async (args) => await getBrandAssetsFn(args)
-    })
-  };
 }
 
 /**
@@ -162,6 +123,37 @@ async function execute(params) {
   const startedAt = Date.now();
   const agentTrace = [];
 
+  let agentAnswer = "";
+  let toolCallsMade = [];
+  const toolStart = Date.now();
+
+  if (!modelConfig || !modelConfig.configured) {
+    const brandData = await TOOL_REGISTRY.queryBrandData.fn({ brandId: "haidilao" });
+    const funnelData = await TOOL_REGISTRY.computeFunnel.fn({ brandId: "haidilao" });
+    const monthlyData = await TOOL_REGISTRY.aggregateMonthly.fn({ brandId: "haidilao" });
+    const knowledge = await TOOL_REGISTRY.retrieveKnowledge.fn({
+      brandId: "haidilao",
+      query: message || "经营分析框架"
+    });
+    agentAnswer = buildFallbackAnswer(brandName, intentParams, brandData, funnelData, monthlyData) +
+      "\n\n## 知识检索\n" + knowledge;
+    agentTrace.push({
+      name: "确定性分析Agent",
+      tool: "queryBrandData → computeFunnel → aggregateMonthly → retrieveKnowledge",
+      summary: "模型未配置，使用确定性分析与 RAG",
+      durationMs: Date.now() - toolStart
+    });
+
+    return {
+      workflow: "annual_proposal",
+      answer: agentAnswer,
+      agentTrace,
+      charts: buildFallbackCharts(brandName),
+      proposal: buildFallbackProposal(brandName),
+      totalDurationMs: Date.now() - startedAt
+    };
+  }
+
   const [{ generateText }, { createOpenAI }] = await Promise.all([
     import("ai"),
     import("@ai-sdk/openai")
@@ -174,10 +166,6 @@ async function execute(params) {
 
   const toolsDefined = await buildToolDefinitions();
   const systemPrompt = getSystemPrompt(brandName, intentParams);
-
-  let agentAnswer = "";
-  let toolCallsMade = [];
-  const toolStart = Date.now();
 
   try {
     const result = await generateText({

@@ -33,22 +33,8 @@ function getSystemPrompt(brandName, params) {
 }
 
 async function buildToolDefinitions() {
-  const [{ tool }, { z }] = await Promise.all([
-    import("ai"),
-    import("zod")
-  ]);
-
-  const { TOOL_REGISTRY } = require("../agent-tools");
-
-  return {
-    getCompetitorBenchmark: tool({
-      description: "获取品牌在各平台的竞对基准数据（市场份额、核销率、客单价、补贴率、广告费率等）",
-      parameters: z.object({
-        brandId: z.string().default("haidilao").describe("品牌 ID")
-      }),
-      execute: async (args) => await TOOL_REGISTRY.getCompetitorBenchmark.fn(args)
-    })
-  };
+  const { buildSharedTools } = require("../ai-tools-factory");
+  return buildSharedTools(["getCompetitorBenchmark", "retrieveKnowledge", "runNl2Sql"]);
 }
 
 function buildComparisonChart(benchmarksStr) {

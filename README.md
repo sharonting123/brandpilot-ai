@@ -33,7 +33,9 @@ http://localhost:4173
 `npm run local` 会启动本地 API：
 
 - `/api/config`：读取 Supabase 前端配置和模型配置状态，不返回模型 Key 或服务端密钥。
-- `/api/agent-run`：服务端运行海底捞半年度多 Agent 工作流，并返回结构化提案。
+- `/api/chat`：主入口，意图识别 → 工作流（含 NL2SQL / RAG）→ 事件持久化 → 返回 charts / proposal / scene / liveScript。
+- `/api/agent-run`：兼容旧版 7 Agent 顺序管道。
+- `/api/events`：查询最近 Agent 事件。
 - `/api/health`：生产健康检查，不返回任何密钥。
 
 如需走系统代理，在 Linux/macOS 可用：
@@ -172,13 +174,27 @@ docker compose ps
 - 经分视角：GTV 三因子、take rate、广告收入占比、补贴率、城市 ROI、竞对核销率、KPI 预警线。
 - 半年度提案边界：当前样例数据不能替代 H1 全量数据，正式版需要补齐日期、城市、门店和复购维度。
 
-## 后续升级路线
+## AI / AR / 数字人扩展层
 
-第一版先把“经营分析提案闭环”跑通。后面可以分三层升级：
+当前版本已接入三层扩展能力，分析完成后可在左侧切换 **分析 / AR 展厅 / 数字人**：
 
-- AI 层：接入 NL2SQL、RAG、Agent 事件持久化和提案评估集。
-- AR 层：把当前 CSS 展厅升级为 WebXR、Three.js 或 Unity AR Foundation。
-- 数字人层：接入 TTS、字幕、形象生成、虚拟直播脚本和视频导出。
+### AI 层
+
+- **NL2SQL**：`api/_lib/nl2sql.js`，自然语言映射到只读查询模板，返回 SQL + 行结果；`data_query` 优先使用，LLM 失败时自动降级。
+- **RAG**：`api/_lib/rag.js`，检索内置经营框架 + `brand_assets`，工具名为 `retrieveKnowledge`，回答可引用 citations。
+- **Agent 事件持久化**：`api/_lib/event-store.js`，每次 `/api/chat` 完成后写入 `brand_proposals` / `agent_events`；Supabase 不可用时降级到内存缓冲。
+- **事件查询**：`GET /api/events` 返回最近 Agent 事件。
+
+### AR 层
+
+- 前端 `assets/ar-scene.js`，基于 Three.js 渲染城市 GMV 柱、漏斗塔、门店点与机会分。
+- 桌面支持拖拽旋转 / 滚轮缩放；支持浏览器 WebXR `immersive-vr`（设备可用时）。
+- 场景数据由 `/api/chat` 响应中的 `scene` 字段驱动。
+
+### 数字人层
+
+- `api/_lib/live-script.js` 根据提案/回答生成分镜口播脚本。
+- 前端 `assets/digital-human.js`：浏览器 TTS 播报、字幕同步、Canvas 虚拟形象、MediaRecorder 导出 WebM 视频。
 
 ## 生产级能力清单
 

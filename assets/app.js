@@ -21,10 +21,25 @@
   var downloadPdfButton = document.getElementById("downloadPdfButton");
   var loadingOverlay = document.getElementById("loadingOverlay");
   var loadingText = document.getElementById("loadingText");
+  var modeSwitch = document.getElementById("modeSwitch");
+  var arStage = document.getElementById("arStage");
+  var arMeta = document.getElementById("arMeta");
+  var enterXrButton = document.getElementById("enterXrButton");
+  var resetArButton = document.getElementById("resetArButton");
+  var dhCanvas = document.getElementById("dhCanvas");
+  var dhStatus = document.getElementById("dhStatus");
+  var dhSubtitle = document.getElementById("dhSubtitle");
+  var dhScriptPanel = document.getElementById("dhScriptPanel");
+  var dhSpeakButton = document.getElementById("dhSpeakButton");
+  var dhStopButton = document.getElementById("dhStopButton");
+  var dhRecordButton = document.getElementById("dhRecordButton");
+  var dhStopRecordButton = document.getElementById("dhStopRecordButton");
 
   // ===== 状态 =====
   var isProcessing = false;
   var chartInstances = [];
+  var lastResponse = null;
+  var currentMode = "analysis";
 
   // ===== 初始化 =====
   function init() {
@@ -33,8 +48,10 @@
     chatInput.addEventListener("keydown", handleInputKey);
     brandSelect.addEventListener("change", handleBrandChange);
     downloadPdfButton.addEventListener("click", handleDownloadPdf);
+    bindModeSwitch();
+    bindArControls();
+    bindDigitalHuman();
 
-    // 示例按钮
     var exampleBtns = document.querySelectorAll(".example-btn");
     exampleBtns.forEach(function (btn) {
       btn.addEventListener("click", function () {
@@ -47,6 +64,81 @@
     });
 
     chatInput.addEventListener("input", autoResizeInput);
+  }
+
+  function bindModeSwitch() {
+    if (!modeSwitch) return;
+    modeSwitch.querySelectorAll(".mode-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        switchMode(btn.getAttribute("data-mode"));
+      });
+    });
+  }
+
+  function switchMode(mode) {
+    currentMode = mode || "analysis";
+    modeSwitch.querySelectorAll(".mode-btn").forEach(function (btn) {
+      btn.classList.toggle("active", btn.getAttribute("data-mode") === currentMode);
+    });
+    document.querySelectorAll("[data-mode-panel]").forEach(function (panel) {
+      panel.classList.toggle("active", panel.getAttribute("data-mode-panel") === currentMode);
+    });
+
+    if (currentMode === "ar") {
+      ensureArReady();
+      if (lastResponse && lastResponse.scene && window.BrandPilotAR) {
+        window.BrandPilotAR.update(lastResponse.scene);
+      }
+      if (window.BrandPilotAR) window.BrandPilotAR.resize();
+    }
+  }
+
+  function bindArControls() {
+    if (enterXrButton) {
+      enterXrButton.addEventListener("click", function () {
+        ensureArReady();
+        if (!window.BrandPilotAR) return;
+        window.BrandPilotAR.enterXR().catch(function (err) {
+          alert(err.message || "无法进入 WebXR");
+        });
+      });
+    }
+    if (resetArButton) {
+      resetArButton.addEventListener("click", function () {
+        ensureArReady();
+        if (lastResponse && lastResponse.scene && window.BrandPilotAR) {
+          window.BrandPilotAR.update(lastResponse.scene);
+        }
+      });
+    }
+  }
+
+  function ensureArReady() {
+    if (!window.BrandPilotAR || !arStage) return false;
+    return window.BrandPilotAR.init(arStage);
+  }
+
+  function bindDigitalHuman() {
+    if (window.BrandPilotDigitalHuman && dhCanvas) {
+      window.BrandPilotDigitalHuman.init({
+        canvas: dhCanvas,
+        statusEl: dhStatus,
+        subtitleEl: dhSubtitle,
+        scriptEl: dhScriptPanel
+      });
+    }
+    if (dhSpeakButton) dhSpeakButton.addEventListener("click", function () {
+      if (window.BrandPilotDigitalHuman) window.BrandPilotDigitalHuman.speak();
+    });
+    if (dhStopButton) dhStopButton.addEventListener("click", function () {
+      if (window.BrandPilotDigitalHuman) window.BrandPilotDigitalHuman.stop();
+    });
+    if (dhRecordButton) dhRecordButton.addEventListener("click", function () {
+      if (window.BrandPilotDigitalHuman) window.BrandPilotDigitalHuman.startRecording();
+    });
+    if (dhStopRecordButton) dhStopRecordButton.addEventListener("click", function () {
+      if (window.BrandPilotDigitalHuman) window.BrandPilotDigitalHuman.stopRecording();
+    });
   }
 
   // ===== 连接检查 =====
@@ -108,8 +200,10 @@
       })
       .then(function (data) {
         var latency = Date.now() - startTime;
+        lastResponse = data;
         addAgentMessage(data, latency);
         renderVisualization(data);
+        syncExtendedLayers(data);
       })
       .catch(function (error) {
         addErrorMessage(error.message);
@@ -188,6 +282,20 @@
       body.appendChild(notice);
     }
 
+    // 能力与持久化提示
+    var capability = document.createElement("div");
+    capability.className = "capability-badge";
+    var caps = data.capabilities || {};
+    var persist = data.persistence || {};
+    capability.innerHTML =
+      '<span>NL2SQL</span><span>RAG</span>' +
+      (caps.arScene ? "<span>AR</span>" : "") +
+      (caps.digitalHuman ? "<span>数字人</span>" : "") +
+      '<span class="' + (persist.persisted ? "ok" : "warn") + '">' +
+      (persist.persisted ? "事件已落库" : "事件内存缓存") +
+      "</span>";
+    body.appendChild(capability);
+
     // 简要回答摘要
     var content = document.createElement("div");
     content.className = "message-content";
@@ -244,6 +352,27 @@
 
     if (data.charts && data.charts.length > 0) {
       renderCharts(data.charts);
+    }
+  }
+
+  function syncExtendedLayers(data) {
+    if (data.scene) {
+      ensureArReady();
+      if (window.BrandPilotAR) {
+        window.BrandPilotAR.update(data.scene);
+        if (arMeta) {
+          arMeta.textContent =
+            (data.scene.brandName || "品牌") +
+            " · " +
+            ((data.scene.cities && data.scene.cities.length) || 0) +
+            " 座城市柱 · 机会分 " +
+            (data.scene.opportunityScore || "-");
+        }
+      }
+    }
+
+    if (window.BrandPilotDigitalHuman) {
+      window.BrandPilotDigitalHuman.setScript(data.liveScript || null);
     }
   }
 

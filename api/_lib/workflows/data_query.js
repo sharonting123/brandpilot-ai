@@ -4,6 +4,7 @@
  */
 
 const { TOOL_REGISTRY } = require("../agent-tools");
+const { buildSharedTools } = require("../ai-tools-factory");
 
 function getSystemPrompt(brandName) {
   return [
@@ -11,10 +12,13 @@ function getSystemPrompt(brandName) {
     "",
     "你的任务：",
     "1. 理解用户问的是哪个维度的数据（GMV、核销率、曝光、订单、ROI、客单价等）",
-    "2. 调用合适的工具获取数据",
-    "3. 用简洁清晰的语言回答，附带具体数字",
+    "2. 优先调用 runNl2Sql 把自然语言转成只读 SQL 查询并取数",
+    "3. 若需要口径解释，调用 retrieveKnowledge 检索知识库",
+    "4. 用简洁清晰的语言回答，附带具体数字，并可引用 SQL 结果",
     "",
     "可用工具：",
+    "- runNl2Sql：自然语言 -> SQL 计划 + 行结果（优先）",
+    "- retrieveKnowledge：检索分析框架与口径解释",
     "- queryBrandData：品牌全量数据概览",
     "- computeFunnel：漏斗各阶段数据",
     "- aggregateMonthly：月度经营数据（GTV、用户数、频次、客单、变现率等）",
@@ -22,7 +26,7 @@ function getSystemPrompt(brandName) {
     "",
     "回复要点：",
     "- 直接回答数字，不要过度展开",
-    "- 如果用户问的是月度数据，优先用 aggregateMonthly",
+    "- 如果用户问的是月度数据，优先用 runNl2Sql 或 aggregateMonthly",
     "- 如果用户问的是漏斗/转化，用 computeFunnel",
     "- 如果数据模式为 fixture，必须告知用户",
     "- 用中文回答，清晰标注数值和单位",
@@ -31,41 +35,14 @@ function getSystemPrompt(brandName) {
 }
 
 async function buildToolDefinitions() {
-  const [{ tool }, { z }] = await Promise.all([
-    import("ai"),
-    import("zod")
+  return buildSharedTools([
+    "runNl2Sql",
+    "retrieveKnowledge",
+    "queryBrandData",
+    "computeFunnel",
+    "aggregateMonthly",
+    "getCompetitorBenchmark"
   ]);
-
-  return {
-    queryBrandData: tool({
-      description: TOOL_REGISTRY.queryBrandData.description,
-      parameters: z.object({
-        brandId: z.string().default("haidilao").describe("品牌 ID")
-      }),
-      execute: async (args) => await TOOL_REGISTRY.queryBrandData.fn(args)
-    }),
-    computeFunnel: tool({
-      description: TOOL_REGISTRY.computeFunnel.description,
-      parameters: z.object({
-        brandId: z.string().default("haidilao").describe("品牌 ID")
-      }),
-      execute: async (args) => await TOOL_REGISTRY.computeFunnel.fn(args)
-    }),
-    aggregateMonthly: tool({
-      description: TOOL_REGISTRY.aggregateMonthly.description,
-      parameters: z.object({
-        brandId: z.string().default("haidilao").describe("品牌 ID")
-      }),
-      execute: async (args) => await TOOL_REGISTRY.aggregateMonthly.fn(args)
-    }),
-    getCompetitorBenchmark: tool({
-      description: TOOL_REGISTRY.getCompetitorBenchmark.description,
-      parameters: z.object({
-        brandId: z.string().default("haidilao").describe("品牌 ID")
-      }),
-      execute: async (args) => await TOOL_REGISTRY.getCompetitorBenchmark.fn(args)
-    })
-  };
 }
 
 function buildTrendChart(monthlyRaw) {
@@ -93,6 +70,21 @@ async function execute(params) {
   const startedAt = Date.now();
   const agentTrace = [];
 
+  let monthlyRaw = null;
+  let answer = "";
+  const toolStart = Date.now();
+
+  if (!modelConfig || !modelConfig.configured) {
+    const fallback = await runNl2SqlFallback(message, brandName, "模型未配置");
+    return {
+      workflow: "data_query",
+      answer: fallback.answer,
+      agentTrace: fallback.agentTrace,
+      charts: fallback.charts,
+      totalDurationMs: Date.now() - startedAt
+    };
+  }
+
   const [{ generateText }, { createOpenAI }] = await Promise.all([
     import("ai"),
     import("@ai-sdk/openai")
@@ -105,10 +97,6 @@ async function execute(params) {
 
   const toolsDefined = await buildToolDefinitions();
   const systemPrompt = getSystemPrompt(brandName);
-
-  let monthlyRaw = null;
-  let answer = "";
-  const toolStart = Date.now();
 
   try {
     const result = await generateText({
@@ -148,33 +136,14 @@ async function execute(params) {
       durationMs: Date.now() - toolStart
     });
   } catch (error) {
-    monthlyRaw = await TOOL_REGISTRY.aggregateMonthly.fn({ brandId: "haidilao" });
-    const data = JSON.parse(monthlyRaw);
-    const latest = data.latest || {};
-    const totals = data.totals || {};
-
-    answer = [
-      "# " + brandName + " 数据查询结果（确定性分析）",
-      "",
-      "## 最新月度数据",
-      "- **月份**：" + (latest.month || "N/A"),
-      "- **GTV**：" + (latest.gtv ? (latest.gtv / 10000).toFixed(1) + "万元" : "N/A"),
-      "- **活跃用户**：" + (latest.activeUsers ? latest.activeUsers.toLocaleString() : "N/A"),
-      "- **客单价**：" + (latest.avgOrderValue ? latest.avgOrderValue.toFixed(1) + "元" : "N/A"),
-      "- **核销率**：" + (latest.verifiedRate ? (latest.verifiedRate * 100).toFixed(1) + "%" : "N/A"),
-      "- **综合 take rate**：" + (latest.takeRate ? (latest.takeRate * 100).toFixed(2) + "%" : "N/A"),
-      "",
-      "## H1 累计",
-      "- **总 GTV**：" + (totals.gtv ? (totals.gtv / 100000000).toFixed(2) + "亿" : "N/A"),
-      "- **总支付订单**：" + (totals.paidOrders ? totals.paidOrders.toLocaleString() : "N/A"),
-      "",
-      data.dataMode === "fixture" ? "> 当前使用演示数据，实际数值以正式环境为准。" : ""
-    ].filter(Boolean).join("\n");
-
+    const fallback = await runNl2SqlFallback(message, brandName, error.message);
+    answer = fallback.answer;
+    monthlyRaw = fallback.monthlyRaw;
+    agentTrace.push(...fallback.agentTrace);
     agentTrace.push({
       name: "数据查询Agent",
-      tool: "fallback",
-      summary: "LLM 调用失败：" + error.message + "，使用确定性数据",
+      tool: "nl2sql_fallback",
+      summary: "LLM 调用失败，已用 NL2SQL 降级",
       durationMs: Date.now() - toolStart
     });
   }
@@ -187,6 +156,45 @@ async function execute(params) {
     agentTrace,
     charts,
     totalDurationMs: Date.now() - startedAt
+  };
+}
+
+async function runNl2SqlFallback(message, brandName, reason) {
+  const nlStart = Date.now();
+  const nlRaw = await TOOL_REGISTRY.runNl2Sql.fn({ brandId: "haidilao", question: message });
+  const nl = JSON.parse(nlRaw);
+  const monthlyRaw = await TOOL_REGISTRY.aggregateMonthly.fn({ brandId: "haidilao" });
+  const previewRows = (nl.rows || []).slice(0, 5);
+  const rowLines = previewRows.map((row) =>
+    "- " + Object.keys(row).map((k) => k + "=" + row[k]).join("，")
+  );
+
+  return {
+    monthlyRaw,
+    charts: buildTrendChart(monthlyRaw),
+    agentTrace: [
+      {
+        name: "NL2SQL",
+        tool: nl.templateId || "runNl2Sql",
+        summary: nl.explanation || "完成自然语言到 SQL 映射",
+        durationMs: Date.now() - nlStart
+      }
+    ],
+    answer: [
+      "# " + brandName + " 数据查询结果（NL2SQL）",
+      "",
+      "## 生成 SQL",
+      "```sql",
+      nl.sql || "",
+      "```",
+      "",
+      "## 查询结果（前 " + previewRows.length + " 行）",
+      ...(rowLines.length ? rowLines : ["- 无匹配行"]),
+      "",
+      nl.dataMode === "fixture" ? "> 当前使用演示数据，实际数值以正式环境为准。" : "",
+      "",
+      reason ? "> 已走 NL2SQL 路径：" + reason : ""
+    ].filter(Boolean).join("\n")
   };
 }
 

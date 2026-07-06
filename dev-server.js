@@ -27,6 +27,7 @@ const apiHandlers = {
   "/api/config": require("./api/config"),
   "/api/agent-run": require("./api/agent-run"),
   "/api/chat": require("./api/chat"),
+  "/api/events": require("./api/events"),
   "/api/health": require("./api/health")
 };
 
