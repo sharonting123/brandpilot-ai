@@ -147,7 +147,8 @@ async function generateStructuredProposal(agentAnswer, modelConfig, brandName, p
     model,
     schema: ProposalSchema,
     system,
-    prompt: agentAnswer
+    prompt: agentAnswer,
+    maxOutputTokens: modelConfig.maxTokens
   });
 
   return object;
@@ -185,7 +186,8 @@ async function execute(params) {
       messages: [{ role: "user", content: message }],
       tools: toolsDefined,
       maxSteps: 10,
-      temperature: 0.3
+      temperature: 0.3,
+      maxOutputTokens: modelConfig.maxTokens
     });
 
     agentAnswer = result.text;

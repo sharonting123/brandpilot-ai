@@ -117,7 +117,8 @@ async function execute(params) {
       messages: [{ role: "user", content: message }],
       tools: toolsDefined,
       maxSteps: 6,
-      temperature: 0.3
+      temperature: 0.3,
+      maxOutputTokens: modelConfig.maxTokens
     });
 
     answer = result.text;

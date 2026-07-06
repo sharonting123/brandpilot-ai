@@ -82,7 +82,8 @@ async function recognizeIntentWithLLM(message, modelConfig) {
     model,
     schema: IntentSchema,
     system: systemPrompt,
-    prompt: message
+    prompt: message,
+    maxOutputTokens: modelConfig.maxTokens
   });
 
   return object;

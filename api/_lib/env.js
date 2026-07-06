@@ -4,7 +4,7 @@ function getModelConfig(env = process.env) {
   const apiKey = env.MODEL_API_KEY || env.OPENAI_API_KEY || "";
   const baseUrl = (env.MODEL_API_BASE_URL || env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
   const model = env.MODEL_NAME || env.OPENAI_MODEL || DEFAULT_MODEL;
-  const maxTokens = clampNumber(env.MODEL_MAX_TOKENS, 256, 8192, 4096);
+  const maxTokens = clampNumber(env.MODEL_MAX_TOKENS, 256, 200000, 4096);
   const timeoutMs = clampNumber(env.MODEL_TIMEOUT_MS, 5000, 65000, 55000);
 
   return {
