@@ -1,7 +1,7 @@
 /**
  * Agent 事件持久化
  * 将提案与 agentTrace 写入 Supabase brand_proposals / agent_events。
- * Supabase 不可用时降级为内存缓冲，保证主流程不失败。
+ * Supabase 不可用时直接抛错，便于排查问题。
  */
 
 const { getSupabaseConfig } = require("./env");
@@ -20,7 +20,7 @@ async function persistWorkflowRun(payload = {}) {
     agentTrace = [],
     proposal = null,
     answer = "",
-    dataMode = "fixture",
+    dataMode = "empty",
     warnings = [],
     totalDurationMs = 0
   } = payload;
@@ -42,16 +42,13 @@ async function persistWorkflowRun(payload = {}) {
     persisted: false,
     proposalId: null,
     eventIds: [],
-    mode: "memory"
+    mode: "failed"
   };
 
   const config = getSupabaseConfig(process.env);
   if (!config.configured) {
-    pushMemory(eventRecord);
-    return {
-      ...eventRecord,
-      warning: "Supabase 未配置，Agent 事件仅缓存在内存中。"
-    };
+    // 调试态：不再降级到内存缓冲，直接抛错暴露 Supabase 未配置
+    throw new Error("事件持久化失败：Supabase 未配置（SUPABASE_URL/ANON_KEY 缺失）。调试态已关闭内存降级。");
   }
 
   try {
@@ -142,19 +139,16 @@ async function persistWorkflowRun(payload = {}) {
     pushMemory(eventRecord);
     return eventRecord;
   } catch (error) {
-    eventRecord.warning = `事件持久化失败，已降级内存：${error.message}`;
-    pushMemory(eventRecord);
-    return eventRecord;
+    // 调试态：不再降级到内存缓冲，直接抛错暴露持久化失败
+    throw new Error("事件持久化失败：" + error.message);
   }
 }
 
 async function listRecentEvents(limit = 20) {
   const config = getSupabaseConfig(process.env);
   if (!config.configured) {
-    return {
-      mode: "memory",
-      events: memoryBuffer.slice(0, limit)
-    };
+    // 调试态：不再降级到内存，直接抛错
+    throw new Error("事件查询失败：Supabase 未配置。调试态已关闭内存降级。");
   }
 
   try {
@@ -179,11 +173,8 @@ async function listRecentEvents(limit = 20) {
       events: Array.isArray(rows) ? rows : []
     };
   } catch (error) {
-    return {
-      mode: "memory",
-      warning: error.message,
-      events: memoryBuffer.slice(0, limit)
-    };
+    // 调试态：不再降级到内存，直接抛错
+    throw new Error("事件查询失败：" + error.message);
   }
 }
 

@@ -139,44 +139,11 @@ async function execute(params) {
       durationMs: Date.now() - toolStart
     });
   } catch (error) {
-    const { TOOL_REGISTRY } = require("../agent-tools");
-    funnelRaw = await TOOL_REGISTRY.computeFunnel.fn({ brandId: "haidilao" });
-    const funnel = JSON.parse(funnelRaw);
-    const bottleneck = funnel.bottleneck;
-
-    answer = [
-      "# " + brandName + " 搜索到核销链路诊断（确定性分析）",
-      "",
-      "## 漏斗概览",
-      funnel.funnel.map((s) =>
-        "- **" + s.stage + "**：" + s.count.toLocaleString() + "（" + (s.rateFromPrevious !== null ? (s.rateFromPrevious * 100).toFixed(1) + "%" : "起点") + "）"
-      ).join("\n"),
-      "",
-      "## 最大损耗点",
-      "最大损耗在「" + bottleneck.from + " → " + bottleneck.to + "」，转化率仅 " + (bottleneck.conversionRate * 100).toFixed(1) + "%",
-      "",
-      "## 损耗原因分析",
-      "- POI 页面信息不足，用户无法快速判断是否值得进店消费",
-      "- 套餐展示方式不够吸引，缺少场景化推荐",
-      "- 下单决策路径较长，存在流失",
-      "",
-      "## 优化建议",
-      "- 优化 POI 页面的套餐组展示，按场景（聚餐/单人/家庭）分类推荐",
-      "- 缩短下单流程，减少跳转步骤",
-      "- 加入限时优惠/会员权益标签，提升下单紧迫感",
-      "",
-      "> 确定性分析模式，建议配置 MODEL_API_KEY 获得 AI 增强诊断。"
-    ].join("\n");
-
-    tracePush(agentTrace, onProgress, {
-      name: "链路诊断Agent",
-      tool: "fallback",
-      summary: "LLM 调用失败：" + error.message + "，使用确定性分析",
-      durationMs: Date.now() - toolStart
-    });
+    // 调试态：LLM 失败不再降级到确定性分析，直接抛错暴露问题
+    throw new Error("链路诊断 Agent LLM 调用失败：" + error.message);
   }
 
-  const charts = funnelRaw ? buildFunnelChart(funnelRaw) : buildFallbackCharts();
+  const charts = funnelRaw ? buildFunnelChart(funnelRaw) : [];
 
   return {
     workflow: "funnel_diagnosis",

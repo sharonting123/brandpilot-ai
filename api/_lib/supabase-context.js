@@ -3,13 +3,29 @@ const { DATE_RANGE, generateHaidilaoDrillFixture, filterByDateRange, filterMonth
 
 async function loadSupabaseContext(config = getSupabaseConfig(process.env), options = {}) {
   const brandId = options.brandId || "haidilao";
+  const dateFrom = options.dateFrom || DATE_RANGE.from;
+  const dateTo = options.dateTo || DATE_RANGE.to;
   if (!config.configured) {
-    return withFixture({
+    // 调试态：不再降级到 fixture，直接暴露 Supabase 未配置
+    return {
       connected: false,
-      dataMode: "fixture",
+      dataMode: "unavailable",
       errors: ["SUPABASE_URL or SUPABASE_ANON_KEY is not configured"],
-      warnings: ["使用内置海底捞演示数据，不能代表真实生产底表。"]
-    });
+      warnings: [],
+      dateRange: { from: dateFrom, to: dateTo },
+      brandProfile: null,
+      pois: [],
+      deals: [],
+      funnelEvents: [],
+      dailyFacts: { searchFacts: [], poiFacts: [], campaignFacts: [] },
+      monthlyFacts: [],
+      cityMonthlyFacts: [],
+      competitorBenchmarks: [],
+      peerBrandProfile: null,
+      peerBrandMonthlyFacts: [],
+      peerCityMonthlyFacts: [],
+      assets: []
+    };
   }
 
   const endpoint = config.url.replace(/\/$/, "");
@@ -18,8 +34,6 @@ async function loadSupabaseContext(config = getSupabaseConfig(process.env), opti
     Authorization: `Bearer ${config.anonKey}`,
     "Content-Type": "application/json"
   };
-  const dateFrom = options.dateFrom || DATE_RANGE.from;
-  const dateTo = options.dateTo || DATE_RANGE.to;
   const queries = {
     brandProfile: `${endpoint}/rest/v1/dim_brand?brand_id=eq.${encodeURIComponent(brandId)}&select=*&limit=1`,
     pois: `${endpoint}/rest/v1/dim_poi?brand_id=eq.${encodeURIComponent(brandId)}&select=*&limit=200`,
@@ -49,9 +63,9 @@ async function loadSupabaseContext(config = getSupabaseConfig(process.env), opti
 
   const context = {
     connected: errors.length < entries.length,
-    dataMode: hasData ? "supabase" : "fixture",
+    dataMode: hasData ? "supabase" : "empty",
     errors,
-    warnings: hasData ? [] : ["Supabase 未返回可用数据，已降级到内置海底捞演示数据。"],
+    warnings: hasData ? [] : ["Supabase 未返回任何可用数据，请检查数据库连接与种子数据（调试态：不再降级到演示数据）。"],
     dateRange: { from: dateFrom, to: dateTo },
     brandProfile: rowsByKey.brandProfile?.[0] || null,
     pois: rowsByKey.pois || [],
@@ -71,7 +85,8 @@ async function loadSupabaseContext(config = getSupabaseConfig(process.env), opti
     assets: rowsByKey.assets || []
   };
 
-  return withPeerFixture(hasData ? context : withFixture(context));
+  // 调试态：不再用 fixture 补齐空字段，也不再补呷哺呷哺竞品 fixture，直接返回真实查询结果
+  return context;
 }
 
 function withPeerFixture(context) {

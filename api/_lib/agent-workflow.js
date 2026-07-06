@@ -327,50 +327,40 @@ function qualityAgent(state) {
 }
 
 async function proposalComposerAgent(state, modelConfig) {
-  const deterministic = buildDeterministicProposal(state);
+  // 调试态：模型未配置不再降级到确定性提案，直接抛错暴露问题
   if (!modelConfig.configured) {
-    return {
-      ...deterministic,
-      summary: "模型未配置，已使用确定性经分 Agent 结果生成提案。"
-    };
+    throw new Error("提案包装 Agent 失败：模型未配置（MODEL_API_KEY 缺失）。调试态已关闭确定性降级。");
   }
 
-  try {
-    const modelDraft = await requestJsonModel({
-      modelConfig,
-      maxTokens: modelConfig.maxTokens,
-      system: [
-        "你是 BrandPilot AI 的提案包装 Agent，只负责把已完成的多 Agent 结果改写成清晰的半年度品牌提案。",
-        "禁止编造外部事实；必须保留数据口径限制；必须围绕海底捞 2026 H1 半年度提案。",
-        "只输出严格 JSON，不要 Markdown。",
-        "顶层字段必须包含：metrics, insights, actions, timeline, assets, liveScript, arPlan, proposal, evidence。"
-      ].join("\n"),
-      user: {
-        requestId: state.requestId,
-        brief: state.outputs[agentDefinitions.brief.id].brief,
-        data: state.outputs[agentDefinitions.data.id],
-        attribution: state.outputs[agentDefinitions.attribution.id],
-        analysis: state.outputs[agentDefinitions.analysis.id],
-        strategy: state.outputs[agentDefinitions.strategy.id],
-        quality: state.outputs[agentDefinitions.quality.id],
-        outputRules: {
-          metrics: "4 items",
-          insights: "4 items",
-          actions: "4 items",
-          timeline: "3 items",
-          evidence: "6 items max"
-        }
+  // 调试态：模型失败不再降级到确定性提案，直接抛错暴露问题
+  const modelDraft = await requestJsonModel({
+    modelConfig,
+    maxTokens: modelConfig.maxTokens,
+    system: [
+      "你是 BrandPilot AI 的提案包装 Agent，只负责把已完成的多 Agent 结果改写成清晰的半年度品牌提案。",
+      "禁止编造外部事实；必须保留数据口径限制；必须围绕海底捞 2026 H1 半年度提案。",
+      "只输出严格 JSON，不要 Markdown。",
+      "顶层字段必须包含：metrics, insights, actions, timeline, assets, liveScript, arPlan, proposal, evidence。"
+    ].join("\n"),
+    user: {
+      requestId: state.requestId,
+      brief: state.outputs[agentDefinitions.brief.id].brief,
+      data: state.outputs[agentDefinitions.data.id],
+      attribution: state.outputs[agentDefinitions.attribution.id],
+      analysis: state.outputs[agentDefinitions.analysis.id],
+      strategy: state.outputs[agentDefinitions.strategy.id],
+      quality: state.outputs[agentDefinitions.quality.id],
+      outputRules: {
+        metrics: "4 items",
+        insights: "4 items",
+        actions: "4 items",
+        timeline: "3 items",
+        evidence: "6 items max"
       }
-    });
+    }
+  });
 
-    return mergeComposerOutput(deterministic, modelDraft);
-  } catch (error) {
-    return {
-      ...deterministic,
-      summary: `模型包装失败，已回退到确定性经分结果：${error.message}`,
-      modelWarning: error.message
-    };
-  }
+  return mergeComposerOutput(buildDeterministicProposal(state), modelDraft);
 }
 
 function buildApiResult(state, modelConfig) {

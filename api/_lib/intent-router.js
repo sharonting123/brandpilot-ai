@@ -250,35 +250,21 @@ async function recognizeIntent(message, modelConfig) {
     };
   }
 
-  if (modelConfig && modelConfig.configured) {
-    try {
-      const result = await recognizeIntentWithLLM(message, modelConfig);
-      const enriched =
-        result.workflow === "competitor_benchmark"
-          ? { ...result, params: enrichCompetitorParams(message, result.params) }
-          : result;
-      return {
-        ...enriched,
-        recognitionMode: "llm",
-        confidenceMeta: buildConfidenceMeta({ ...enriched, recognitionMode: "llm" })
-      };
-    } catch (error) {
-      console.warn("LLM 意图识别失败，降级到关键词规则：", error.message);
-      const fallback = recognizeIntentWithKeywords(message);
-      return {
-        ...fallback,
-        recognitionMode: "keyword_fallback",
-        llmError: error.message,
-        confidenceMeta: buildConfidenceMeta({ ...fallback, recognitionMode: "keyword_fallback" })
-      };
-    }
+  // 调试态：模型未配置不再降级到关键词规则，直接抛错暴露配置问题
+  if (!modelConfig || !modelConfig.configured) {
+    throw new Error("意图识别失败：模型未配置（MODEL_API_KEY 缺失）。调试态已关闭关键词降级，请配置模型后重试。");
   }
 
-  const fallback = recognizeIntentWithKeywords(message);
+  // 调试态：LLM 处理失败不再降级到关键词规则，直接抛错暴露模型问题
+  const result = await recognizeIntentWithLLM(message, modelConfig);
+  const enriched =
+    result.workflow === "competitor_benchmark"
+      ? { ...result, params: enrichCompetitorParams(message, result.params) }
+      : result;
   return {
-    ...fallback,
-    recognitionMode: "keyword_only",
-    confidenceMeta: buildConfidenceMeta({ ...fallback, recognitionMode: "keyword_only" })
+    ...enriched,
+    recognitionMode: "llm",
+    confidenceMeta: buildConfidenceMeta({ ...enriched, recognitionMode: "llm" })
   };
 }
 

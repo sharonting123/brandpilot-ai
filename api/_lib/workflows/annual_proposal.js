@@ -36,7 +36,7 @@ function getSystemPrompt(brandName, params) {
     "约束：",
     "- 只使用工具返回的真实数据，不编造外部事实",
     "- 结论必须落到可验证的指标和可执行的动作",
-    "- 如果数据模式为 fixture（演示数据），需在提案中标注",
+    "- 如果数据模式为 empty 或 unavailable（无可用数据），需在提案中标注",
     "- 在最终回复中用中文明了的语言呈现提案",
     "",
     "你的回复需要包含：",
@@ -138,34 +138,8 @@ async function execute(params) {
   reportProgress(onProgress, buildStepStart("年度提案 Agent", "拉取品牌数据并生成提案…"));
 
   if (!modelConfig || !modelConfig.configured) {
-    const brandData = await TOOL_REGISTRY.queryBrandData.fn({ brandId: "haidilao" });
-    const funnelData = await TOOL_REGISTRY.computeFunnel.fn({ brandId: "haidilao" });
-    const monthlyData = await TOOL_REGISTRY.aggregateMonthly.fn({ brandId: "haidilao" });
-    const knowledge = await TOOL_REGISTRY.retrieveKnowledge.fn({
-      brandId: "haidilao",
-      query: message || "经营分析框架"
-    });
-    agentAnswer = buildFallbackAnswer(brandName, intentParams, brandData, funnelData, monthlyData) +
-      "\n\n## 知识检索\n" + knowledge;
-    tracePush(agentTrace, onProgress, {
-      name: "确定性分析Agent",
-      tool: "queryBrandData → computeFunnel → aggregateMonthly → retrieveKnowledge",
-      summary: "模型未配置，使用确定性分析与 RAG",
-      durationMs: Date.now() - toolStart
-    });
-
-    return {
-      workflow: "annual_proposal",
-      answer: agentAnswer,
-      agentTrace,
-      charts: buildFallbackCharts(brandName, shouldShowGtvTrendChart({
-        message,
-        workflow: "annual_proposal",
-        toolsUsed: ["aggregateMonthly"]
-      })),
-      proposal: buildFallbackProposal(brandName),
-      totalDurationMs: Date.now() - startedAt
-    };
+    // 调试态：模型未配置不再降级到确定性分析，直接抛错暴露问题
+    throw new Error("年度提案 Agent 失败：模型未配置（MODEL_API_KEY 缺失）。调试态已关闭确定性降级。");
   }
 
   const [{ generateText }, { createOpenAI }] = await Promise.all([
@@ -222,24 +196,13 @@ async function execute(params) {
       durationMs: Date.now() - toolStart
     });
   } catch (error) {
-    tracePush(agentTrace, onProgress, {
-      name: "推理Agent",
-      tool: "fallback",
-      summary: "LLM 调用失败：" + error.message + "，使用确定性分析",
-      durationMs: Date.now() - toolStart
-    });
-
-    const brandData = await TOOL_REGISTRY.queryBrandData.fn({ brandId: "haidilao" });
-    const funnelData = await TOOL_REGISTRY.computeFunnel.fn({ brandId: "haidilao" });
-    const monthlyData = await TOOL_REGISTRY.aggregateMonthly.fn({ brandId: "haidilao" });
-
-    agentAnswer = buildFallbackAnswer(brandName, intentParams, brandData, funnelData, monthlyData);
+    // 调试态：LLM 失败不再降级到确定性分析，直接抛错暴露问题
+    throw new Error("年度提案 Agent LLM 推理失败：" + error.message);
   }
 
-  // 用 generateObject 提取结构化提案（时间预算内才执行，避免 60s 网关超时）
+  // 调试态：取消 38s 超时跳过保护，结构化失败直接抛错，不再降级到对话式回答
   let structuredProposal = null;
-  const elapsedBeforeStruct = Date.now() - startedAt;
-  if (modelConfig.configured && elapsedBeforeStruct < 38000) {
+  if (modelConfig.configured) {
     try {
       const genStart = Date.now();
       const promptText = String(agentAnswer || "");
@@ -258,34 +221,15 @@ async function execute(params) {
         durationMs: Date.now() - genStart
       });
     } catch (error) {
-      tracePush(agentTrace, onProgress, {
-        name: "提案结构化Agent",
-        tool: "fallback",
-        summary: "结构化提取失败：" + error.message + "，使用对话式回答",
-        durationMs: 0
-      });
+      // 调试态：结构化失败不再降级到对话式回答，直接抛错暴露问题
+      throw new Error("提案结构化 Agent 失败：" + error.message);
     }
-  } else if (modelConfig.configured) {
-    tracePush(agentTrace, onProgress, {
-      name: "提案结构化Agent",
-      tool: "skipped",
-      summary: "主推理耗时 " + elapsedBeforeStruct + "ms，跳过结构化提取以防超时",
-      durationMs: 0
-    });
   }
 
-  // 构建图表
+  // 构建图表：调试态不再用 buildFallbackCharts 兜底，无结构化图表则返回空
   let charts = [];
-  const toolsUsed = toolCallsMade.map((t) => t.toolName);
-  const includeGtvTrend = shouldShowGtvTrendChart({
-    message,
-    workflow: "annual_proposal",
-    toolsUsed
-  });
-  if (structuredProposal && structuredProposal.charts) {
+  if (structuredProposal && structuredProposal.charts && structuredProposal.charts.length) {
     charts = structuredProposal.charts;
-  } else {
-    charts = buildFallbackCharts(brandName, includeGtvTrend);
   }
 
   return {
@@ -293,7 +237,7 @@ async function execute(params) {
     answer: agentAnswer,
     agentTrace,
     charts,
-    proposal: structuredProposal || buildFallbackProposal(brandName),
+    proposal: structuredProposal,
     tokenUsage,
     totalDurationMs: Date.now() - startedAt
   };

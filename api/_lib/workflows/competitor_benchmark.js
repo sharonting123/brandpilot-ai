@@ -277,13 +277,8 @@ async function execute(params) {
       durationMs: Date.now() - toolStart
     });
   } catch (error) {
-    answer = buildDeterministicAnswer(brandName, platforms, peerData, focus);
-    tracePush(agentTrace, onProgress, {
-      name: "竞对分析Agent",
-      tool: "fallback",
-      summary: "LLM 调用失败：" + error.message + "，使用确定性分析",
-      durationMs: Date.now() - toolStart
-    });
+    // 调试态：LLM 失败不再降级到确定性分析，直接抛错暴露问题
+    throw new Error("竞对分析 Agent LLM 调用失败：" + error.message);
   }
 
   const charts = [

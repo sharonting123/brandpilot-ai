@@ -32,7 +32,7 @@ function getSystemPrompt(brandName) {
     "- 直接回答数字，不要过度展开",
     "- 如果用户问的是月度数据，优先用 runNl2Sql 或 aggregateMonthly",
     "- 如果用户问的是漏斗/转化，用 computeFunnel",
-    "- 如果数据模式为 fixture，必须告知用户",
+    "- 如果数据模式为 empty 或 unavailable，必须告知用户当前无可用数据",
     "- 用中文回答，清晰标注数值和单位",
     "品牌固定为" + brandName + "。"
   ].join("\n");
@@ -81,14 +81,8 @@ async function execute(params) {
   reportProgress(onProgress, buildStepStart("数据查询 Agent", "执行 NL2SQL 与数据检索…"));
 
   if (!modelConfig || !modelConfig.configured) {
-    const fallback = await runNl2SqlFallback(message, brandName, "模型未配置");
-    return {
-      workflow: "data_query",
-      answer: fallback.answer,
-      agentTrace: fallback.agentTrace,
-      charts: fallback.charts,
-      totalDurationMs: Date.now() - startedAt
-    };
+    // 调试态：模型未配置不再降级到 NL2SQL，直接抛错暴露问题
+    throw new Error("数据查询 Agent 失败：模型未配置（MODEL_API_KEY 缺失）。调试态已关闭 NL2SQL 降级。");
   }
 
   const [{ generateText }, { createOpenAI }] = await Promise.all([
@@ -153,16 +147,8 @@ async function execute(params) {
       durationMs: Date.now() - toolStart
     });
   } catch (error) {
-    const fallback = await runNl2SqlFallback(message, brandName, error.message);
-    answer = fallback.answer;
-    monthlyRaw = fallback.monthlyRaw;
-    (fallback.agentTrace || []).forEach((step) => tracePush(agentTrace, onProgress, step));
-    tracePush(agentTrace, onProgress, {
-      name: "数据查询Agent",
-      tool: "nl2sql_fallback",
-      summary: "LLM 调用失败，已用 NL2SQL 降级",
-      durationMs: Date.now() - toolStart
-    });
+    // 调试态：LLM 失败不再降级到 NL2SQL，直接抛错暴露问题
+    throw new Error("数据查询 Agent LLM 调用失败：" + error.message);
   }
 
   const charts =
@@ -215,7 +201,7 @@ async function runNl2SqlFallback(message, brandName, reason) {
       "## 查询结果（前 " + previewRows.length + " 行）",
       ...(rowLines.length ? rowLines : ["- 无匹配行"]),
       "",
-      nl.dataMode === "fixture" ? "> 当前使用演示数据，实际数值以正式环境为准。" : "",
+      (nl.dataMode === "empty" || nl.dataMode === "unavailable") ? "> 当前无可用数据（Supabase 未配置或未返回数据）。" : "",
       "",
       reason ? "> 已走 NL2SQL 路径：" + reason : ""
     ].filter(Boolean).join("\n")

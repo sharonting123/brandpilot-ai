@@ -228,7 +228,8 @@ function pickTemplate(question) {
     }
   }
 
-  return best || QUERY_TEMPLATES[0];
+  // 调试态：命不中模板不再回落到默认模板，直接返回 null，由调用方报「没有此类数据」
+  return best;
 }
 
 /**
@@ -245,6 +246,17 @@ async function runNl2Sql(params = {}) {
   const context = await getContext(brandId);
   const filters = extractFilters(question);
   const template = pickTemplate(question);
+  // 调试态：未命中任何模板，直接报「没有此类数据」，不再默认回落
+  if (!template) {
+    return JSON.stringify({
+      question,
+      error: "NO_MATCHING_TEMPLATE",
+      message: "没有此类数据：未匹配到对应的数据查询模板，请换一种问法或说明具体指标/维度。",
+      filters,
+      dataMode: context.dataMode,
+      availableTemplates: QUERY_TEMPLATES.map((t) => ({ id: t.id, keywords: t.keywords }))
+    });
+  }
   const sql = template.sql(brandId, filters);
   const rows = template.run(context, filters);
 

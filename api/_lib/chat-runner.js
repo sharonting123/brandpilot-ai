@@ -145,7 +145,7 @@ async function runChatRequest(ctx) {
     });
   }
 
-  let dataMode = "fixture";
+  let dataMode = "empty";
   let warnings = [];
   let scene = null;
   let dataSpec = null;
@@ -159,33 +159,29 @@ async function runChatRequest(ctx) {
     regionRelevant ? "准备 AR 展厅和门店数据…" : "检查地区维度…"
   );
   const contextStart = Date.now();
-  try {
-    const context = await getContext(brandId);
-    dataMode = context.dataMode || "fixture";
-    warnings = context.warnings || [];
-    dataSpec = buildDataSpec({
+  const context = await getContext(brandId);
+  dataMode = context.dataMode || "empty";
+  warnings = context.warnings || [];
+  dataSpec = buildDataSpec({
+    message,
+    workflow: intent.workflow,
+    intentParams: intent.params || {},
+    context,
+    dataMode
+  });
+  if (regionRelevant) {
+    scene = buildArScene(context, workflowResult, {
       message,
       workflow: intent.workflow,
       intentParams: intent.params || {},
-      context,
-      dataMode
+      dataSpec
     });
-    if (regionRelevant) {
-      scene = buildArScene(context, workflowResult, {
-        message,
-        workflow: intent.workflow,
-        intentParams: intent.params || {},
-        dataSpec
-      });
-      if (scene) scene.dataSpec = dataSpec;
-    }
-  } catch (err) {
-    warnings.push("场景数据加载失败：" + err.message);
+    if (scene) scene.dataSpec = dataSpec;
   }
 
   const sceneTrace = {
     name: "场景数据",
-    tool: dataMode === "supabase" ? "Supabase" : "fixture",
+    tool: dataMode === "supabase" ? "Supabase" : "empty",
     summary: scene
       ? summarizeArScene(scene)
       : regionRelevant
@@ -201,34 +197,47 @@ async function runChatRequest(ctx) {
 
   const persistId = progress.start("事件持久化", "把这次分析记下来…");
   const persistStart = Date.now();
-  const persistResult = await persistWorkflowRun({
-    requestId,
-    brandId,
-    brandName,
-    workflow: intent.workflow,
-    message,
-    intent: {
-      confidence: intent.confidence,
-      reasoning: intent.reasoning,
-      recognitionMode: intent.recognitionMode,
-      recognitionModeLabel: recognitionModeLabel(intent.recognitionMode),
-      llmError: intent.llmError || null
-    },
-    agentTrace,
-    proposal: workflowResult.proposal || null,
-    answer: workflowResult.answer || "",
-    charts: workflowResult.charts || [],
-    dataMode,
-    warnings: [...warnings, ...(workflowResult.warnings || [])],
-    totalDurationMs: Date.now() - startedAt
-  });
+  let persistResult;
+  try {
+    persistResult = await persistWorkflowRun({
+      requestId,
+      brandId,
+      brandName,
+      workflow: intent.workflow,
+      message,
+      intent: {
+        confidence: intent.confidence,
+        reasoning: intent.reasoning,
+        recognitionMode: intent.recognitionMode,
+        recognitionModeLabel: recognitionModeLabel(intent.recognitionMode),
+        llmError: intent.llmError || null
+      },
+      agentTrace,
+      proposal: workflowResult.proposal || null,
+      answer: workflowResult.answer || "",
+      charts: workflowResult.charts || [],
+      dataMode,
+      warnings: [...warnings, ...(workflowResult.warnings || [])],
+      totalDurationMs: Date.now() - startedAt
+    });
+  } catch (persistError) {
+    // 调试态：持久化失败不降级到内存，标记为 failed 暴露问题
+    persistResult = {
+      persisted: false,
+      mode: "failed",
+      error: persistError.message,
+      warning: "事件持久化失败：" + persistError.message,
+      eventIds: [],
+      proposalId: null
+    };
+  }
 
   const persistTrace = {
     name: "事件持久化",
-    tool: persistResult.persisted ? persistResult.mode || "supabase" : "memory",
+    tool: persistResult.persisted ? persistResult.mode || "supabase" : "failed",
     summary: persistResult.persisted
       ? "已写入 " + ((persistResult.eventIds || []).length) + " 条 Agent 事件"
-      : persistResult.warning || "降级到内存缓存",
+      : persistResult.warning || "事件持久化失败",
     durationMs: Date.now() - persistStart
   };
   agentTrace.push(persistTrace);

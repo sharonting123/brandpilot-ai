@@ -172,41 +172,19 @@ async function retrieveKnowledge(params = {}) {
   let embeddingRanked = [];
 
   if (isEmbeddingConfigured()) {
-    try {
-      embeddingRanked = await vectorRecall(query, chunks, recallSize);
-      embeddingUsed = embeddingRanked.length > 0;
-    } catch (error) {
-      retrievalWarning = "Embedding 召回失败，已回退关键词：" + error.message;
-      console.warn(retrievalWarning);
-    }
+    // 调试态：Embedding 失败不再回退关键词，直接抛错暴露问题
+    embeddingRanked = await vectorRecall(query, chunks, recallSize);
+    embeddingUsed = embeddingRanked.length > 0;
   }
 
   let candidates = mergeCandidates(keywordRanked, embeddingRanked, recallSize);
-
-  if (!candidates.length && keywordRanked.length) {
-    candidates = keywordRanked;
-  }
-  if (!candidates.length && embeddingRanked.length) {
-    candidates = embeddingRanked;
-  }
-  if (!candidates.length) {
-    candidates = chunks.slice(0, Math.min(topK, chunks.length)).map((chunk) => ({
-      ...chunk,
-      score: 0.01
-    }));
-  }
+  // 调试态：不再兜底赋 0.01 分，无命中就是无命中
 
   let ranked = candidates;
   if (isRerankConfigured() && candidates.length > 1) {
-    try {
-      ranked = await rerankChunks(query, candidates, topK);
-      rerankUsed = true;
-    } catch (error) {
-      retrievalWarning = (retrievalWarning ? retrievalWarning + "；" : "") +
-        "Rerank 失败，使用融合排序：" + error.message;
-      console.warn(retrievalWarning);
-      ranked = candidates.slice(0, topK);
-    }
+    // 调试态：Rerank 失败不再回退融合排序，直接抛错暴露问题
+    ranked = await rerankChunks(query, candidates, topK);
+    rerankUsed = true;
   } else {
     ranked = candidates.slice(0, topK);
   }

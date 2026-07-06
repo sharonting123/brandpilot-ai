@@ -21,7 +21,8 @@ function getAdminConfig(env = process.env) {
       timeoutMs: base.timeoutMs
     };
   }
-  return { mode: "memory", url: "", key: "", timeoutMs: 5000 };
+  // 调试态：不再降级到内存模式，直接抛错暴露 Supabase service_role 配置缺失
+  throw new Error("会话存储失败：Supabase service_role 未配置（SUPABASE_SERVICE_ROLE_KEY 缺失）。调试态已关闭内存降级。");
 }
 
 function adminHeaders(config) {
@@ -419,8 +420,12 @@ function formatMessage(row) {
 }
 
 function isChatStoreConfigured(env = process.env) {
-  const config = getAdminConfig(env);
-  return config.mode === "supabase" || config.mode === "memory";
+  try {
+    const config = getAdminConfig(env);
+    return config.mode === "supabase";
+  } catch {
+    return false;
+  }
 }
 
 module.exports = {

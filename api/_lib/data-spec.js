@@ -146,7 +146,7 @@ function buildDataSpec(options = {}) {
     workflow = "",
     intentParams = {},
     context = null,
-    dataMode = "fixture"
+    dataMode = "empty"
   } = options;
 
   const monthNum =
@@ -174,9 +174,9 @@ function buildDataSpec(options = {}) {
 
   const metrics = metricsForWorkflow(workflow, message);
   const dataModeNote =
-    dataMode === "fixture"
-      ? "当前为演示数据集，口径与生产经分一致，数值仅供产品演示。"
-      : "数据来自 Supabase 经营底表，以经分月报/日报同步为准。";
+    dataMode === "supabase"
+      ? "数据来自 Supabase 经营底表，以经分月报/日报同步为准。"
+      : "当前无可用数据（Supabase 未配置或未返回数据）。";
 
   const metricPart = metrics
     .slice(0, 3)
