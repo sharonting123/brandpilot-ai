@@ -27,6 +27,7 @@ function getDashScopeConfig(env = process.env) {
   const ttsVoice = env.DASHSCOPE_TTS_VOICE || "Serena";
   const s2vModel = env.DASHSCOPE_S2V_MODEL || "wan2.2-s2v";
   const s2vResolution = env.DASHSCOPE_S2V_RESOLUTION || "480P";
+  const s2vMaxChars = clampNumber(env.DASHSCOPE_S2V_MAX_CHARS, 30, 80, 58);
   const timeoutMs = Number(env.DASHSCOPE_TIMEOUT_MS) || 120000;
 
   return {
@@ -37,9 +38,16 @@ function getDashScopeConfig(env = process.env) {
     ttsVoice,
     s2vModel,
     s2vResolution,
+    s2vMaxChars,
     timeoutMs,
     configured: Boolean(apiKey)
   };
+}
+
+function clampNumber(value, min, max, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(number)));
 }
 
 function authHeaders(apiKey, extra = {}) {
@@ -226,13 +234,61 @@ async function startDigitalHumanJob(params = {}) {
 
 function buildSubtitles(text) {
   const chunks = splitSubtitleChunks(text, 28);
-  const perChunkSec = 2.2;
+  const totalSec = estimateSpeechSec(text);
+  const perChunkSec = chunks.length ? totalSec / chunks.length : totalSec;
   return chunks.map((line, index) => ({
     index,
     text: line,
     startSec: Number((index * perChunkSec).toFixed(2)),
     endSec: Number(((index + 1) * perChunkSec).toFixed(2))
   }));
+}
+
+/** 中文口播粗略估时：约 3.2 字/秒，用于字幕分段 */
+function estimateSpeechSec(text) {
+  const len = String(text || "").replace(/\s+/g, "").length;
+  return Math.max(2, Math.min(19, Number((len / 3.2).toFixed(2))));
+}
+
+/**
+ * 将长口播切成多段，每段控制在百炼 20 秒音频上限内（默认约 58 字/段）
+ */
+function splitNarrationSegments(text, maxChars = 58) {
+  const value = String(text || "").replace(/\s+/g, " ").trim();
+  if (!value) return [];
+  if (value.length <= maxChars) return [value];
+
+  const segments = [];
+  let rest = value;
+  while (rest.length > 0) {
+    if (rest.length <= maxChars) {
+      segments.push(rest);
+      break;
+    }
+    let chunk = rest.slice(0, maxChars);
+    const lastStop = Math.max(
+      chunk.lastIndexOf("。"),
+      chunk.lastIndexOf("！"),
+      chunk.lastIndexOf("？"),
+      chunk.lastIndexOf("；"),
+      chunk.lastIndexOf("，"),
+      chunk.lastIndexOf("、"),
+      chunk.lastIndexOf(" ")
+    );
+    if (lastStop >= 18) {
+      chunk = rest.slice(0, lastStop + 1);
+    }
+    segments.push(chunk.trim());
+    rest = rest.slice(chunk.length).trim();
+  }
+  return segments.filter(Boolean);
+}
+
+function truncateForS2v(text) {
+  const value = String(text || "").replace(/\s+/g, " ").trim();
+  const maxChars = getDashScopeConfig().s2vMaxChars || 58;
+  if (value.length <= maxChars) return value;
+  return splitNarrationSegments(value, maxChars)[0] || value.slice(0, maxChars);
 }
 
 function splitSubtitleChunks(text, maxLen) {
@@ -251,15 +307,6 @@ function splitSubtitleChunks(text, maxLen) {
   }
   if (buf) lines.push(buf);
   return lines.length ? lines : [raw.slice(0, maxLen)];
-}
-
-function truncateForS2v(text) {
-  const value = String(text || "").replace(/\s+/g, " ").trim();
-  const maxChars = 90;
-  if (value.length <= maxChars) return value;
-  const cut = value.slice(0, maxChars);
-  const lastStop = Math.max(cut.lastIndexOf("。"), cut.lastIndexOf("，"), cut.lastIndexOf(" "));
-  return (lastStop > 40 ? cut.slice(0, lastStop + 1) : cut) + "…";
 }
 
 async function parseJson(response) {
@@ -287,5 +334,6 @@ module.exports = {
   getTaskStatus,
   startDigitalHumanJob,
   truncateForS2v,
+  splitNarrationSegments,
   buildSubtitles
 };

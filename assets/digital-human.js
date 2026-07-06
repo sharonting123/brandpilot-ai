@@ -27,7 +27,13 @@
     currentVideoUrl: null,
     currentAudioUrl: null,
     currentSubtitles: [],
-    generating: false
+    generating: false,
+    batchSegments: null,
+    batchIndex: 0,
+    currentImageUrl: null,
+    videoPlaylist: [],
+    playlistIndex: 0,
+    onVideoEnded: null
   };
 
   function init(options) {
@@ -116,7 +122,7 @@
 
     var html = "<h3>" + escapeHtml(liveScript.title || "数字人口播") + "</h3>";
     html += "<p class='dh-meta'>总时长约 " + (liveScript.totalDurationSec || 0) + " 秒 · " +
-      ((liveScript.scenes || []).length) + " 个分镜 · 单段生成限约 20 秒</p>";
+      ((liveScript.scenes || []).length) + " 个分镜 · 长口播自动切段（每段约 20 秒内）连续播放</p>";
     html += "<ol class='dh-scene-list'>";
     (liveScript.scenes || []).forEach(function (scene, index) {
       html += "<li data-index='" + index + "'><button type='button' class='dh-scene-btn' data-index='" +
@@ -191,6 +197,10 @@
     state.currentTaskId = null;
     state.currentVideoUrl = null;
     state.currentSubtitles = [];
+    state.batchSegments = null;
+    state.batchIndex = 0;
+    state.videoPlaylist = [];
+    state.playlistIndex = 0;
     hideVideo();
     if (state.canvas) state.canvas.classList.remove("visible");
     if (state.anchorPreview) state.anchorPreview.classList.add("visible");
@@ -212,23 +222,68 @@
         return parseApiResponse(resp);
       })
       .then(function (data) {
-        state.currentTaskId = data.taskId;
-        state.currentAudioUrl = data.audioUrl || null;
-        state.currentSubtitles = data.subtitles || [];
-        if (data.text) setSubtitle(data.text);
-
-        if (state.currentAudioUrl && state.audioEl) {
-          state.audioEl.src = proxiedMediaUrl(state.currentAudioUrl);
-          state.audioEl.classList.add("visible");
-        }
-
-        setStatus("任务已提交，百炼正在生成对口型视频（约 5–10 分钟），请勿关闭页面…");
-        pollTask(data.taskId, Number(data.pollIntervalSec) || 15);
+        beginSegmentJob(data);
       })
       .catch(function (err) {
         state.generating = false;
         setStatus("生成失败：" + (err.message || "未知错误"));
         drawFallback("失败");
+      });
+  }
+
+  function beginSegmentJob(data) {
+    state.currentTaskId = data.taskId;
+    state.currentImageUrl = data.imageUrl || state.currentImageUrl;
+    state.currentAudioUrl = data.audioUrl || null;
+    state.currentSubtitles = data.subtitles || [];
+    if (data.text) setSubtitle(data.text);
+
+    if (data.batch && data.batch.segments && data.batch.segments.length > 1) {
+      state.batchSegments = data.batch.segments;
+      state.batchIndex = data.batch.current || 0;
+      setStatus(
+        "第 " + (state.batchIndex + 1) + "/" + state.batchSegments.length +
+        " 段已提交，百炼生成中（约 " + (data.estimatedWaitMin || "5-10") + " 分钟/段）…"
+      );
+    } else {
+      state.batchSegments = null;
+      setStatus("任务已提交，百炼正在生成对口型视频（约 5–10 分钟），请勿关闭页面…");
+      if (state.currentAudioUrl && state.audioEl) {
+        state.audioEl.src = proxiedMediaUrl(state.currentAudioUrl);
+        state.audioEl.classList.add("visible");
+      }
+    }
+
+    pollTask(data.taskId, Number(data.pollIntervalSec) || 15);
+  }
+
+  function submitNextSegment() {
+    if (!state.batchSegments || state.batchIndex >= state.batchSegments.length - 1) {
+      return Promise.resolve(false);
+    }
+
+    state.batchIndex += 1;
+    var nextText = state.batchSegments[state.batchIndex];
+    setStatus(
+      "第 " + (state.batchIndex + 1) + "/" + state.batchSegments.length +
+      " 段生成中，请继续等待…"
+    );
+    setSubtitle(nextText);
+
+    return fetch("/api/digital-human", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: nextText,
+        imageUrl: state.currentImageUrl
+      })
+    })
+      .then(function (resp) { return parseApiResponse(resp); })
+      .then(function (data) {
+        state.currentTaskId = data.taskId;
+        state.currentSubtitles = data.subtitles || [];
+        pollTask(data.taskId, 15);
+        return true;
       });
   }
 
@@ -247,22 +302,37 @@
         .then(function (data) {
           var status = data.taskStatus || "UNKNOWN";
           if (status === "PENDING" || status === "RUNNING") {
-            setStatus("百炼生成中… " + status + "（约每 " + intervalSec + " 秒刷新）");
+            var batchHint = state.batchSegments && state.batchSegments.length > 1
+              ? " 第 " + (state.batchIndex + 1) + "/" + state.batchSegments.length + " 段"
+              : "";
+            setStatus("百炼生成中… " + status + batchHint + "（约每 " + intervalSec + " 秒刷新）");
             drawFallback(status);
+            return;
+          }
+
+          if (status === "SUCCEEDED" && data.videoUrl) {
+            state.videoPlaylist.push({
+              url: data.videoUrl,
+              text: (state.batchSegments && state.batchSegments[state.batchIndex]) || data.text || ""
+            });
+
+            if (state.batchSegments && state.batchIndex < state.batchSegments.length - 1) {
+              clearPoll();
+              submitNextSegment().catch(function (err) {
+                state.generating = false;
+                setStatus("下一段提交失败：" + (err.message || "未知错误"));
+              });
+              return;
+            }
+
+            clearPoll();
+            state.generating = false;
+            startPlaylist();
             return;
           }
 
           clearPoll();
           state.generating = false;
-
-          if (status === "SUCCEEDED" && data.videoUrl) {
-            showVideo(data.videoUrl);
-            setStatus("对口型视频已生成");
-            if (state.currentSubtitles.length) {
-              startSubtitleSync(state.videoEl);
-            }
-            return;
-          }
 
           var msg = data.message || status;
           setStatus("生成未成功：" + msg);
@@ -284,10 +354,46 @@
     }
   }
 
-  function showVideo(url) {
+  function startPlaylist() {
+    if (!state.videoPlaylist.length) {
+      setStatus("未生成可播放视频");
+      return;
+    }
+    state.playlistIndex = 0;
+    setStatus("对口型视频已生成，共 " + state.videoPlaylist.length + " 段，开始连续播放…");
+    playPlaylistItem(0);
+  }
+
+  function playPlaylistItem(index) {
+    var item = state.videoPlaylist[index];
+    if (!item) {
+      setStatus("全部口播段落播放完成");
+      return;
+    }
+    state.playlistIndex = index;
+    state.currentSubtitles = buildLocalSubtitles(item.text);
+    setSubtitle(item.text);
+    showVideo(item.url, function () {
+      playPlaylistItem(index + 1);
+    });
+    setStatus("正在播放第 " + (index + 1) + "/" + state.videoPlaylist.length + " 段");
+  }
+
+  function buildLocalSubtitles(text) {
+    var raw = String(text || "").trim();
+    if (!raw) return [];
+    return [{ index: 0, text: raw, startSec: 0, endSec: 60 }];
+  }
+
+  function showVideo(url, onEnded) {
     state.currentVideoUrl = url;
+    state.onVideoEnded = typeof onEnded === "function" ? onEnded : null;
     if (!state.videoEl) return;
     var playUrl = proxiedMediaUrl(url);
+    state.videoEl.onended = function () {
+      stopSubtitleSync();
+      if (state.onVideoEnded) state.onVideoEnded();
+    };
     state.videoEl.src = playUrl;
     state.videoEl.classList.add("visible");
     if (state.audioEl) {
@@ -300,8 +406,11 @@
 
     state.videoEl.load();
     state.videoEl.play().catch(function () {
-      setStatus("对口型视频已生成，请点击播放器播放");
+      setStatus("对口型视频已就绪，请点击播放器播放");
     });
+    if (state.currentSubtitles.length) {
+      startSubtitleSync(state.videoEl);
+    }
   }
 
   function hideVideo() {
@@ -353,8 +462,14 @@
     clearPoll();
     stopSubtitleSync();
     stopTts();
+    state.batchSegments = null;
+    state.videoPlaylist = [];
+    state.onVideoEnded = null;
     state.generating = false;
-    if (state.videoEl) state.videoEl.pause();
+    if (state.videoEl) {
+      state.videoEl.onended = null;
+      state.videoEl.pause();
+    }
     if (state.audioEl) state.audioEl.pause();
     setStatus("已停止");
     drawFallback("待命");

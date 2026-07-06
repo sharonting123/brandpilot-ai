@@ -9,7 +9,7 @@ const {
   getDashScopeConfig,
   getTaskStatus,
   startDigitalHumanJob,
-  truncateForS2v
+  splitNarrationSegments
 } = require("./_lib/dashscope-client");
 
 module.exports = async function handler(req, res) {
@@ -37,20 +37,27 @@ async function handlePost(req, res) {
   }
 
   const body = await readJson(req, { limitBytes: 256 * 1024 });
-  const text = pickNarrationText(body);
-  if (!text) {
+  const { segmentText, allSegments, segmentIndex } = resolveSegments(body, config);
+
+  if (!segmentText) {
     throw new HttpError(400, "TEXT_REQUIRED", "请提供 text、liveScript 或 sceneIndex。");
   }
 
   const result = await startDigitalHumanJob({
-    text,
+    text: segmentText,
     imageUrl: body.imageUrl || config.avatarUrl
   });
 
+  const total = allSegments.length;
+  const waitMin = total > 1 ? `${5 * total}–${10 * total}` : "5–10";
+
   return sendJson(res, 200, {
     status: "ok",
-    mode: "dashscope_s2v",
-    message: "已提交百炼 wan2.2-s2v 对口型任务，请轮询 taskId 获取视频。",
+    mode: total > 1 ? "dashscope_s2v_batch" : "dashscope_s2v",
+    message:
+      total > 1
+        ? `已提交第 ${segmentIndex + 1}/${total} 段对口型任务，完成后将自动继续下一段。`
+        : "已提交百炼 wan2.2-s2v 对口型任务，请轮询 taskId 获取视频。",
     taskId: result.taskId,
     taskStatus: result.taskStatus,
     audioUrl: result.audioUrl,
@@ -59,8 +66,13 @@ async function handlePost(req, res) {
     subtitles: result.subtitles,
     provider: result.provider,
     models: result.models,
+    batch: {
+      total,
+      current: segmentIndex,
+      segments: allSegments
+    },
     pollIntervalSec: 15,
-    estimatedWaitMin: "5-10"
+    estimatedWaitMin: waitMin
   });
 }
 
@@ -84,18 +96,36 @@ async function handleGet(req, res) {
   });
 }
 
-function pickNarrationText(body) {
-  if (body.text) return truncateForS2v(body.text);
+function resolveSegments(body, config) {
+  if (body.text) {
+    const text = String(body.text || "").trim();
+    return {
+      segmentText: text,
+      allSegments: [text],
+      segmentIndex: 0
+    };
+  }
 
+  const fullText = resolveNarrationText(body);
+  const allSegments = splitNarrationSegments(fullText, config.s2vMaxChars);
+  const segmentIndex = Number.isFinite(Number(body.segmentIndex))
+    ? Math.max(0, Number(body.segmentIndex))
+    : 0;
+  const segmentText = allSegments[segmentIndex] || allSegments[0] || "";
+
+  return { segmentText, allSegments, segmentIndex };
+}
+
+function resolveNarrationText(body) {
   const liveScript = body.liveScript || null;
   if (!liveScript) return "";
 
   const sceneIndex = Number.isFinite(Number(body.sceneIndex)) ? Number(body.sceneIndex) : 0;
   const scenes = liveScript.scenes || [];
   if (scenes.length && scenes[sceneIndex]) {
-    return truncateForS2v(scenes[sceneIndex].narration || scenes[sceneIndex].title);
+    return String(scenes[sceneIndex].narration || scenes[sceneIndex].title || "").trim();
   }
 
-  if (liveScript.fullScript) return truncateForS2v(liveScript.fullScript);
+  if (liveScript.fullScript) return String(liveScript.fullScript).trim();
   return "";
 }
