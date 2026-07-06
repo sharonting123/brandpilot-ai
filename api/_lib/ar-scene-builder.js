@@ -28,6 +28,10 @@ function involvesRegionAnalysis(message, workflow, intentParams = {}, scene = nu
   if (REGION_CITY_PATTERN.test(text)) return true;
   if (REGION_KEYWORDS.test(text)) return true;
   if (scene?.focusCity) return true;
+  // 竞品/经营分析含城市维度对比，启用 AR 联动钻取
+  if (workflow === "competitor_benchmark") return true;
+  if (workflow === "annual_proposal") return true;
+  if (workflow === "data_query" && /城市|gmv|核销|roi|商圈|门店/i.test(text)) return true;
 
   return false;
 }
@@ -356,6 +360,7 @@ function resolveSceneScope(scene, selection) {
 
 module.exports = {
   buildArScene,
+  buildDrillSource,
   summarizeArScene,
   resolveSceneScope,
   involvesRegionAnalysis,

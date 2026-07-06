@@ -94,8 +94,9 @@
       body: JSON.stringify({ username: username, password: password })
     }).then(function (data) {
       setToken(data.token);
-      currentUser = data.user;
-      return data;
+      return loadMe().then(function (user) {
+        return { token: data.token, user: user || normalizeUser(data.user), expiresInMs: data.expiresInMs };
+      });
     });
   }
 
@@ -108,8 +109,9 @@
       })
     }).then(function (data) {
       setToken(data.token);
-      currentUser = data.user;
-      return data;
+      return loadMe().then(function (user) {
+        return { token: data.token, user: user || normalizeUser(data.user), expiresInMs: data.expiresInMs };
+      });
     });
   }
 

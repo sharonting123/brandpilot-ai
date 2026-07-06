@@ -123,7 +123,7 @@ function verifyToken(token, env = process.env) {
   if (!data.sub || !data.exp || Date.now() > Number(data.exp)) return null;
   return {
     id: data.sub,
-    username: data.username || data.displayName || ""
+    username: normalizeUsername(data.username || "")
   };
 }
 

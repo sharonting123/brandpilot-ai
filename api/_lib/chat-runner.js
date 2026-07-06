@@ -45,6 +45,13 @@ function emitFriendlyStart(emit, id, name, summary) {
     summary: friendlyStepSummary({ name, summary })
   });
 }
+
+function slimSceneForPersist(scene) {
+  if (!scene || typeof scene !== "object") return scene;
+  const { drillSource, ...rest } = scene;
+  return { ...rest, drillSourceOmitted: Boolean(drillSource) };
+}
+
 function createProgressEmitter(emit) {
   let counter = 0;
   return {
@@ -312,7 +319,7 @@ async function runChatRequest(ctx) {
             workflowLabel: response.workflowLabel,
             proposal: response.proposal,
             charts: response.charts,
-            scene: response.scene,
+            scene: slimSceneForPersist(response.scene),
             capabilities: response.capabilities,
             dataSpec: response.dataSpec,
             intent: response.intent,

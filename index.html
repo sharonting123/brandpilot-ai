@@ -108,6 +108,12 @@
       </section>
 
       <main class="viz-panel" id="vizPanel">
+        <div class="viz-live-panel" id="vizLivePanel" hidden>
+          <div class="viz-live-filter" id="vizLiveFilter" aria-label="统计周期筛选"></div>
+          <div class="viz-live-scope" id="vizLiveScope" aria-label="当前选中指标"></div>
+          <div class="viz-live-cities" id="vizLiveCities" aria-label="城市快捷分析"></div>
+        </div>
+
         <section class="mode-panel active" id="panelAnalysis" data-mode-panel="analysis">
           <div class="viz-empty" id="vizEmpty">
             <div class="empty-icon">📊</div>
@@ -125,12 +131,6 @@
               <button id="downloadWordButton" class="export-button" type="button" title="下载 Word 文档">Word</button>
               <button id="downloadMarkdownButton" class="export-button" type="button" title="下载 Markdown 文档">Markdown</button>
             </div>
-          </div>
-
-          <div class="viz-live-panel" id="vizLivePanel" hidden>
-            <div class="viz-live-filter" id="vizLiveFilter" aria-label="统计周期筛选"></div>
-            <div class="viz-live-scope" id="vizLiveScope" aria-label="当前选中指标"></div>
-            <div class="viz-live-cities" id="vizLiveCities" aria-label="城市快捷分析"></div>
           </div>
 
           <div class="viz-proposal" id="vizProposal" style="display:none;">
@@ -169,11 +169,11 @@
 
   <script src="assets/assistant.js" defer></script>
   <script src="assets/markdown.js" defer></script>
-  <script src="assets/auth.js" defer></script>
+  <script src="assets/auth.js?v=username-fix" defer></script>
   <script src="assets/china-map-layout.js?v=echarts-map" defer></script>
   <script src="assets/ar-drill-metrics.js?v=time-filter" defer></script>
   <script src="assets/ar-echarts-map.js?v=meituan" defer></script>
-  <script src="assets/ar-scene.js?v=time-filter" defer></script>
-  <script src="assets/app.js?v=live-sync" defer></script>
+  <script src="assets/ar-scene.js?v=drill-link" defer></script>
+  <script src="assets/app.js?v=drill-link" defer></script>
 </body>
 </html>

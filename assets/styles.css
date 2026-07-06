@@ -2635,12 +2635,38 @@ button, select, textarea {
 
 .ar-detail-card:hover,
 .ar-detail-card.active {
-  border-color: var(--green);
-  box-shadow: 0 0 0 1px rgba(15, 118, 110, 0.12);
+  border-color: var(--mt-yellow);
+  box-shadow: 0 0 0 2px rgba(255, 195, 0, 0.25);
 }
 
 .ar-detail-card.active {
-  background: rgba(15, 118, 110, 0.06);
+  background: var(--mt-yellow-soft);
+}
+
+.ar-interaction-guide {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: 8px;
+}
+
+.ar-interaction-guide span {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--mt-yellow-soft);
+  border: 1px solid var(--mt-yellow-border);
+  color: var(--mt-black);
+}
+
+.ar-time-filter--loading {
+  opacity: 0.85;
+}
+
+.ar-detail-card .ar-drill-hint {
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .ar-detail-card strong {

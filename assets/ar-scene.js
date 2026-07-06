@@ -58,7 +58,12 @@
   function update(sceneData) {
     state.sceneBase = sceneData ? shallowCloneScene(sceneData) : null;
     state.currentScene = sceneData || null;
-    if (sceneData) {
+    if (!sceneData) {
+      syncSelectionDefaults();
+      render();
+      return;
+    }
+    ensureDrillSource(sceneData).then(function () {
       if (global.BrandPilotDrillMetrics) {
         state.timeFilter = global.BrandPilotDrillMetrics.initFilterFromPeriod(
           sceneData.displayPeriod,
@@ -71,9 +76,36 @@
       } else if (!state.selectedCity && getCities().length) {
         state.selectedCity = getCities()[0].name;
       }
+      syncSelectionDefaults();
+      render();
+    });
+  }
+
+  function ensureDrillSource(sceneData) {
+    if (!sceneData || sceneData.drillSource) return Promise.resolve(sceneData);
+    var headers = { "Content-Type": "application/json" };
+    if (global.BrandPilotAuth && typeof global.BrandPilotAuth.authHeaders === "function") {
+      headers = global.BrandPilotAuth.authHeaders();
     }
-    syncSelectionDefaults();
-    render();
+    var brandId = sceneData.brandId || "haidilao";
+    return fetch("/api/drill-source?brandId=" + encodeURIComponent(brandId), { headers: headers })
+      .then(function (resp) {
+        return resp.json().then(function (data) {
+          if (!resp.ok) throw new Error((data && data.message) || "load failed");
+          return data;
+        });
+      })
+      .then(function (data) {
+        if (data && data.drillSource) {
+          sceneData.drillSource = data.drillSource;
+          if (state.sceneBase) state.sceneBase.drillSource = data.drillSource;
+        }
+        return sceneData;
+      })
+      .catch(function (err) {
+        console.warn("沙盘 drillSource 加载失败:", err.message || err);
+        return sceneData;
+      });
   }
 
   function shallowCloneScene(sceneData) {
@@ -764,7 +796,16 @@
   }
 
   function renderTimeFilter(sceneData) {
-    if (!sceneData || !sceneData.drillSource || !global.BrandPilotDrillMetrics) return "";
+    if (!sceneData) return "";
+    if (!sceneData.drillSource || !global.BrandPilotDrillMetrics) {
+      return (
+        '<div class="ar-time-filter-inner ar-time-filter--loading">' +
+        '<span class="ar-time-label">统计周期</span>' +
+        '<span class="ar-time-current">' + escapeHtml((sceneData.dateRange && sceneData.dateRange.label) || "加载中…") + "</span>" +
+        '<span class="ar-time-grain">沙盘数据同步中</span>' +
+        "</div>"
+      );
+    }
     var months = global.BrandPilotDrillMetrics.listMonthOptions(sceneData.drillSource);
     var filter = state.timeFilter || {};
     var monthOptions = months.map(function (item) {
@@ -883,11 +924,18 @@
     if (scope && scope.level !== "brand") {
       hint = scope.breadcrumb + " · " + ((scope.dateRange && scope.dateRange.range) || "");
     }
+    var guide =
+      '<div class="ar-interaction-guide">' +
+      "<span>① 切换统计周期</span>" +
+      "<span>② 点城市选中指标</span>" +
+      "<span>③ 再点下钻商圈/门店</span>" +
+      "</div>";
     return (
       '<div class="map-header ar-header">' +
       '<div><span class="map-kicker">AR 展厅 · ' + escapeHtml(sceneData.brandName || "品牌") + "</span>" +
       "<h3>" + escapeHtml(title) + "</h3>" +
       (hint ? '<p class="map-topic-hint">' + escapeHtml(hint) + "</p>" : "") +
+      guide +
       "</div>" +
       '<div class="ar-level-tag">' + escapeHtml(levelLabel()) + "</div>" +
       "</div>"
@@ -1042,7 +1090,7 @@
       return (
         '<div class="ar-detail-head">' +
         "<h4>城市经营分析" + (periodLabel ? " · " + escapeHtml(periodLabel) : "") + "</h4>" +
-        "<p>点击城市卡片选中并联动上方指标；点「下钻商圈」进入商圈视图，与地图柱体一一对应</p>" +
+        "<p>点击城市卡片选中并联动指标；<strong>再次点击已选城市</strong>或点「下钻商圈」进入商圈视图</p>" +
         "</div>" +
         '<div class="ar-detail-grid">' + cityCards + "</div>"
       );
@@ -1157,6 +1205,8 @@
         var cityName = cityBtn.getAttribute("data-city-name");
         if (event.target.closest("[data-city-drill]")) {
           selectCity(cityName, true);
+        } else if (cityName === state.selectedCity && state.drillLevel === DRILL.CITY) {
+          selectCity(cityName, true);
         } else {
           selectCity(cityName, false);
         }
@@ -1164,10 +1214,13 @@
       }
       var districtBtn = event.target.closest("[data-district-id]");
       if (districtBtn) {
+        var districtId = districtBtn.getAttribute("data-district-id");
         if (event.target.closest("[data-district-drill]")) {
-          selectDistrict(districtBtn.getAttribute("data-district-id"), true);
+          selectDistrict(districtId, true);
+        } else if (districtId === state.selectedDistrictId && state.drillLevel === DRILL.DISTRICT) {
+          selectDistrict(districtId, true);
         } else if (state.drillLevel >= DRILL.DISTRICT) {
-          selectDistrict(districtBtn.getAttribute("data-district-id"), false);
+          selectDistrict(districtId, false);
         }
         return;
       }

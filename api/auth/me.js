@@ -1,6 +1,6 @@
 const { handleError, HttpError, sendJson } = require("../_lib/http");
 const { isAuthConfigured, requireUser } = require("../_lib/auth");
-const { findUserById } = require("../_lib/chat-store");
+const { findUserById, sanitizeUser } = require("../_lib/chat-store");
 
 module.exports = async function handler(req, res) {
   try {
@@ -19,11 +19,7 @@ module.exports = async function handler(req, res) {
 
     return sendJson(res, 200, {
       authenticated: true,
-      user: {
-        id: record.id,
-        username: record.username,
-        createdAt: record.created_at
-      }
+      user: sanitizeUser(record)
     });
   } catch (error) {
     return handleError(res, error, "AUTH_ME_FAILED", "读取登录状态失败。");

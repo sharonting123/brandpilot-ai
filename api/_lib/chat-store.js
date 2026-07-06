@@ -112,9 +112,7 @@ async function createUser({ username, passwordHash }) {
   return sanitizeUser(rows[0]);
 }
 
-async function findUserByUsername(username) {
-  const config = getAdminConfig();
-  const normalized = normalizeUsername(username);
+async function findByUsernameColumn(config, normalized) {
   if (config.mode === "memory") {
     return memoryUsers.get(normalized) || null;
   }
@@ -125,11 +123,117 @@ async function findUserByUsername(username) {
   return Array.isArray(rows) && rows.length ? rows[0] : null;
 }
 
+async function findByDisplayNameColumn(config, normalized) {
+  if (config.mode === "memory") {
+    for (const user of memoryUsers.values()) {
+      if (normalizeUsername(user.display_name || "") === normalized) return user;
+    }
+    return null;
+  }
+  const rows = await supabaseRequest(
+    config,
+    `app_users?display_name=ilike.${encodeURIComponent(normalized)}&select=*&limit=1`
+  );
+  return Array.isArray(rows) && rows.length ? rows[0] : null;
+}
+
+async function syncUserProfile(userId, username) {
+  const normalized = normalizeUsername(username);
+  const config = getAdminConfig();
+  if (config.mode === "memory") {
+    for (const user of memoryUsers.values()) {
+      if (user.id === userId) {
+        memoryUsers.delete(normalizeUsername(user.username));
+        user.username = normalized;
+        user.display_name = normalized;
+        memoryUsers.set(normalized, user);
+        return;
+      }
+    }
+    return;
+  }
+  await supabaseRequest(config, `app_users?id=eq.${encodeURIComponent(userId)}`, {
+    method: "PATCH",
+    body: { username: normalized, display_name: normalized },
+    prefer: "return=minimal"
+  });
+}
+
+async function syncDisplayNameOnly(userId, username) {
+  const normalized = normalizeUsername(username);
+  const config = getAdminConfig();
+  if (config.mode === "memory") {
+    for (const user of memoryUsers.values()) {
+      if (user.id === userId) {
+        user.display_name = normalized;
+        return;
+      }
+    }
+    return;
+  }
+  await supabaseRequest(config, `app_users?id=eq.${encodeURIComponent(userId)}`, {
+    method: "PATCH",
+    body: { display_name: normalized },
+    prefer: "return=minimal"
+  });
+}
+
+async function reconcileUserRecord(record, loginName) {
+  if (!record) return null;
+  const login = normalizeUsername(loginName || record.username);
+  const currentUsername = normalizeUsername(record.username);
+  const currentDisplay = normalizeUsername(record.display_name || "");
+
+  if (currentUsername === login) {
+    if (currentDisplay && currentDisplay !== login) {
+      await syncDisplayNameOnly(record.id, login);
+      record.display_name = login;
+    }
+    record.username = login;
+    return record;
+  }
+
+  if (currentDisplay === login && currentUsername !== login) {
+    await syncUserProfile(record.id, login);
+    record.username = login;
+    record.display_name = login;
+    return record;
+  }
+
+  record.username = currentUsername;
+  return record;
+}
+
+async function resolveUserRecord(record) {
+  if (!record) return null;
+  const canonical = normalizeUsername(record.username);
+  const currentDisplay = normalizeUsername(record.display_name || "");
+  if (!canonical) return record;
+  if (currentDisplay && currentDisplay !== canonical) {
+    await syncDisplayNameOnly(record.id, canonical);
+    record.display_name = canonical;
+  }
+  record.username = canonical;
+  return record;
+}
+
+async function findUserByUsername(username) {
+  const normalized = normalizeUsername(username);
+  if (!normalized) return null;
+  const config = getAdminConfig();
+  let record = await findByUsernameColumn(config, normalized);
+  if (!record) {
+    record = await findByDisplayNameColumn(config, normalized);
+  }
+  if (!record) return null;
+  return reconcileUserRecord(record, normalized);
+}
+
 async function findUserById(userId) {
   const config = getAdminConfig();
   if (config.mode === "memory") {
     for (const user of memoryUsers.values()) {
-      if (user.id === userId) return user;
+      if (user.id === userId) return resolveUserRecord(user);
     }
     return null;
   }
@@ -137,14 +241,15 @@ async function findUserById(userId) {
     config,
     `app_users?id=eq.${encodeURIComponent(userId)}&select=*&limit=1`
   );
-  return Array.isArray(rows) && rows.length ? rows[0] : null;
+  const record = Array.isArray(rows) && rows.length ? rows[0] : null;
+  return resolveUserRecord(record);
 }
 
 function sanitizeUser(user) {
   if (!user) return null;
   return {
     id: user.id,
-    username: user.username,
+    username: normalizeUsername(user.username),
     createdAt: user.created_at
   };
 }
@@ -325,6 +430,7 @@ module.exports = {
   isUsernameAvailable,
   findUserByUsername,
   findUserById,
+  sanitizeUser,
   createSession,
   listSessions,
   getSession,

@@ -7,7 +7,7 @@ const {
   signToken,
   TOKEN_TTL_MS
 } = require("../_lib/auth");
-const { findUserByUsername } = require("../_lib/chat-store");
+const { findUserByUsername, sanitizeUser } = require("../_lib/chat-store");
 
 module.exports = async function handler(req, res) {
   try {
@@ -27,11 +27,7 @@ module.exports = async function handler(req, res) {
       throw new HttpError(401, "INVALID_CREDENTIALS", "用户名或密码错误。");
     }
 
-    const user = {
-      id: record.id,
-      username: record.username,
-      createdAt: record.created_at
-    };
+    const user = sanitizeUser(record);
     const token = signToken(user);
 
     return sendJson(res, 200, {

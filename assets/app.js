@@ -346,7 +346,7 @@
       createAssistantAvatar().outerHTML +
       '<div class="message-body">' +
       '<div class="message-content"><p>你好！我是 <strong>' + escapeHtml(assistantName()) + '</strong>，你的专属品牌经营顾问。登录后对话会自动保存到左侧「历史对话」。</p>' +
-      '<p class="chat-hint">先输入问题并发送；提交后右侧默认展示<strong>分析报告</strong>。问题涉及<strong>城市/商圈/门店</strong>时，可切换 <strong>AR 展厅</strong> 下钻查看。</p>' +
+      '<p class="chat-hint">先输入问题并发送；提交后右侧默认展示<strong>分析报告</strong>。涉及<strong>城市/竞品/经营分析</strong>时可切换 <strong>AR 展厅</strong> 下钻，顶部<strong>联动分析条</strong>随选中城市实时刷新指标。</p>' +
       '<div class="example-prompts">' +
       '<button class="example-btn" data-prompt="帮海底捞做一份2026年上半年的经营分析">📋 2026上半年经营分析</button>' +
       '<button class="example-btn" data-prompt="海底捞2026年6月从搜索到核销的转化链路哪里损耗最大？">🔍 6月搜索流量链路诊断</button>' +
@@ -426,6 +426,7 @@
     if (useAr) {
       syncExtendedLayers(data);
       switchMode("ar");
+      setTimeout(syncAnalysisFromScene, 150);
     } else {
       switchMode("analysis");
       if (vizLivePanel) vizLivePanel.hidden = true;
@@ -449,6 +450,7 @@
       ensureArReady();
       if (lastResponse && lastResponse.scene && window.BrandPilotAR) {
         window.BrandPilotAR.update(lastResponse.scene);
+        setTimeout(syncAnalysisFromScene, 0);
       }
       if (window.BrandPilotAR) window.BrandPilotAR.resize();
     }
@@ -547,7 +549,16 @@
   }
 
   function renderVizLiveFilter(scene, timeFilter) {
-    if (!vizLiveFilter || !scene || !scene.drillSource || !window.BrandPilotDrillMetrics) return "";
+    if (!vizLiveFilter || !scene) return "";
+    if (!scene.drillSource || !window.BrandPilotDrillMetrics) {
+      var label = (scene.dateRange && scene.dateRange.label) || "统计周期";
+      return (
+        '<div class="viz-live-filter-inner">' +
+        '<span class="viz-live-filter-label">统计周期</span>' +
+        '<span class="viz-live-sync-hint">' + escapeHtml(label) + " · 与 AR 沙盘同步加载中</span>" +
+        "</div>"
+      );
+    }
     var months = window.BrandPilotDrillMetrics.listMonthOptions(scene.drillSource);
     var filter = timeFilter || window.BrandPilotAR.getTimeFilter();
     var monthMode = filter.mode !== "range";
@@ -662,7 +673,7 @@
     var scene = payload.scene || (window.BrandPilotAR && window.BrandPilotAR.getSceneData());
     var timeFilter = payload.timeFilter || (window.BrandPilotAR && window.BrandPilotAR.getTimeFilter());
 
-    if (!scope || !scene || !scene.drillSource) {
+    if (!scope || !scene || (!scene.drillSource && !scene.drillMetrics)) {
       if (vizLivePanel) vizLivePanel.hidden = true;
       return;
     }
