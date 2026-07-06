@@ -4,10 +4,10 @@
   "trailingSlash": false,
   "functions": {
     "api/chat.js": {
-      "maxDuration": 120
+      "maxDuration": 300
     },
     "api/agent-run.js": {
-      "maxDuration": 120
+      "maxDuration": 300
     },
     "api/events.js": {
       "maxDuration": 10
