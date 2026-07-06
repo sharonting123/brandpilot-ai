@@ -4,7 +4,7 @@
 
 const { workflowLabel } = require("./intent-router");
 const { resolvePoiCoordinates, resolveBusinessAreaName, centroidFromPois, cityMapPosition } = require("./poi-coordinates");
-const { buildPlatformBenchmarks, buildBrandPeerBenchmarks } = require("./brand-peer");
+const { buildPlatformBenchmarks, buildBrandPeerBenchmarks, detectComparisonFocus } = require("./brand-peer");
 const {
   DATE_RANGE,
   buildDrillMetrics,
@@ -84,8 +84,17 @@ function deriveTopicContext(message, workflow, intentParams, dateRange) {
       ? `${city} 门店链路指标（${dateRange.range}）`
       : "按城市/商圈/门店查看链路损耗";
   } else if (workflow === "competitor_benchmark") {
-    topicLabel = "竞对对比 · 平台与品牌";
-    topicHint = `平台对比（美团 vs 抖音）与品牌竞品（海底捞 vs 呷哺呷哺）`;
+    const focus = detectComparisonFocus(message, intentParams);
+    if (focus === "platform") {
+      topicLabel = "竞对对比 · 平台";
+      topicHint = "美团 vs 抖音（渠道份额、核销率、客单价）";
+    } else if (focus === "brand") {
+      topicLabel = "竞对对比 · 品牌";
+      topicHint = "海底捞 vs 呷哺呷哺";
+    } else {
+      topicLabel = "竞对对比 · 平台与品牌";
+      topicHint = "平台对比（美团 vs 抖音）与品牌竞品（海底捞 vs 呷哺呷哺）";
+    }
   } else if (workflow === "annual_proposal") {
     topicLabel = "经营分析 · 重点城市";
     topicHint = `${dateRange.range} 高 GMV 城市与核心商圈`;
@@ -215,10 +224,14 @@ function buildArScene(ctx, workflowResult, options = {}) {
 
   let platformBenchmarks = [];
   let brandPeerBenchmarks = null;
+  const compareFocus =
+    workflow === "competitor_benchmark" ? detectComparisonFocus(message, intentParams) : null;
   const benchMonth = displayPeriod.monthKey || pickLatestMonthKey(ctx.monthlyFacts);
   if (workflow === "competitor_benchmark") {
-    platformBenchmarks = buildPlatformBenchmarks(ctx.competitorBenchmarks, benchMonth);
-    if (displayPeriod.mode === "month" && benchMonth) {
+    if (compareFocus !== "brand") {
+      platformBenchmarks = buildPlatformBenchmarks(ctx.competitorBenchmarks, benchMonth);
+    }
+    if (compareFocus !== "platform" && displayPeriod.mode === "month" && benchMonth) {
       brandPeerBenchmarks = buildBrandPeerBenchmarks(ctx, benchMonth);
     }
   }
@@ -239,6 +252,7 @@ function buildArScene(ctx, workflowResult, options = {}) {
     focusCity: topic.city,
     focusMonth: topic.monthLabel,
     workflow,
+    compareFocus,
     dateRange: drillMetrics.dateRange,
     displayPeriod,
     drillMetrics,

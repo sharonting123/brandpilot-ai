@@ -8,6 +8,7 @@
 
 const { getIntentMaxTokens } = require("./token-budget");
 const { extractUsageFromGenerateResult } = require("./token-usage");
+const { enrichCompetitorParams } = require("./brand-peer");
 
 const WORKFLOWS = [
   "annual_proposal",
@@ -162,7 +163,10 @@ function recognizeIntentWithKeywords(message) {
   return {
     workflow: best.workflow,
     brandId: "haidilao",
-    params,
+    params:
+      best.workflow === "competitor_benchmark"
+        ? enrichCompetitorParams(message, params)
+        : params,
     confidence: computedConfidence,
     reasoning: "关键词匹配到：" + best.matchedKeywords.join("、") + "，路由到「" + workflowLabel(best.workflow) + "」工作流。",
     keywordMeta: {
@@ -249,10 +253,14 @@ async function recognizeIntent(message, modelConfig) {
   if (modelConfig && modelConfig.configured) {
     try {
       const result = await recognizeIntentWithLLM(message, modelConfig);
+      const enriched =
+        result.workflow === "competitor_benchmark"
+          ? { ...result, params: enrichCompetitorParams(message, result.params) }
+          : result;
       return {
-        ...result,
+        ...enriched,
         recognitionMode: "llm",
-        confidenceMeta: buildConfidenceMeta({ ...result, recognitionMode: "llm" })
+        confidenceMeta: buildConfidenceMeta({ ...enriched, recognitionMode: "llm" })
       };
     } catch (error) {
       console.warn("LLM 意图识别失败，降级到关键词规则：", error.message);

@@ -141,6 +141,7 @@
       focusCity: sceneData.focusCity,
       focusMonth: sceneData.focusMonth,
       workflow: sceneData.workflow,
+      compareFocus: sceneData.compareFocus,
       funnel: sceneData.funnel,
       funnelBrand: sceneData.funnelBrand,
       dataSpec: sceneData.dataSpec,
@@ -166,7 +167,7 @@
     var rebuilt = global.BrandPilotDrillMetrics.rebuildSceneMetrics(
       base.drillSource,
       state.timeFilter,
-      { workflow: base.workflow }
+      { workflow: base.workflow, compareFocus: base.compareFocus }
     );
     var cityPositionMap = {};
     (base.cities || []).forEach(function (city) {

@@ -559,9 +559,14 @@
     var brandPeerBenchmarks = null;
     var platformBenchmarks = [];
     if (options.workflow === "competitor_benchmark") {
+      var focus = options.compareFocus || "both";
       if (benchMonth) {
-        brandPeerBenchmarks = buildBrandPeerBenchmarks(drillSource, benchMonth);
-        platformBenchmarks = buildPlatformBenchmarks(drillSource.competitorBenchmarks, benchMonth);
+        if (focus !== "platform") {
+          brandPeerBenchmarks = buildBrandPeerBenchmarks(drillSource, benchMonth);
+        }
+        if (focus !== "brand") {
+          platformBenchmarks = buildPlatformBenchmarks(drillSource.competitorBenchmarks, benchMonth);
+        }
       }
     }
     return {

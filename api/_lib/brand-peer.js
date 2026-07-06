@@ -113,13 +113,30 @@ function buildBrandPeerBenchmarks(ctx = {}, monthKey) {
 
 function detectComparisonFocus(message = "", intentParams = {}) {
   const text = String(message || "");
-  if (intentParams.compareType === "brand" || /呷哺|竞品|品牌对比|同行/.test(text)) {
+  if (intentParams.compareType === "brand" || intentParams.compareFocus === "brand") {
     return "brand";
   }
-  if (intentParams.compareType === "platform" || /美团|抖音|平台/.test(text)) {
+  if (intentParams.compareType === "platform" || intentParams.compareFocus === "platform") {
     return "platform";
   }
+  const hasPeer = /呷哺|竞品|品牌对比|同行|vs\s*呷哺/i.test(text);
+  const hasMeituan = /美团/.test(text);
+  const hasDouyin = /抖音/.test(text);
+  const hasPlatform = hasMeituan || hasDouyin || /平台/.test(text);
+  if (hasPlatform && hasPeer) return "both";
+  if (hasPeer) return "brand";
+  if (hasPlatform) return "platform";
   return "both";
+}
+
+function enrichCompetitorParams(message, params = {}) {
+  const next = { ...(params || {}) };
+  const focus = detectComparisonFocus(message, next);
+  next.compareFocus = focus;
+  if (focus === "platform") next.compareType = "platform";
+  else if (focus === "brand") next.compareType = "brand";
+  else if (!next.compareType) next.compareType = "both";
+  return next;
 }
 
 module.exports = {
@@ -127,5 +144,6 @@ module.exports = {
   normalizePlatformName,
   buildPlatformBenchmarks,
   buildBrandPeerBenchmarks,
-  detectComparisonFocus
+  detectComparisonFocus,
+  enrichCompetitorParams
 };

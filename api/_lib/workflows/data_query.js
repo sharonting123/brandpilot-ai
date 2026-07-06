@@ -138,7 +138,7 @@ async function execute(params) {
             tracePush(agentTrace, onProgress, {
               name: "工具调用",
               tool: tc.toolName,
-              summary: "调用 " + tc.toolName + " 完成",
+              summary: "call " + tc.toolName + " done",
               durationMs: 0
             });
           }

@@ -27,28 +27,29 @@ const STEP_NAMES = {
 };
 
 const TOOL_NAMES = {
-  computeFunnel: "算转化漏斗",
-  queryBrandData: "拉品牌概况",
-  retrieveKnowledge: "翻经营手册",
-  runNl2Sql: "用自然语言查数",
-  aggregateMonthly: "看月度走势",
-  getCompetitorBenchmark: "拉平台对比数据",
-  getBrandPeerBenchmark: "拉品牌竞品数据",
-  generateObject: "整理成提案卡片",
-  nl2sql_fallback: "改用备用查数",
-  fallback: "用备用方案",
-  skipped: "这步先跳过",
-  supabase: "云端数据库",
-  fixture: "演示数据",
-  memory: "临时缓存",
-  workflow: "分析流程",
-  stream: "逐字输出",
-  "LLM 语义识别": "智能理解",
-  "关键词快路由": "快速匹配",
-  "关键词兜底": "快速匹配",
-  "关键词规则": "快速匹配",
-  "推理完成": "分析完成",
-  error: "出错了"
+  computeFunnel: "computeFunnel",
+  queryBrandData: "queryBrandData",
+  retrieveKnowledge: "retrieveKnowledge",
+  runNl2Sql: "runNl2Sql",
+  aggregateMonthly: "aggregateMonthly",
+  getCompetitorBenchmark: "getCompetitorBenchmark",
+  getBrandPeerBenchmark: "getBrandPeerBenchmark",
+  getBrandAssets: "getBrandAssets",
+  generateObject: "generateObject",
+  nl2sql_fallback: "nl2sql_fallback",
+  fallback: "fallback",
+  skipped: "skipped",
+  supabase: "supabase",
+  fixture: "fixture",
+  memory: "memory",
+  workflow: "workflow",
+  stream: "stream",
+  "LLM 语义识别": "LLM intent",
+  "关键词快路由": "keyword_fast",
+  "关键词兜底": "keyword_fallback",
+  "关键词规则": "keyword_rule",
+  "推理完成": "inference_done",
+  error: "error"
 };
 
 function sanitizeTechTerms(text) {
@@ -69,14 +70,7 @@ function sanitizeTechTerms(text) {
     .replace(/持久化/g, "保存")
     .replace(/结构化提取/g, "整理卡片")
     .replace(/确定性分析/g, "内置分析")
-    .replace(/computeFunnel/g, "算转化漏斗")
-    .replace(/queryBrandData/g, "拉品牌概况")
-    .replace(/retrieveKnowledge/g, "翻经营手册")
-    .replace(/runNl2Sql/g, "自然语言查数")
-    .replace(/aggregateMonthly/g, "看月度走势")
-    .replace(/getBrandPeerBenchmark/g, "拉品牌竞品数据")
-    .replace(/getCompetitorBenchmark/g, "拉平台对比数据")
-    .replace(/generateObject/g, "整理提案卡片")
+    .replace(/generateObject/g, "generateObject")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -90,15 +84,13 @@ function friendlyStepName(name) {
 
 function friendlyTool(tool) {
   if (!tool) return "";
-  return sanitizeTechTerms(
-    String(tool)
-      .split(/\s*→\s*/)
-      .map((part) => {
-        const key = part.trim();
-        return TOOL_NAMES[key] || TOOL_NAMES[key.toLowerCase()] || key;
-      })
-      .join(" → ")
-  );
+  return String(tool)
+    .split(/\s*→\s*/)
+    .map((part) => {
+      const key = part.trim();
+      return TOOL_NAMES[key] || TOOL_NAMES[key.toLowerCase()] || key;
+    })
+    .join(" → ");
 }
 
 function shortenText(text, maxLen) {
@@ -118,8 +110,9 @@ function friendlyStepSummary(step) {
     return `判断你在问「${match[1]}」这类事（把握约 ${match[2]}%）${reason ? " · " + reason : ""}`;
   }
 
-  if (/^调用 .+ 完成$/.test(summary)) {
-    return `已完成：${tool || sanitizeTechTerms(summary.replace(/^调用\s+|\s+完成$/g, ""))}`;
+  if (/^(调用 .+ 完成|call .+ done)$/.test(summary)) {
+    const toolName = tool || summary.replace(/^(调用\s+|\s+完成|call\s+|\s+done)$/g, "");
+    return `done: ${toolName}`;
   }
   if (/^完成 /.test(summary) && tool) {
     return `${sanitizeTechTerms(summary.replace(/^完成\s*/, "已完成："))}（${tool}）`;
