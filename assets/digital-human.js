@@ -69,7 +69,7 @@
         }
       })
       .catch(function () {
-        setStatus("无法读取运行时配置");
+        setStatus("无法读取配置，百炼状态未知");
       });
   }
 

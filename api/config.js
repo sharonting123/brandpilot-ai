@@ -1,4 +1,5 @@
 const { getRuntimeConfig } = require("./_lib/env");
+const { AVATAR_IMAGE_SPECS } = require("./_lib/dashscope-client");
 const { assertMethod, handleError, sendJson } = require("./_lib/http");
 
 module.exports = function handler(req, res) {
@@ -19,7 +20,7 @@ module.exports = function handler(req, res) {
         dashscopeConfigured: config.dashscope.configured,
         digitalHumanProvider: config.dashscope.configured ? "dashscope_wan2.2-s2v" : "browser_fallback",
         digitalHumanAvatarUrl: config.dashscope.avatarUrl,
-        digitalHumanAvatarSpecs: require("./dashscope-client").AVATAR_IMAGE_SPECS,
+        digitalHumanAvatarSpecs: AVATAR_IMAGE_SPECS,
         nodeEnv: config.nodeEnv
       },
       "s-maxage=60, stale-while-revalidate=300"
