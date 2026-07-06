@@ -340,7 +340,7 @@ async function proposalComposerAgent(state, modelConfig) {
       "你是 BrandPilot AI 的提案包装 Agent，只负责把已完成的多 Agent 结果改写成清晰的半年度品牌提案。",
       "禁止编造外部事实；必须保留数据口径限制；必须围绕海底捞 2026 H1 半年度提案。",
       "只输出严格 JSON，不要 Markdown。",
-      "顶层字段必须包含：metrics, insights, actions, timeline, assets, liveScript, arPlan, proposal, evidence。"
+      "顶层字段必须包含：metrics, insights, actions, timeline, assets, liveScript, proposal, evidence。"
     ].join("\n"),
     user: {
       requestId: state.requestId,
@@ -401,7 +401,6 @@ function buildApiResult(state, modelConfig) {
     timeline: composer.timeline,
     assets: composer.assets,
     liveScript: composer.liveScript,
-    arPlan: composer.arPlan,
     proposal: {
       ...composer.proposal,
       payload: {
@@ -443,12 +442,6 @@ function buildDeterministicProposal(state) {
         "下半年建议用搜索承接、套餐组合和复盘看板，把销售方案升级成经营方案。"
       ]
     },
-    arPlan: {
-      zone: "搜索-POI-套餐链路",
-      headline: "把海底捞高意图搜索转成可核销订单",
-      metric: analysis.metricCards[1]?.value || "-",
-      narrative: "AR 展示只保留链路关键节点，突出 POI 到套餐详情的承接损耗。"
-    },
     proposal: {
       brand_id: brief.brandId,
       brand_name: brief.brandName,
@@ -477,7 +470,6 @@ function mergeComposerOutput(fallback, modelDraft) {
     timeline: normalizeList(modelDraft.timeline, fallback.timeline, 3),
     assets: normalizeList(modelDraft.assets, fallback.assets, 4),
     liveScript: modelDraft.liveScript?.lines?.length ? modelDraft.liveScript : fallback.liveScript,
-    arPlan: modelDraft.arPlan || fallback.arPlan,
     proposal: {
       ...fallback.proposal,
       ...(modelDraft.proposal || {}),
