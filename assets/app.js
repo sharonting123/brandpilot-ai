@@ -218,12 +218,25 @@
       })
     })
       .then(function (resp) {
-        if (!resp.ok) {
-          return resp.json().then(function (errData) {
-            throw new Error(errData.message || "请求失败 (" + resp.status + ")");
-          });
-        }
-        return resp.json();
+        return resp.text().then(function (text) {
+          var data = null;
+          if (text) {
+            try {
+              data = JSON.parse(text);
+            } catch (parseError) {
+              if (resp.status === 504 || resp.status === 502) {
+                throw new Error("分析超时（服务器 " + resp.status + "），请稍后重试或换更短的问题。");
+              }
+              throw new Error((text.slice(0, 160) || "服务器返回异常") + "（非 JSON 响应）");
+            }
+          } else {
+            data = {};
+          }
+          if (!resp.ok) {
+            throw new Error((data && data.message) || "请求失败 (" + resp.status + ")");
+          }
+          return data;
+        });
       })
       .then(function (data) {
         var latency = Date.now() - startTime;

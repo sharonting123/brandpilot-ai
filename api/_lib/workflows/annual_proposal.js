@@ -7,6 +7,7 @@
 const { TOOL_REGISTRY } = require("../agent-tools");
 const { buildSharedTools } = require("../ai-tools-factory");
 const { buildChatMessages } = require("../workflow-utils");
+const { getAgentMaxTokens, getStructuredMaxTokens } = require("../token-budget");
 
 /**
  * 获取年度提案工作流的 system prompt
@@ -110,7 +111,7 @@ async function generateStructuredProposal(agentAnswer, modelConfig, brandName, p
     schema: ProposalSchema,
     system,
     prompt: agentAnswer,
-    maxOutputTokens: modelConfig.maxTokens
+    maxOutputTokens: getStructuredMaxTokens(modelConfig)
   });
 
   return object;
@@ -174,9 +175,9 @@ async function execute(params) {
       system: systemPrompt,
       messages: buildChatMessages(params.history, message),
       tools: toolsDefined,
-      maxSteps: 10,
+      maxSteps: 5,
       temperature: 0.3,
-      maxOutputTokens: modelConfig.maxTokens
+      maxOutputTokens: getAgentMaxTokens(modelConfig)
     });
 
     agentAnswer = result.text;
@@ -212,12 +213,19 @@ async function execute(params) {
     agentAnswer = buildFallbackAnswer(brandName, intentParams, brandData, funnelData, monthlyData);
   }
 
-  // 用 generateObject 提取结构化提案
+  // 用 generateObject 提取结构化提案（时间预算内才执行，避免 60s 网关超时）
   let structuredProposal = null;
-  if (modelConfig.configured) {
+  const elapsedBeforeStruct = Date.now() - startedAt;
+  if (modelConfig.configured && elapsedBeforeStruct < 38000) {
     try {
       const genStart = Date.now();
-      structuredProposal = await generateStructuredProposal(agentAnswer, modelConfig, brandName, intentParams);
+      const promptText = String(agentAnswer || "").slice(0, 6000);
+      structuredProposal = await generateStructuredProposal(
+        promptText,
+        modelConfig,
+        brandName,
+        intentParams
+      );
       agentTrace.push({
         name: "提案结构化Agent",
         tool: "generateObject",
@@ -232,6 +240,13 @@ async function execute(params) {
         durationMs: 0
       });
     }
+  } else if (modelConfig.configured) {
+    agentTrace.push({
+      name: "提案结构化Agent",
+      tool: "skipped",
+      summary: "主推理耗时 " + elapsedBeforeStruct + "ms，跳过结构化提取以防超时",
+      durationMs: 0
+    });
   }
 
   // 构建图表

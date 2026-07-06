@@ -6,8 +6,7 @@
  */
 
 const { getModelConfig } = require("./env");
-
-// 工作流关键词规则（兜底路径）
+const { getIntentMaxTokens } = require("./token-budget");
 const KEYWORD_RULES = [
   {
     workflow: "annual_proposal",
@@ -83,7 +82,7 @@ async function recognizeIntentWithLLM(message, modelConfig) {
     schema: IntentSchema,
     system: systemPrompt,
     prompt: message,
-    maxOutputTokens: modelConfig.maxTokens
+    maxOutputTokens: getIntentMaxTokens(modelConfig)
   });
 
   return object;
@@ -143,6 +142,15 @@ function recognizeIntentWithKeywords(message) {
  * 优先用 LLM，失败时降级到关键词规则
  */
 async function recognizeIntent(message, modelConfig) {
+  const keywordResult = recognizeIntentWithKeywords(message);
+  // 高置信关键词命中时跳过 LLM 意图识别，节省 10-20 秒避免 Vercel 60s 超时
+  if (keywordResult.confidence >= 0.65) {
+    return {
+      ...keywordResult,
+      recognitionMode: "keyword_fast"
+    };
+  }
+
   if (modelConfig && modelConfig.configured) {
     try {
       const result = await recognizeIntentWithLLM(message, modelConfig);
