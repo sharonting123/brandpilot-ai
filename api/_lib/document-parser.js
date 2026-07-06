@@ -250,7 +250,7 @@ async function parseImageBuffer(filename, buffer, options = {}) {
     mimeType: mimeFromFilename(filename),
     sourceType: "ocr",
     ocrModel: ocr.model,
-    ocrTask: ocr.task,
+    ocrProvider: ocr.provider,
     chunks,
     chunkCount: chunks.length,
     ...packed

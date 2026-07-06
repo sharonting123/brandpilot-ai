@@ -138,7 +138,8 @@
             charCount: parsed.charCount || (parsed.text || "").length,
             truncated: Boolean(parsed.truncated),
             sourceType: parsed.sourceType || (isImageFile(file) ? "ocr" : "text"),
-            ocrModel: parsed.ocrModel || ""
+            ocrModel: parsed.ocrModel || "",
+            ocrProvider: parsed.ocrProvider || parsed.provider || ""
           };
           state.items.push(item);
           return item;
@@ -167,7 +168,8 @@
         charCount: item.charCount,
         truncated: item.truncated,
         sourceType: item.sourceType,
-        ocrModel: item.ocrModel
+        ocrModel: item.ocrModel,
+        ocrProvider: item.ocrProvider
       };
     });
   }
@@ -186,7 +188,9 @@
       " 个文档。系统会<strong>切分为段落</strong>，发送时按你的问题选取相关片段（图片会先 OCR 识别）。</p>";
     container.innerHTML = hint + state.items.map(function (item) {
       var meta = item.format.toUpperCase() + " · " + item.charCount.toLocaleString("zh-CN") + " 字 · " + item.chunkCount + " 段";
-      if (item.sourceType === "ocr") meta += " · OCR";
+      if (item.sourceType === "ocr") {
+        meta += item.ocrProvider === "longcat" ? " · LongCat OCR" : " · OCR";
+      }
       if (item.truncated) meta += " · 已截断";
       return (
         '<span class="doc-chip" data-doc-id="' + escapeAttr(item.id) + '">' +

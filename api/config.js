@@ -30,6 +30,7 @@ module.exports = function handler(req, res) {
         modelName: config.model.model,
         dashscopeConfigured: config.dashscope.configured,
         ocrConfigured: config.ocr.configured,
+        ocrProvider: config.ocr.provider,
         ocrModel: config.ocr.model,
         ragEmbeddingConfigured: config.rag.embeddingEnabled,
         ragRerankConfigured: config.rag.rerankEnabled,
