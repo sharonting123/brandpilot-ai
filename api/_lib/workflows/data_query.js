@@ -6,7 +6,7 @@
 const { shouldShowGtvTrendChart } = require("../chart-policy");
 const { TOOL_REGISTRY } = require("../agent-tools");
 const { buildSharedTools } = require("../ai-tools-factory");
-const { buildChatMessages } = require("../workflow-utils");
+const { buildChatMessages, ANSWER_SCOPE_RULE } = require("../workflow-utils");
 const { tracePush, reportProgress, buildStepStart } = require("../workflow-progress");
 const { emptyTokenUsage, mergeTokenUsage, extractUsageFromGenerateResult } = require("../token-usage");
 
@@ -34,6 +34,7 @@ function getSystemPrompt(brandName) {
     "- 如果用户问的是漏斗/转化，用 computeFunnel",
     "- 如果数据模式为 empty 或 unavailable，必须告知用户当前无可用数据",
     "- 用中文回答，清晰标注数值和单位",
+    ANSWER_SCOPE_RULE,
     "品牌固定为" + brandName + "。"
   ].join("\n");
 }

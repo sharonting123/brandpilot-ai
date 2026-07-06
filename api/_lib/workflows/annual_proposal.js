@@ -8,7 +8,7 @@ const { TOOL_REGISTRY } = require("../agent-tools");
 const { buildSharedTools } = require("../ai-tools-factory");
 const { shouldShowGtvTrendChart } = require("../chart-policy");
 const { tracePush, reportProgress, buildStepStart } = require("../workflow-progress");
-const { buildChatMessages } = require("../workflow-utils");
+const { buildChatMessages, ANSWER_SCOPE_RULE } = require("../workflow-utils");
 const { getAgentMaxTokens, getStructuredMaxTokens } = require("../token-budget");
 const { emptyTokenUsage, mergeTokenUsage, extractUsageFromGenerateResult } = require("../token-usage");
 
@@ -38,6 +38,7 @@ function getSystemPrompt(brandName, params) {
     "- 结论必须落到可验证的指标和可执行的动作",
     "- 如果数据模式为 empty 或 unavailable（无可用数据），需在提案中标注",
     "- 在最终回复中用中文明了的语言呈现提案",
+    ANSWER_SCOPE_RULE,
     "",
     "你的回复需要包含：",
     "1. 【经营摘要】一段话概括核心发现",

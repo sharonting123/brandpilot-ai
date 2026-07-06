@@ -4,7 +4,7 @@
  * 轻量级，不生成完整提案。
  */
 
-const { buildChatMessages } = require("../workflow-utils");
+const { buildChatMessages, ANSWER_SCOPE_RULE } = require("../workflow-utils");
 const { tracePush, reportProgress, buildStepStart } = require("../workflow-progress");
 const { emptyTokenUsage, mergeTokenUsage, extractUsageFromGenerateResult } = require("../token-usage");
 
@@ -33,6 +33,7 @@ function getSystemPrompt(brandName, params) {
     "4. 【优化建议】2-3条可执行的改善方向",
     "",
     "禁止编造数据，只使用工具返回的真实数值。",
+    ANSWER_SCOPE_RULE,
     "品牌固定为" + brandName + "，周期为" + (params.period || "最新数据") + "。"
   ].join("\n");
 }

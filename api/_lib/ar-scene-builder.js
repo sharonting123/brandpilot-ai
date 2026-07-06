@@ -17,22 +17,21 @@ const {
 const KNOWN_CITIES = ["上海", "北京", "深圳", "广州", "成都", "杭州", "南京", "武汉", "重庆", "西安"];
 const REGION_CITY_PATTERN = /(上海|北京|深圳|广州|成都|杭州|南京|武汉|重庆|西安|三河)/;
 const REGION_KEYWORDS =
-  /城市|商圈|门店|地区|区域|省份|全国分布|下沉|一线|二线|三线|地图|沙盘|下钻|poi|经纬|城市对比|同城市|重点城市|城市分层|分城市|各城|哪个城市|核心商圈|区县|大区|片区|选址|布局/i;
+  /地图|沙盘|下钻|AR|展厅|商圈|门店|城市对比|分城市|各城|哪个城市|城市分层|全国分布|选址|布局|按城市|城市.*(分布|对比|排名)/i;
 
 /**
- * 问题是否涉及地区/城市/商圈/门店维度 — 仅此类问题进入 AR 沙盘
+ * 问题是否涉及地区/城市/商圈/门店维度 — 仅用户明确问到时才进入 AR 沙盘
  */
 function involvesRegionAnalysis(message, workflow, intentParams = {}, scene = null) {
   const text = String(message || "");
-  if (intentParams?.city || detectCity(message, intentParams)) return true;
-  if (REGION_CITY_PATTERN.test(text)) return true;
+  if (intentParams?.regionAnalysis === true) return true;
   if (REGION_KEYWORDS.test(text)) return true;
-  if (scene?.focusCity) return true;
-  // 竞品/经营分析含城市维度对比，启用 AR 联动钻取
-  if (workflow === "competitor_benchmark") return true;
-  if (workflow === "annual_proposal") return true;
-  if (workflow === "data_query" && /城市|gmv|核销|roi|商圈|门店/i.test(text)) return true;
-
+  if (REGION_CITY_PATTERN.test(text) && /商圈|门店|地区|区域|下钻|沙盘|地图/i.test(text)) {
+    return true;
+  }
+  if (intentParams?.city && /城市|商圈|门店|地区|区域|地图|沙盘|下钻/i.test(text)) {
+    return true;
+  }
   return false;
 }
 
@@ -241,7 +240,7 @@ function buildArScene(ctx, workflowResult, options = {}) {
     city: topic.city || null
   });
 
-  const regionRelevant = involvesRegionAnalysis(message, workflow, intentParams, { focusCity: topic.city });
+  const regionRelevant = involvesRegionAnalysis(message, workflow, intentParams);
 
   return {
     brandName: drillMetrics.brand.brandName || "海底捞",

@@ -5,7 +5,7 @@
  * 按用户问题 focus 只输出对应板块（除非明确问两类）
  */
 
-const { buildChatMessages } = require("../workflow-utils");
+const { buildChatMessages, ANSWER_SCOPE_RULE } = require("../workflow-utils");
 const { tracePush, reportProgress, buildStepStart } = require("../workflow-progress");
 const {
   buildPlatformBenchmarks,
@@ -55,12 +55,13 @@ function getSystemPrompt(brandName, message, intentParams, focus) {
     "",
     "对比框架：",
     focus !== "brand" ? "- 平台对比：美团高意图搜索、高核销；抖音高内容流量、低核销、补贴更高" : "",
-    focus !== "platform" ? "- 品牌竞品：对比 GMV/GTV、客单价、核销率、ROI，识别海底捞相对呷哺呷哺的优势城市" : "",
+    focus !== "platform" ? "- 品牌竞品：对比 GMV/GTV、客单价、核销率、ROI（仅用户问到品牌竞品时）" : "",
     "",
     "回复结构：",
     ...structure,
     "",
-    "禁止编造数据，只使用工具返回的真实数值。"
+    "禁止编造数据，只使用工具返回的真实数值。",
+    ANSWER_SCOPE_RULE
   ]
     .filter(Boolean)
     .join("\n");

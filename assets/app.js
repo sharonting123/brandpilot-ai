@@ -400,12 +400,9 @@
 
   function shouldUseArExperience(data) {
     if (!data) return false;
-    if (data.scene && data.scene.cities && data.scene.cities.length > 0) return true;
     var caps = data.capabilities || {};
-    if (caps.regionAnalysis === false) return false;
-    if (caps.regionAnalysis === true) return Boolean(data.scene);
+    if (!caps.regionAnalysis || !caps.arScene) return false;
     if (data.scene && data.scene.regionRelevant) return true;
-    if (data.scene && data.scene.focusCity) return true;
     return false;
   }
 
@@ -424,12 +421,10 @@
     var useAr = shouldUseArExperience(data);
     setResultPanelsEnabled(true, { hasAr: useAr });
     renderVisualization(data);
+    switchMode("analysis");
+    if (vizLivePanel) vizLivePanel.hidden = true;
     if (useAr) {
-      switchMode("ar");
       syncExtendedLayers(data);
-    } else {
-      switchMode("analysis");
-      if (vizLivePanel) vizLivePanel.hidden = true;
     }
   }
 
@@ -447,8 +442,7 @@
     });
 
     if (vizLivePanel) {
-      // AR 展厅自带指标与筛选，避免顶部联动条挤占地图高度
-      vizLivePanel.hidden = currentMode === "ar" || !lastResponse || !shouldUseArExperience(lastResponse);
+      vizLivePanel.hidden = true;
     }
 
     if (currentMode === "ar") {
@@ -468,10 +462,6 @@
         }, 120);
       }
       if (window.BrandPilotAR) window.BrandPilotAR.resize();
-    }
-
-    if (currentMode === "analysis" && lastResponse && shouldUseArExperience(lastResponse)) {
-      syncAnalysisFromScene();
     }
   }
 
@@ -690,64 +680,11 @@
   }
 
   function syncAnalysisLivePanel(payload) {
-    var scope = payload.scope;
-    var scene = payload.scene || (window.BrandPilotAR && window.BrandPilotAR.getSceneData());
-    var timeFilter = payload.timeFilter || (window.BrandPilotAR && window.BrandPilotAR.getTimeFilter());
-
-    if (!scope || !scene || (!scene.drillSource && !scene.drillMetrics)) {
-      if (vizLivePanel) vizLivePanel.hidden = true;
-      return;
-    }
-
-    if (vizLivePanel) vizLivePanel.hidden = false;
-    if (vizLiveFilter) vizLiveFilter.innerHTML = renderVizLiveFilter(scene, timeFilter);
-    bindVizLivePanelEvents();
-
-    var periodLabel = scope.dateRange && scope.dateRange.label ? scope.dateRange.label : "";
-    if (vizLiveScope) {
-      vizLiveScope.innerHTML =
-        '<div class="viz-live-scope-head">' +
-        "<strong>" + escapeHtml(scope.breadcrumb || scope.label || "经营指标") + "</strong>" +
-        (periodLabel ? '<span class="viz-live-period">' + escapeHtml(periodLabel) + "</span>" : "") +
-        "</div>" +
-        '<div class="viz-live-metrics">' + buildScopeMetricCards(scope) + "</div>";
-    }
-
-    if (vizLiveCities) {
-      var selectedCity = payload.selectedCity || (window.BrandPilotAR && window.BrandPilotAR.getSelection().selectedCity);
-      vizLiveCities.innerHTML = renderVizLiveCities(scene, selectedCity);
-    }
-
-    if (arMeta) {
-      var metaParts = [];
-      if (scope.breadcrumb) metaParts.push(scope.breadcrumb);
-      if (periodLabel) metaParts.push(periodLabel);
-      arMeta.textContent = metaParts.join(" · ");
-    }
-    if (vizToolbarSubtitle && lastResponse) {
-      var subtitle = [];
-      if (lastResponse.workflowLabel) subtitle.push(lastResponse.workflowLabel);
-      if (scope.breadcrumb) subtitle.push(scope.breadcrumb);
-      if (periodLabel) subtitle.push(periodLabel);
-      vizToolbarSubtitle.textContent = subtitle.join(" · ");
-    }
-    if (vizToolbarTitle && scope.label) {
-      vizToolbarTitle.textContent = scope.label + " · 经营指标";
-    }
-
-    updateScopeLinkedCharts(scope, scene);
+    if (vizLivePanel) vizLivePanel.hidden = true;
   }
 
   function syncAnalysisFromScene() {
-    if (!window.BrandPilotAR) return;
-    var selection = window.BrandPilotAR.getSelection();
-    if (!selection || !selection.scope) return;
-    syncAnalysisLivePanel({
-      scope: selection.scope,
-      scene: window.BrandPilotAR.getSceneData(),
-      timeFilter: selection.timeFilter,
-      selectedCity: selection.selectedCity
-    });
+    if (vizLivePanel) vizLivePanel.hidden = true;
   }
 
   function scaleChartForScope(chartDef, scope, scene) {
@@ -1195,10 +1132,10 @@
     }
 
     // 数据模式提醒
-    if (data.dataMode === "fixture") {
+    if (data.dataMode === "empty" || data.dataMode === "unavailable") {
       var notice = document.createElement("div");
       notice.className = "data-notice";
-      notice.textContent = "⚠️ 当前使用演示数据，正式环境会接入真实经营数据。";
+      notice.textContent = "⚠️ 当前无可用经营数据，请检查 Supabase 配置与种子数据。";
       body.appendChild(notice);
     }
 
@@ -1356,8 +1293,6 @@
     }
 
     updateExportToolbar(data);
-    bindVizLivePanelEvents();
-    setTimeout(syncAnalysisFromScene, 0);
   }
 
   function updateExportToolbar(data) {
@@ -1408,7 +1343,6 @@
           }
           arMeta.textContent = metaParts.join(" · ");
         }
-        setTimeout(syncAnalysisFromScene, 0);
       }
     } else if (arMeta) {
       arMeta.textContent = "AR 场景加载中，请稍候…";
