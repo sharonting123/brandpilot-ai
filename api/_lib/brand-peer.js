@@ -74,7 +74,8 @@ function buildBrandPeerBenchmarks(ctx = {}, monthKey) {
   const peerCities = rowsForMonth(ctx.peerCityMonthlyFacts, month);
 
   const cityComparisons = ownCities.map((own) => {
-    const peer = peerCities.find((item) => item.city === own.city) || {};
+    const peer = peerCities.find((item) => item.city === own.city);
+    if (!peer) return null;
     return {
       city: own.city,
       own: {
@@ -94,7 +95,7 @@ function buildBrandPeerBenchmarks(ctx = {}, monthKey) {
         roi: peer.roi || 0
       }
     };
-  });
+  }).filter(Boolean);
 
   return {
     month,
