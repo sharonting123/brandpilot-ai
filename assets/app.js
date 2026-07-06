@@ -25,13 +25,17 @@
   var enterXrButton = document.getElementById("enterXrButton");
   var resetArButton = document.getElementById("resetArButton");
   var dhCanvas = document.getElementById("dhCanvas");
+  var dhVideo = document.getElementById("dhVideo");
+  var dhAudio = document.getElementById("dhAudio");
+  var dhVideoShell = document.getElementById("dhVideoShell");
+  var dhSubtitleOverlay = document.getElementById("dhSubtitleOverlay");
   var dhStatus = document.getElementById("dhStatus");
   var dhSubtitle = document.getElementById("dhSubtitle");
   var dhScriptPanel = document.getElementById("dhScriptPanel");
+  var dhGenerateButton = document.getElementById("dhGenerateButton");
   var dhSpeakButton = document.getElementById("dhSpeakButton");
   var dhStopButton = document.getElementById("dhStopButton");
-  var dhRecordButton = document.getElementById("dhRecordButton");
-  var dhStopRecordButton = document.getElementById("dhStopRecordButton");
+  var dhDownloadButton = document.getElementById("dhDownloadButton");
 
   // ===== 状态 =====
   var isProcessing = false;
@@ -129,25 +133,29 @@
   }
 
   function bindDigitalHuman() {
-    if (window.BrandPilotDigitalHuman && dhCanvas) {
+    if (window.BrandPilotDigitalHuman) {
       window.BrandPilotDigitalHuman.init({
         canvas: dhCanvas,
+        videoEl: dhVideo,
+        audioEl: dhAudio,
+        videoShell: dhVideoShell,
+        subtitleOverlay: dhSubtitleOverlay,
         statusEl: dhStatus,
         subtitleEl: dhSubtitle,
         scriptEl: dhScriptPanel
       });
     }
+    if (dhGenerateButton) dhGenerateButton.addEventListener("click", function () {
+      if (window.BrandPilotDigitalHuman) window.BrandPilotDigitalHuman.generate();
+    });
     if (dhSpeakButton) dhSpeakButton.addEventListener("click", function () {
       if (window.BrandPilotDigitalHuman) window.BrandPilotDigitalHuman.speak();
     });
     if (dhStopButton) dhStopButton.addEventListener("click", function () {
       if (window.BrandPilotDigitalHuman) window.BrandPilotDigitalHuman.stop();
     });
-    if (dhRecordButton) dhRecordButton.addEventListener("click", function () {
-      if (window.BrandPilotDigitalHuman) window.BrandPilotDigitalHuman.startRecording();
-    });
-    if (dhStopRecordButton) dhStopRecordButton.addEventListener("click", function () {
-      if (window.BrandPilotDigitalHuman) window.BrandPilotDigitalHuman.stopRecording();
+    if (dhDownloadButton) dhDownloadButton.addEventListener("click", function () {
+      if (window.BrandPilotDigitalHuman) window.BrandPilotDigitalHuman.downloadVideo();
     });
   }
 

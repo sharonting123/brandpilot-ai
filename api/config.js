@@ -16,6 +16,8 @@ module.exports = function handler(req, res) {
         supabaseBrowserEnabled: exposeSupabase,
         modelConfigured: config.model.configured,
         modelName: config.model.model,
+        dashscopeConfigured: config.dashscope.configured,
+        digitalHumanProvider: config.dashscope.configured ? "dashscope_wan2.2-s2v" : "browser_fallback",
         nodeEnv: config.nodeEnv
       },
       "s-maxage=60, stale-while-revalidate=300"

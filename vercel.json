@@ -12,6 +12,9 @@
     "api/events.js": {
       "maxDuration": 10
     },
+    "api/digital-human.js": {
+      "maxDuration": 120
+    },
     "api/health.js": {
       "maxDuration": 10
     },

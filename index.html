@@ -131,15 +131,21 @@
       <section class="mode-panel" id="panelHuman" data-mode-panel="human">
         <div class="dh-layout">
           <div class="dh-stage-wrap">
-            <canvas id="dhCanvas" width="720" height="420"></canvas>
-            <div class="dh-status" id="dhStatus">待命</div>
+            <div class="dh-video-shell" id="dhVideoShell">
+              <video id="dhVideo" class="dh-video" playsinline controls></video>
+              <canvas id="dhCanvas" class="dh-canvas-fallback" width="720" height="420"></canvas>
+              <div class="dh-subtitle-overlay" id="dhSubtitleOverlay"></div>
+            </div>
+            <audio id="dhAudio" class="dh-audio" controls></audio>
+            <div class="dh-status" id="dhStatus">待命 · 需配置 DASHSCOPE_API_KEY</div>
             <div class="dh-subtitle" id="dhSubtitle" aria-live="polite">等待口播内容…</div>
             <div class="dh-controls">
-              <button id="dhSpeakButton" class="primary-button" type="button">开始播报</button>
+              <button id="dhGenerateButton" class="primary-button" type="button">生成百炼数字人</button>
+              <button id="dhSpeakButton" class="ghost-button" type="button">试听 TTS</button>
               <button id="dhStopButton" class="ghost-button" type="button">停止</button>
-              <button id="dhRecordButton" class="ghost-button" type="button">导出视频</button>
-              <button id="dhStopRecordButton" class="ghost-button" type="button">结束导出</button>
+              <button id="dhDownloadButton" class="ghost-button" type="button">下载视频</button>
             </div>
+            <p class="dh-hint">使用百炼 <strong>Qwen-TTS</strong> 合成声音 + <strong>wan2.2-s2v</strong> 生成对口型视频（单段约 20 秒内）。</p>
           </div>
           <div class="dh-script" id="dhScriptPanel">
             <p class="dh-empty">生成提案或完成分析后，这里会出现数字人口播脚本。</p>

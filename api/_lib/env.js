@@ -28,12 +28,19 @@ function getSupabaseConfig(env = process.env) {
   };
 }
 
+function getDashScopeConfig(env = process.env) {
+  const { getDashScopeConfig: getConfig } = require("./dashscope-client");
+  return getConfig(env);
+}
+
 function getRuntimeConfig(env = process.env) {
   const model = getModelConfig(env);
   const supabase = getSupabaseConfig(env);
+  const dashscope = getDashScopeConfig(env);
   return {
     model,
     supabase,
+    dashscope,
     nodeEnv: env.NODE_ENV || "development"
   };
 }
@@ -48,5 +55,6 @@ module.exports = {
   DEFAULT_MODEL,
   getModelConfig,
   getRuntimeConfig,
-  getSupabaseConfig
+  getSupabaseConfig,
+  getDashScopeConfig
 };

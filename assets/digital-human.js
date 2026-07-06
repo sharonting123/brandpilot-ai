@@ -1,9 +1,8 @@
 /**
- * BrandPilot 数字人播报层
- * - 浏览器 TTS（speechSynthesis）
- * - 口播脚本分镜字幕
- * - Canvas 虚拟形象动画
- * - MediaRecorder 视频导出（含字幕画面）
+ * BrandPilot 数字人播报层（百炼 DashScope）
+ * - Qwen-TTS 语音合成
+ * - wan2.2-s2v 对口型视频
+ * - 字幕叠加与分镜脚本
  */
 (function (global) {
   "use strict";
@@ -11,56 +10,270 @@
   var state = {
     canvas: null,
     ctx: null,
+    videoEl: null,
+    audioEl: null,
+    videoShell: null,
+    subtitleOverlay: null,
     script: null,
     sceneIndex: 0,
-    speaking: false,
-    utterance: null,
-    animId: null,
-    pulse: 0,
-    recorder: null,
-    chunks: [],
-    recording: false,
     statusEl: null,
     subtitleEl: null,
-    scriptEl: null
+    scriptEl: null,
+    dashscopeConfigured: false,
+    pollTimer: null,
+    subtitleTimer: null,
+    currentTaskId: null,
+    currentVideoUrl: null,
+    currentAudioUrl: null,
+    currentSubtitles: [],
+    generating: false
   };
 
   function init(options) {
-    state.canvas = options.canvas;
-    state.ctx = state.canvas.getContext("2d");
+    state.canvas = options.canvas || null;
+    state.videoEl = options.videoEl || null;
+    state.audioEl = options.audioEl || null;
+    state.videoShell = options.videoShell || null;
+    state.subtitleOverlay = options.subtitleOverlay || null;
     state.statusEl = options.statusEl;
     state.subtitleEl = options.subtitleEl;
     state.scriptEl = options.scriptEl;
-    drawFrame("待命");
-    loop();
+
+    if (state.canvas) {
+      state.ctx = state.canvas.getContext("2d");
+      drawFallback("待命");
+    }
+    hideVideo();
+    loadRuntimeConfig();
+    bindMediaEvents();
+  }
+
+  function loadRuntimeConfig() {
+    fetch("/api/config")
+      .then(function (resp) { return resp.json(); })
+      .then(function (data) {
+        state.dashscopeConfigured = Boolean(data.dashscopeConfigured);
+        if (state.dashscopeConfigured) {
+          setStatus("百炼已配置 · 可生成对口型数字人");
+        } else {
+          setStatus("未配置 DASHSCOPE_API_KEY · 仅可试听浏览器 TTS");
+        }
+      })
+      .catch(function () {
+        setStatus("无法读取运行时配置");
+      });
+  }
+
+  function bindMediaEvents() {
+    if (state.videoEl) {
+      state.videoEl.addEventListener("play", function () {
+        startSubtitleSync(state.videoEl);
+      });
+      state.videoEl.addEventListener("pause", stopSubtitleSync);
+      state.videoEl.addEventListener("ended", function () {
+        stopSubtitleSync();
+        setStatus("视频播放完成");
+      });
+    }
+    if (state.audioEl) {
+      state.audioEl.addEventListener("play", function () {
+        startSubtitleSync(state.audioEl);
+      });
+      state.audioEl.addEventListener("pause", stopSubtitleSync);
+      state.audioEl.addEventListener("ended", stopSubtitleSync);
+    }
   }
 
   function setScript(liveScript) {
     state.script = liveScript || null;
     state.sceneIndex = 0;
-    if (state.scriptEl) {
-      if (!liveScript) {
-        state.scriptEl.innerHTML = "<p class='dh-empty'>生成提案或完成分析后，这里会出现数字人口播脚本。</p>";
-      } else {
-        var html = "<h3>" + escapeHtml(liveScript.title || "数字人口播") + "</h3>";
-        html += "<p class='dh-meta'>总时长约 " + (liveScript.totalDurationSec || 0) + " 秒 · " +
-          ((liveScript.scenes || []).length) + " 个分镜</p>";
-        html += "<ol class='dh-scene-list'>";
-        (liveScript.scenes || []).forEach(function (scene, index) {
-          html += "<li data-index='" + index + "'><strong>" + escapeHtml(scene.title) +
-            "</strong><span>" + escapeHtml(scene.narration) + "</span></li>";
-        });
-        html += "</ol>";
-        state.scriptEl.innerHTML = html;
-      }
+    renderScriptPanel(liveScript);
+    setSubtitle(
+      liveScript && liveScript.scenes && liveScript.scenes[0]
+        ? liveScript.scenes[0].narration
+        : "等待口播内容…"
+    );
+    if (liveScript) {
+      setStatus(state.dashscopeConfigured ? "脚本就绪 · 点击「生成百炼数字人」" : "脚本就绪");
     }
-    setSubtitle(liveScript && liveScript.scenes && liveScript.scenes[0]
-      ? liveScript.scenes[0].narration
-      : "等待口播内容…");
-    setStatus(liveScript ? "脚本就绪" : "未加载脚本");
+  }
+
+  function renderScriptPanel(liveScript) {
+    if (!state.scriptEl) return;
+    if (!liveScript) {
+      state.scriptEl.innerHTML = "<p class='dh-empty'>生成提案或完成分析后，这里会出现数字人口播脚本。</p>";
+      return;
+    }
+
+    var html = "<h3>" + escapeHtml(liveScript.title || "数字人口播") + "</h3>";
+    html += "<p class='dh-meta'>总时长约 " + (liveScript.totalDurationSec || 0) + " 秒 · " +
+      ((liveScript.scenes || []).length) + " 个分镜 · 单段生成限约 20 秒</p>";
+    html += "<ol class='dh-scene-list'>";
+    (liveScript.scenes || []).forEach(function (scene, index) {
+      html += "<li data-index='" + index + "'><button type='button' class='dh-scene-btn' data-index='" +
+        index + "'>生成此镜</button><strong>" + escapeHtml(scene.title) +
+        "</strong><span>" + escapeHtml(scene.narration) + "</span></li>";
+    });
+    html += "</ol>";
+    state.scriptEl.innerHTML = html;
+
+    state.scriptEl.querySelectorAll(".dh-scene-btn").forEach(function (btn) {
+      btn.addEventListener("click", function (event) {
+        event.stopPropagation();
+        var idx = Number(btn.getAttribute("data-index"));
+        if (!Number.isFinite(idx)) return;
+        state.sceneIndex = idx;
+        highlightScene(idx);
+        generate({ sceneIndex: idx });
+      });
+    });
+  }
+
+  function generate(options) {
+    options = options || {};
+    if (!state.script) {
+      setStatus("请先完成一次分析，获取口播脚本");
+      return;
+    }
+    if (!state.dashscopeConfigured) {
+      setStatus("未配置 DASHSCOPE_API_KEY，无法调用百炼");
+      return;
+    }
+    if (state.generating) {
+      setStatus("正在生成中，请稍候…");
+      return;
+    }
+
+    stop();
+    state.generating = true;
+    state.currentTaskId = null;
+    state.currentVideoUrl = null;
+    state.currentSubtitles = [];
+    hideVideo();
+    drawFallback("生成中");
+    setStatus("正在调用百炼 TTS + wan2.2-s2v…");
+
+    var sceneIndex = Number.isFinite(options.sceneIndex) ? options.sceneIndex : state.sceneIndex;
+    highlightScene(sceneIndex);
+
+    fetch("/api/digital-human", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        liveScript: state.script,
+        sceneIndex: sceneIndex
+      })
+    })
+      .then(function (resp) {
+        return resp.json().then(function (data) {
+          if (!resp.ok) throw new Error(data.message || data.error || "提交失败");
+          return data;
+        });
+      })
+      .then(function (data) {
+        state.currentTaskId = data.taskId;
+        state.currentAudioUrl = data.audioUrl || null;
+        state.currentSubtitles = data.subtitles || [];
+        if (data.text) setSubtitle(data.text);
+
+        if (state.currentAudioUrl && state.audioEl) {
+          state.audioEl.src = state.currentAudioUrl;
+          state.audioEl.classList.add("visible");
+        }
+
+        setStatus("任务已提交（" + (data.taskId || "") + "），预计等待 " + (data.estimatedWaitMin || "5-10") + " 分钟…");
+        pollTask(data.taskId, Number(data.pollIntervalSec) || 15);
+      })
+      .catch(function (err) {
+        state.generating = false;
+        setStatus("生成失败：" + (err.message || "未知错误"));
+        drawFallback("失败");
+      });
+  }
+
+  function pollTask(taskId, intervalSec) {
+    clearPoll();
+    if (!taskId) {
+      state.generating = false;
+      return;
+    }
+
+    var tick = function () {
+      fetch("/api/digital-human?taskId=" + encodeURIComponent(taskId))
+        .then(function (resp) {
+          return resp.json().then(function (data) {
+            if (!resp.ok) throw new Error(data.message || data.error || "查询失败");
+            return data;
+          });
+        })
+        .then(function (data) {
+          var status = data.taskStatus || "UNKNOWN";
+          if (status === "PENDING" || status === "RUNNING") {
+            setStatus("百炼生成中… " + status + "（约每 " + intervalSec + " 秒刷新）");
+            drawFallback(status);
+            return;
+          }
+
+          clearPoll();
+          state.generating = false;
+
+          if (status === "SUCCEEDED" && data.videoUrl) {
+            showVideo(data.videoUrl);
+            setStatus("对口型视频已生成");
+            if (state.currentSubtitles.length) {
+              startSubtitleSync(state.videoEl);
+            }
+            return;
+          }
+
+          var msg = data.message || status;
+          setStatus("生成未成功：" + msg);
+          drawFallback("失败");
+        })
+        .catch(function (err) {
+          setStatus("轮询失败：" + (err.message || "网络错误") + "，将继续重试…");
+        });
+    };
+
+    tick();
+    state.pollTimer = global.setInterval(tick, intervalSec * 1000);
+  }
+
+  function clearPoll() {
+    if (state.pollTimer) {
+      global.clearInterval(state.pollTimer);
+      state.pollTimer = null;
+    }
+  }
+
+  function showVideo(url) {
+    state.currentVideoUrl = url;
+    if (!state.videoEl) return;
+    state.videoEl.src = url;
+    state.videoEl.classList.add("visible");
+    if (state.canvas) state.canvas.classList.remove("visible");
+    if (state.videoShell) state.videoShell.classList.add("has-video");
+  }
+
+  function hideVideo() {
+    if (state.videoEl) {
+      state.videoEl.pause();
+      state.videoEl.removeAttribute("src");
+      state.videoEl.classList.remove("visible");
+    }
+    if (state.canvas) state.canvas.classList.add("visible");
+    if (state.videoShell) state.videoShell.classList.remove("has-video");
   }
 
   function speak() {
+    if (state.currentAudioUrl && state.audioEl) {
+      state.audioEl.play().catch(function (err) {
+        setStatus("音频播放失败：" + err.message);
+      });
+      setStatus("正在播放百炼 TTS 音频…");
+      return;
+    }
+
     if (!state.script || !state.script.scenes || !state.script.scenes.length) {
       setStatus("请先完成一次分析，获取口播脚本");
       return;
@@ -69,109 +282,102 @@
       setStatus("当前浏览器不支持语音合成");
       return;
     }
-    stop();
-    state.speaking = true;
-    state.sceneIndex = 0;
-    speakScene(0);
-  }
 
-  function speakScene(index) {
-    var scenes = state.script.scenes;
-    if (index >= scenes.length) {
-      state.speaking = false;
-      setStatus("播报完成");
-      drawFrame("完成");
-      return;
-    }
-
-    state.sceneIndex = index;
-    highlightScene(index);
-    var scene = scenes[index];
+    stopTts();
+    var scene = state.script.scenes[state.sceneIndex] || state.script.scenes[0];
     setSubtitle(scene.narration);
-    setStatus("正在播报：" + scene.title);
-    drawFrame(scene.title);
+    setStatus("浏览器 TTS 试听：" + scene.title);
+    drawFallback("试听");
 
     var utterance = new SpeechSynthesisUtterance(scene.narration);
     utterance.lang = "zh-CN";
-    utterance.rate = 1;
-    utterance.pitch = 1;
     utterance.onend = function () {
-      if (!state.speaking) return;
-      speakScene(index + 1);
+      setStatus("试听结束");
+      drawFallback("待命");
     };
-    utterance.onerror = function () {
-      state.speaking = false;
-      setStatus("播报中断");
-    };
-    state.utterance = utterance;
     global.speechSynthesis.speak(utterance);
   }
 
   function stop() {
-    state.speaking = false;
-    if (global.speechSynthesis) global.speechSynthesis.cancel();
+    clearPoll();
+    stopSubtitleSync();
+    stopTts();
+    state.generating = false;
+    if (state.videoEl) state.videoEl.pause();
+    if (state.audioEl) state.audioEl.pause();
     setStatus("已停止");
+    drawFallback("待命");
   }
 
-  function startRecording() {
-    if (!state.canvas || !state.canvas.captureStream) {
-      setStatus("当前环境不支持视频导出");
+  function stopTts() {
+    if (global.speechSynthesis) global.speechSynthesis.cancel();
+  }
+
+  function downloadVideo() {
+    if (!state.currentVideoUrl) {
+      setStatus("暂无视频可下载，请先生成百炼数字人");
       return;
     }
-    if (state.recording) return;
+    var a = document.createElement("a");
+    a.href = state.currentVideoUrl;
+    a.download = "BrandPilot_DigitalHuman_" + new Date().toISOString().slice(0, 10) + ".mp4";
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.click();
+    setStatus("已开始下载视频");
+  }
 
-    state.chunks = [];
-    var stream = state.canvas.captureStream(30);
-    var options = {};
-    if (MediaRecorder.isTypeSupported("video/webm;codecs=vp9")) {
-      options.mimeType = "video/webm;codecs=vp9";
-    } else if (MediaRecorder.isTypeSupported("video/webm")) {
-      options.mimeType = "video/webm";
-    }
+  function startSubtitleSync(mediaEl) {
+    stopSubtitleSync();
+    if (!mediaEl || !state.currentSubtitles.length) return;
 
-    try {
-      state.recorder = new MediaRecorder(stream, options);
-    } catch (err) {
-      setStatus("无法创建录制器：" + err.message);
-      return;
-    }
-
-    state.recorder.ondataavailable = function (event) {
-      if (event.data && event.data.size > 0) state.chunks.push(event.data);
-    };
-    state.recorder.onstop = function () {
-      var blob = new Blob(state.chunks, { type: state.recorder.mimeType || "video/webm" });
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement("a");
-      a.href = url;
-      a.download = "BrandPilot_DigitalHuman_" + new Date().toISOString().slice(0, 10) + ".webm";
-      a.click();
-      URL.revokeObjectURL(url);
-      state.recording = false;
-      setStatus("视频已导出");
+    var tick = function () {
+      if (!mediaEl || mediaEl.paused) return;
+      var t = mediaEl.currentTime || 0;
+      var line = findSubtitleLine(t);
+      if (line) {
+        setOverlaySubtitle(line.text);
+        setSubtitle(line.text);
+      }
     };
 
-    state.recorder.start(200);
-    state.recording = true;
-    setStatus("正在录制画面…建议同步点击“开始播报”");
-    speak();
+    tick();
+    state.subtitleTimer = global.setInterval(tick, 200);
   }
 
-  function stopRecording() {
-    if (state.recorder && state.recording) {
-      state.recorder.stop();
-      stop();
+  function stopSubtitleSync() {
+    if (state.subtitleTimer) {
+      global.clearInterval(state.subtitleTimer);
+      state.subtitleTimer = null;
+    }
+    setOverlaySubtitle("");
+  }
+
+  function findSubtitleLine(timeSec) {
+    var list = state.currentSubtitles || [];
+    for (var i = 0; i < list.length; i++) {
+      var item = list[i];
+      if (timeSec >= item.startSec && timeSec < item.endSec) return item;
+    }
+    return list.length ? list[list.length - 1] : null;
+  }
+
+  function setOverlaySubtitle(text) {
+    if (state.subtitleOverlay) {
+      state.subtitleOverlay.textContent = text || "";
+      state.subtitleOverlay.classList.toggle("visible", Boolean(text));
     }
   }
 
-  function loop() {
-    state.pulse += 0.08;
-    drawFrame(state.speaking ? "播报中" : "待命");
-    state.animId = global.requestAnimationFrame(loop);
+  function highlightScene(index) {
+    if (!state.scriptEl) return;
+    state.scriptEl.querySelectorAll(".dh-scene-list li").forEach(function (item) {
+      item.classList.toggle("active", Number(item.getAttribute("data-index")) === index);
+    });
   }
 
-  function drawFrame(badge) {
-    if (!state.ctx || !state.canvas) return;
+  function drawFallback(badge) {
+    if (!state.ctx || !state.canvas || state.videoEl && state.videoEl.classList.contains("visible")) return;
     var ctx = state.ctx;
     var w = state.canvas.width;
     var h = state.canvas.height;
@@ -182,67 +388,19 @@
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, w, h);
 
-    // glow orb
-    var cx = w * 0.5;
-    var cy = h * 0.42;
-    var radius = 70 + Math.sin(state.pulse) * (state.speaking ? 10 : 4);
-    var glow = ctx.createRadialGradient(cx, cy, 10, cx, cy, radius + 40);
-    glow.addColorStop(0, state.speaking ? "rgba(52,211,153,0.55)" : "rgba(96,165,250,0.4)");
-    glow.addColorStop(1, "rgba(15,23,42,0)");
-    ctx.fillStyle = glow;
-    ctx.beginPath();
-    ctx.arc(cx, cy, radius + 40, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = state.speaking ? "#34d399" : "#60a5fa";
-    ctx.beginPath();
-    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-    ctx.fill();
-
-    // face
-    ctx.fillStyle = "#0f172a";
-    ctx.beginPath();
-    ctx.arc(cx - 22, cy - 10, 8, 0, Math.PI * 2);
-    ctx.arc(cx + 22, cy - 10, 8, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.strokeStyle = "#0f172a";
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    if (state.speaking) {
-      ctx.ellipse(cx, cy + 22, 18, 8 + Math.abs(Math.sin(state.pulse * 2)) * 6, 0, 0, Math.PI * 2);
-    } else {
-      ctx.arc(cx, cy + 18, 16, 0.15 * Math.PI, 0.85 * Math.PI);
-    }
-    ctx.stroke();
-
-    // subtitle area
-    ctx.fillStyle = "rgba(2,6,23,0.72)";
-    ctx.fillRect(24, h - 110, w - 48, 78);
-    ctx.strokeStyle = "rgba(148,163,184,0.35)";
-    ctx.strokeRect(24, h - 110, w - 48, 78);
-
-    ctx.fillStyle = "#e2e8f0";
-    ctx.font = "16px Microsoft YaHei, sans-serif";
-    wrapText(ctx, currentSubtitle(), 40, h - 80, w - 80, 22);
-
     ctx.fillStyle = "#94a3b8";
-    ctx.font = "13px Microsoft YaHei, sans-serif";
-    ctx.fillText("BrandPilot 数字人 · " + badge, 40, 36);
+    ctx.font = "15px Microsoft YaHei, sans-serif";
+    ctx.fillText("BrandPilot 百炼数字人 · " + badge, 40, 48);
 
-    if (state.recording) {
-      ctx.fillStyle = "#ef4444";
-      ctx.beginPath();
-      ctx.arc(w - 36, 32, 8, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "#fecaca";
-      ctx.fillText("REC", w - 70, 36);
+    ctx.fillStyle = "#64748b";
+    ctx.font = "14px Microsoft YaHei, sans-serif";
+    wrapText(ctx, "配置 DASHSCOPE_API_KEY 后，将使用 Qwen-TTS + wan2.2-s2v 生成对口型视频。", 40, h * 0.42, w - 80, 22);
+
+    if (state.generating) {
+      ctx.fillStyle = "#34d399";
+      ctx.font = "13px Microsoft YaHei, sans-serif";
+      ctx.fillText("生成中，请勿关闭页面…", 40, h - 48);
     }
-  }
-
-  function currentSubtitle() {
-    if (state.subtitleEl) return state.subtitleEl.textContent || "";
-    return "";
   }
 
   function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
@@ -255,23 +413,11 @@
         ctx.fillText(line, x, y + lineCount * lineHeight);
         line = chars[i];
         lineCount += 1;
-        if (lineCount >= 2) {
-          ctx.fillText(line + "…", x, y + lineCount * lineHeight);
-          return;
-        }
       } else {
         line = test;
       }
     }
     ctx.fillText(line, x, y + lineCount * lineHeight);
-  }
-
-  function highlightScene(index) {
-    if (!state.scriptEl) return;
-    var items = state.scriptEl.querySelectorAll("li");
-    items.forEach(function (item) {
-      item.classList.toggle("active", Number(item.getAttribute("data-index")) === index);
-    });
   }
 
   function setSubtitle(text) {
@@ -293,9 +439,9 @@
   global.BrandPilotDigitalHuman = {
     init: init,
     setScript: setScript,
+    generate: generate,
     speak: speak,
     stop: stop,
-    startRecording: startRecording,
-    stopRecording: stopRecording
+    downloadVideo: downloadVideo
   };
 })(window);

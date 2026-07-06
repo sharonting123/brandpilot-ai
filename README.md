@@ -191,10 +191,22 @@ docker compose ps
 - 桌面支持拖拽旋转 / 滚轮缩放；支持浏览器 WebXR `immersive-vr`（设备可用时）。
 - 场景数据由 `/api/chat` 响应中的 `scene` 字段驱动。
 
-### 数字人层
+### 数字人层（百炼 DashScope）
 
 - `api/_lib/live-script.js` 根据提案/回答生成分镜口播脚本。
-- 前端 `assets/digital-human.js`：浏览器 TTS 播报、字幕同步、Canvas 虚拟形象、MediaRecorder 导出 WebM 视频。
+- `api/_lib/dashscope-client.js` + `POST /api/digital-human`：
+  - **Qwen-TTS**（`qwen3-tts-flash`）合成中文语音；
+  - **wan2.2-s2v** 将参考人像 + 音频生成**对口型视频**（异步任务，单段音频建议 &lt; 20 秒）。
+- 前端 `assets/digital-human.js`：提交任务、轮询 `taskId`、`<video>` 播放、字幕叠加、下载 MP4。
+- 环境变量：`DASHSCOPE_API_KEY`（必填）；可选 `DIGITAL_HUMAN_AVATAR_URL` 自定义人像。
+
+```bash
+# .env.local / Vercel 环境变量
+DASHSCOPE_API_KEY=sk-xxx
+DIGITAL_HUMAN_AVATAR_URL=https://your-cdn/avatar.jpg  # 可选
+```
+
+未配置 Key 时，数字人面板仍可展示脚本，并可用浏览器 TTS 试听。
 
 ## 生产级能力清单
 
