@@ -5,6 +5,7 @@
 
 const { TOOL_REGISTRY } = require("../agent-tools");
 const { buildSharedTools } = require("../ai-tools-factory");
+const { buildChatMessages } = require("../workflow-utils");
 
 function getSystemPrompt(brandName) {
   return [
@@ -102,7 +103,7 @@ async function execute(params) {
     const result = await generateText({
       model,
       system: systemPrompt,
-      messages: [{ role: "user", content: message }],
+      messages: buildChatMessages(params.history, message),
       tools: toolsDefined,
       maxSteps: 6,
       temperature: 0.3,

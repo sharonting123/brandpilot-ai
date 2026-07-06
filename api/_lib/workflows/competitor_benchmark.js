@@ -3,6 +3,8 @@
  * 查竞对基准表 → 对比分析（美团到餐 vs 抖音到店 vs 私域会员） → 给差异化建议
  */
 
+const { buildChatMessages } = require("../workflow-utils");
+
 function getSystemPrompt(brandName, params) {
   const competitors = (params.competitors || []).length
     ? params.competitors.join("、")
@@ -93,7 +95,7 @@ async function execute(params) {
     const result = await generateText({
       model,
       system: systemPrompt,
-      messages: [{ role: "user", content: message }],
+      messages: buildChatMessages(params.history, message),
       tools: toolsDefined,
       maxSteps: 4,
       temperature: 0.3,

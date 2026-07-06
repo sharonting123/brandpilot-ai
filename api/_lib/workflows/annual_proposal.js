@@ -6,6 +6,7 @@
 
 const { TOOL_REGISTRY } = require("../agent-tools");
 const { buildSharedTools } = require("../ai-tools-factory");
+const { buildChatMessages } = require("../workflow-utils");
 
 /**
  * 获取年度提案工作流的 system prompt
@@ -171,7 +172,7 @@ async function execute(params) {
     const result = await generateText({
       model,
       system: systemPrompt,
-      messages: [{ role: "user", content: message }],
+      messages: buildChatMessages(params.history, message),
       tools: toolsDefined,
       maxSteps: 10,
       temperature: 0.3,

@@ -19,8 +19,6 @@
   var vizCharts = document.getElementById("vizCharts");
   var vizAnswer = document.getElementById("vizAnswer");
   var downloadPdfButton = document.getElementById("downloadPdfButton");
-  var loadingOverlay = document.getElementById("loadingOverlay");
-  var loadingText = document.getElementById("loadingText");
   var modeSwitch = document.getElementById("modeSwitch");
   var arStage = document.getElementById("arStage");
   var arMeta = document.getElementById("arMeta");
@@ -40,6 +38,18 @@
   var chartInstances = [];
   var lastResponse = null;
   var currentMode = "analysis";
+  var conversationHistory = [];
+  var progressTimer = null;
+  var progressMessageEl = null;
+
+  var PROGRESS_STEPS = [
+    "接收问题，准备路由…",
+    "意图识别中…",
+    "加载品牌数据 / RAG 知识库…",
+    "执行 Agent 工具调用…",
+    "生成分析结论与可视化…",
+    "写入事件记录…"
+  ];
 
   // ===== 初始化 =====
   function init() {
@@ -175,20 +185,27 @@
     chatInput.value = "";
     autoResizeInput();
 
-    // 显示加载状态
+    conversationHistory.push({ role: "user", content: message });
+    if (conversationHistory.length > 20) {
+      conversationHistory = conversationHistory.slice(-20);
+    }
+
     isProcessing = true;
-    showLoading("Agent 正在分析...");
     sendButton.disabled = true;
+    statusText.textContent = "分析中";
 
     var startTime = Date.now();
-
     var brandHint = brandSelect.value || "haidilao";
-    loadingText.textContent = "意图识别中...";
+    var progressControl = startProgressMessage();
 
     fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: message, brandHint: brandHint })
+      body: JSON.stringify({
+        message: message,
+        brandHint: brandHint,
+        history: conversationHistory.slice(0, -1)
+      })
     })
       .then(function (resp) {
         if (!resp.ok) {
@@ -201,19 +218,143 @@
       .then(function (data) {
         var latency = Date.now() - startTime;
         lastResponse = data;
+        finishProgressMessage(latency, data);
         addAgentMessage(data, latency);
         renderVisualization(data);
         syncExtendedLayers(data);
+
+        conversationHistory.push({
+          role: "assistant",
+          content: String(data.answer || "").slice(0, 800)
+        });
+        if (conversationHistory.length > 20) {
+          conversationHistory = conversationHistory.slice(-20);
+        }
       })
       .catch(function (error) {
+        removeProgressMessage();
         addErrorMessage(error.message);
         showEmpty("请求失败，请稍后重试。");
       })
       .finally(function () {
         isProcessing = false;
         sendButton.disabled = false;
-        hideLoading();
+        statusText.textContent = "就绪";
       });
+  }
+
+  function startProgressMessage() {
+    removeProgressMessage();
+
+    var div = document.createElement("div");
+    div.className = "message assistant progress";
+    div.id = "chatProgressMessage";
+
+    var avatar = document.createElement("div");
+    avatar.className = "message-avatar";
+    avatar.textContent = "⏳";
+
+    var body = document.createElement("div");
+    body.className = "message-body";
+
+    var content = document.createElement("div");
+    content.className = "message-content progress-content";
+    content.innerHTML =
+      '<div class="progress-title">Agent 正在处理</div>' +
+      '<ul class="progress-steps" id="progressSteps"></ul>';
+
+    body.appendChild(content);
+    div.appendChild(avatar);
+    div.appendChild(body);
+    chatMessages.appendChild(div);
+    progressMessageEl = div;
+    scrollToBottom();
+
+    var stepsEl = document.getElementById("progressSteps");
+    var stepIndex = 0;
+
+    function renderSteps(activeIndex) {
+      if (!stepsEl) return;
+      var html = "";
+      PROGRESS_STEPS.forEach(function (step, index) {
+        var state = index < activeIndex ? "done" : index === activeIndex ? "active" : "pending";
+        html +=
+          '<li class="progress-step ' + state + '">' +
+          '<span class="progress-dot"></span>' +
+          '<span class="progress-text">' + step + "</span>" +
+          "</li>";
+      });
+      stepsEl.innerHTML = html;
+    }
+
+    renderSteps(0);
+    progressTimer = window.setInterval(function () {
+      stepIndex = Math.min(stepIndex + 1, PROGRESS_STEPS.length - 1);
+      renderSteps(stepIndex);
+      scrollToBottom();
+    }, 1400);
+
+    return {
+      markAllDone: function () {
+        renderSteps(PROGRESS_STEPS.length);
+      }
+    };
+  }
+
+  function finishProgressMessage(latencyMs, data) {
+    if (progressTimer) {
+      window.clearInterval(progressTimer);
+      progressTimer = null;
+    }
+
+    if (!progressMessageEl) return;
+
+    var stepsEl = progressMessageEl.querySelector(".progress-steps");
+    var titleEl = progressMessageEl.querySelector(".progress-title");
+    if (titleEl) {
+      titleEl.textContent = "完成 · " + latencyMs + "ms";
+    }
+
+    if (stepsEl && data && data.agentTrace && data.agentTrace.length) {
+      var html = "";
+      data.agentTrace.forEach(function (trace, index) {
+        var isLast = index === data.agentTrace.length - 1;
+        html +=
+          '<li class="progress-step done' + (isLast ? " active" : "") + '">' +
+          '<span class="progress-dot"></span>' +
+          '<span class="progress-text">' + trace.name +
+          (trace.durationMs ? " · " + trace.durationMs + "ms" : "") +
+          "</span>" +
+          "</li>";
+      });
+      stepsEl.innerHTML = html;
+    } else if (stepsEl) {
+      var doneHtml = "";
+      PROGRESS_STEPS.forEach(function (step) {
+        doneHtml +=
+          '<li class="progress-step done">' +
+          '<span class="progress-dot"></span>' +
+          '<span class="progress-text">' + step + "</span>" +
+          "</li>";
+      });
+      stepsEl.innerHTML = doneHtml;
+    }
+
+    progressMessageEl.classList.add("completed");
+    scrollToBottom();
+
+    window.setTimeout(removeProgressMessage, 1200);
+  }
+
+  function removeProgressMessage() {
+    if (progressTimer) {
+      window.clearInterval(progressTimer);
+      progressTimer = null;
+    }
+    if (progressMessageEl && progressMessageEl.parentNode) {
+      progressMessageEl.parentNode.removeChild(progressMessageEl);
+    }
+    progressMessageEl = null;
   }
 
   // ===== 消息渲染 =====
@@ -561,8 +702,7 @@
       return;
     }
 
-    showLoading("正在生成 PDF...");
-    loadingText.textContent = "PDF 生成中，请稍候...";
+    showPdfStatus("正在生成 PDF…");
 
     try {
       var opt = {
@@ -583,15 +723,19 @@
       };
 
       html2pdf().set(opt).from(element).save().then(function () {
-        hideLoading();
+        showPdfStatus("就绪");
       }).catch(function (error) {
         alert("PDF 生成失败：" + error.message);
-        hideLoading();
+        showPdfStatus("就绪");
       });
     } catch (error) {
       alert("PDF 生成失败：" + error.message);
-      hideLoading();
+      showPdfStatus("就绪");
     }
+  }
+
+  function showPdfStatus(text) {
+    if (statusText) statusText.textContent = text || "就绪";
   }
 
   // ===== 辅助函数 =====
@@ -613,16 +757,8 @@
   }
 
   function scrollToBottom() {
+    if (!chatMessages) return;
     chatMessages.scrollTop = chatMessages.scrollHeight;
-  }
-
-  function showLoading(text) {
-    loadingText.textContent = text || "处理中...";
-    loadingOverlay.style.display = "flex";
-  }
-
-  function hideLoading() {
-    loadingOverlay.style.display = "none";
   }
 
   function showEmpty(text) {

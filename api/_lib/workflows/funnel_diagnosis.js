@@ -4,6 +4,8 @@
  * 轻量级，不生成完整提案。
  */
 
+const { buildChatMessages } = require("../workflow-utils");
+
 function getSystemPrompt(brandName, params) {
   return [
     "你是 BrandPilot AI 的链路诊断专家，正在为「" + brandName + "」诊断搜索到核销的转化链路。",
@@ -88,7 +90,7 @@ async function execute(params) {
     const result = await generateText({
       model,
       system: systemPrompt,
-      messages: [{ role: "user", content: message }],
+      messages: buildChatMessages(params.history, message),
       tools: toolsDefined,
       maxSteps: 6,
       temperature: 0.3,
