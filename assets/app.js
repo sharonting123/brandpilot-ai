@@ -28,6 +28,12 @@
   var documentUploadButton = document.getElementById("documentUploadButton");
   var documentUploadInput = document.getElementById("documentUploadInput");
   var chatAttachments = document.getElementById("chatAttachments");
+  var arPanel = document.getElementById("panelAr");
+  var arStage = document.getElementById("arStage");
+  var arMeta = document.getElementById("arMeta");
+  var enterXrButton = document.getElementById("enterXrButton");
+  var enterMarkerArButton = document.getElementById("enterMarkerArButton");
+  var resetArButton = document.getElementById("resetArButton");
   var authGuest = document.getElementById("authGuest");
   var authUser = document.getElementById("authUser");
   var authUserName = document.getElementById("authUserName");
@@ -150,6 +156,7 @@
     if (downloadWordButton) downloadWordButton.addEventListener("click", handleDownloadWord);
     if (downloadMarkdownButton) downloadMarkdownButton.addEventListener("click", handleDownloadMarkdown);
     bindDocumentUpload();
+    bindArSandboxControls();
     bindExampleButtons();
     chatInput.addEventListener("input", autoResizeInput);
 
@@ -995,6 +1002,69 @@
     }
 
     updateExportToolbar(data);
+    syncArSandbox(data);
+  }
+
+  function bindArSandboxControls() {
+    if (enterXrButton) {
+      enterXrButton.addEventListener("click", function () {
+        if (!window.BrandPilotAR) return;
+        window.BrandPilotAR.enterXR().catch(function (error) {
+          alert(error.message || "当前设备暂不支持 WebXR AR。");
+        });
+      });
+    }
+
+    if (enterMarkerArButton) {
+      enterMarkerArButton.addEventListener("click", function () {
+        if (!window.BrandPilotAR) return;
+        window.BrandPilotAR.enterMarkerAR().catch(function (error) {
+          alert(error.message || "当前环境无法启动 Marker AR。");
+        });
+      });
+    }
+
+    if (resetArButton) {
+      resetArButton.addEventListener("click", function () {
+        if (window.BrandPilotAR && typeof window.BrandPilotAR.reset === "function") {
+          window.BrandPilotAR.reset();
+        }
+      });
+    }
+
+    window.addEventListener("resize", function () {
+      if (window.BrandPilotAR && typeof window.BrandPilotAR.resize === "function") {
+        window.BrandPilotAR.resize();
+      }
+    });
+  }
+
+  function syncArSandbox(data) {
+    if (!arPanel || !arStage || !window.BrandPilotAR) return;
+    var scene = data && data.scene;
+    if (!scene) {
+      arPanel.hidden = true;
+      return;
+    }
+
+    arPanel.hidden = false;
+    window.BrandPilotAR.init(arStage);
+    window.BrandPilotAR.update(scene);
+
+    if (arMeta) {
+      var cityCount = scene.cities ? scene.cities.length : 0;
+      var poiCount = scene.pois ? scene.pois.length : 0;
+      var period = scene.dateRange && scene.dateRange.label ? scene.dateRange.label : "当前统计周期";
+      arMeta.textContent =
+        (scene.brandName || "品牌") +
+        " · " +
+        period +
+        " · " +
+        cityCount +
+        " 个城市柱 · " +
+        poiCount +
+        " 个门店点，可拖拽旋转、滚轮缩放、点击城市下钻。";
+    }
   }
 
   function updateExportToolbar(data) {

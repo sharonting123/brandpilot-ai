@@ -12,6 +12,7 @@ const { persistWorkflowRun } = require("./event-store");
 const { filterWorkflowCharts } = require("./chart-policy");
 const { buildDataSpec, attachDataSpecToCharts } = require("./data-spec");
 const { composeMessageWithAttachments } = require("./document-parser");
+const { buildDrillMetrics } = require("./drill-data");
 const { streamTextChunks } = require("./sse");
 const {
   friendlyStepName,
@@ -158,6 +159,12 @@ async function runChatRequest(ctx) {
     context,
     dataMode
   });
+  const drillMetrics = buildDrillMetrics(context, {
+    message: effectiveMessage,
+    workflow: intent.workflow,
+    intentParams: intent.params || {},
+    dataSpec
+  });
 
   const contextTrace = {
     name: "经营数据",
@@ -272,6 +279,7 @@ async function runChatRequest(ctx) {
     answer,
     charts: responseCharts,
     proposal: workflowResult.proposal || null,
+    scene: buildArSandboxScene(drillMetrics, workflowResult),
     dataSpec,
     persistence: {
       mode: persistResult.mode,
@@ -285,7 +293,8 @@ async function runChatRequest(ctx) {
     capabilities: {
       nl2sql: true,
       rag: true,
-      eventPersistence: true
+      eventPersistence: true,
+      arScene: true
     },
     totalDurationMs: Date.now() - startedAt
   };
@@ -340,6 +349,95 @@ async function runChatRequest(ctx) {
   }
 
   return response;
+}
+
+function buildArSandboxScene(drillMetrics, workflowResult) {
+  const cities = (drillMetrics.cities || []).map((city, index) => {
+    const coordinate = cityCoordinate(city.name, index);
+    return {
+      id: city.id || "city_" + index,
+      name: city.name,
+      gmv: city.gmv || 0,
+      roi: city.roi || 0,
+      verifiedRate: city.verifiedRate || 0,
+      storeCount: city.storeCount || 0,
+      paidOrders: city.paidOrders || 0,
+      verifiedOrders: city.verifiedOrders || 0,
+      adSpend: city.adSpend || 0,
+      avgOrderValue: city.avgOrderValue || 0,
+      coordinate
+    };
+  });
+
+  const cityByName = new Map(cities.map((city) => [city.name, city]));
+  const districts = (drillMetrics.districts || []).map((district, index) => ({
+    ...district,
+    coordinate: offsetCoordinate(
+      (cityByName.get(district.city) && cityByName.get(district.city).coordinate) || cityCoordinate(district.city, index),
+      index,
+      0.42
+    )
+  }));
+
+  const districtByPoi = new Map();
+  districts.forEach((district) => {
+    (district.pois || []).forEach((poiId) => districtByPoi.set(poiId, district));
+  });
+
+  const pois = (drillMetrics.pois || []).map((poi, index) => {
+    const district = districtByPoi.get(poi.id);
+    const base = district
+      ? district.coordinate
+      : ((cityByName.get(poi.city) && cityByName.get(poi.city).coordinate) || cityCoordinate(poi.city, index));
+    return {
+      ...poi,
+      coordinate: offsetCoordinate(base, index, 0.22)
+    };
+  });
+
+  return {
+    type: "ar_china_sandbox",
+    brandName: (drillMetrics.brand && drillMetrics.brand.brandName) || "海底捞",
+    dateRange: drillMetrics.dateRange || null,
+    brand: drillMetrics.brand || null,
+    cities,
+    districts,
+    pois,
+    opportunityScore:
+      (workflowResult.proposal && workflowResult.proposal.opportunityScore) || 80,
+    summary:
+      (workflowResult.proposal && workflowResult.proposal.summary) ||
+      String(workflowResult.answer || "").slice(0, 120)
+  };
+}
+
+function cityCoordinate(city, index) {
+  const coordinates = {
+    上海: [121.4737, 31.2304],
+    北京: [116.4074, 39.9042],
+    深圳: [114.0579, 22.5431],
+    成都: [104.0665, 30.5728],
+    杭州: [120.1551, 30.2741],
+    广州: [113.2644, 23.1291],
+    三河: [117.0783, 39.9827]
+  };
+  if (coordinates[city]) return coordinates[city];
+  const fallback = [
+    [118.7969, 32.0603],
+    [114.3055, 30.5928],
+    [108.9398, 34.3416],
+    [106.5516, 29.563],
+    [117.2009, 39.0842]
+  ];
+  return fallback[index % fallback.length];
+}
+
+function offsetCoordinate(coordinate, index, radius) {
+  const angle = (index % 10) * 0.628 + Math.floor(index / 10) * 0.21;
+  return [
+    coordinate[0] + Math.cos(angle) * radius,
+    coordinate[1] + Math.sin(angle) * radius
+  ];
 }
 
 function makeRequestId() {

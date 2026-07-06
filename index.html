@@ -5,9 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content="BrandPilot AI: 连锁餐饮品牌经营分析 Agent 编排系统，含 NL2SQL / RAG" />
   <title>BrandPilot AI — 悦悦 · 品牌经营顾问</title>
-  <link rel="stylesheet" href="assets/styles.css?v=meituan" />
+  <link rel="stylesheet" href="assets/styles.css?v=meituan-ar-sandbox-2" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+  <script src="https://raw.githack.com/AR-js-org/AR.js/master/three.js/build/ar-threex.js"></script>
 </head>
 <body class="auth-pending">
   <div class="app-shell">
@@ -143,6 +145,27 @@
 
           <div class="viz-charts" id="vizCharts"></div>
           <div class="viz-answer" id="vizAnswer" style="display:none;"></div>
+
+          <section class="ar-live-panel" id="panelAr" hidden>
+            <div class="ar-toolbar">
+              <div>
+                <h2>真 AR 中国经营沙盘</h2>
+                <p id="arMeta">生成分析后，3D 中国地图会同步城市 GMV、商圈和门店指标。</p>
+              </div>
+              <div class="ar-actions">
+                <button id="enterXrButton" class="ghost-button sm" type="button">进入 WebXR AR</button>
+                <button id="enterMarkerArButton" class="ghost-button sm" type="button">Marker AR</button>
+                <button id="resetArButton" class="ghost-button sm" type="button">重置沙盘</button>
+              </div>
+            </div>
+            <div class="ar-stage ar-stage--sandbox" id="arStage"></div>
+            <div class="ar-legend">
+              <span><i class="dot green"></i>中国轮廓</span>
+              <span><i class="dot blue"></i>城市 GMV 柱</span>
+              <span><i class="dot amber"></i>选中城市</span>
+              <span><i class="dot purple"></i>下钻门店</span>
+            </div>
+          </section>
         </section>
       </main>
     </div>
@@ -152,6 +175,7 @@
   <script src="assets/markdown.js" defer></script>
   <script src="assets/auth.js?v=username-fix" defer></script>
   <script src="assets/document-upload.js?v=longcat-ocr" defer></script>
+  <script src="assets/ar-sandbox.js?v=webxr-china-2" defer></script>
   <script src="assets/app.js?v=longcat-ocr" defer></script>
 </body>
 </html>
