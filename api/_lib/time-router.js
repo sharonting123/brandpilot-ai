@@ -256,6 +256,10 @@ function listTablesForDomain(domain) {
     .map(([name, meta]) => ({ table: name, ...meta }));
 }
 
+function isCoarserPhysicalGrain(requestedGrain, physicalGrain) {
+  return (GRAIN_RANK[physicalGrain] || 99) > (GRAIN_RANK[requestedGrain] || 99);
+}
+
 function selectTableRoute(metricValidation, options = {}) {
   const domain = options.domain || metricValidation.domain || "brand";
   const grain = metricValidation.effectiveGrain;
@@ -268,13 +272,14 @@ function selectTableRoute(metricValidation, options = {}) {
     const kindLabel = tableKinds[kindKey] || kindKey;
     const hit = candidates.find((c) => c.kindKey === kindKey || c.kind === kindLabel);
     if (hit) {
+      const grainFallback = isCoarserPhysicalGrain(grain, hit.physicalGrain);
       return {
         table: hit.table || getDomainDefaultTableResolved()[domain],
         tableKind: hit.kind || kindLabel,
         physicalGrain: hit.physicalGrain,
         dateColumn: hit.dateColumn,
         domain: hit.domain,
-        grainFallback: hit.physicalGrain !== grain || kindKey !== priorities[0],
+        grainFallback,
         routeLabel: `${hit.kind || kindLabel} → ${hit.table}`
       };
     }
@@ -287,10 +292,10 @@ function selectTableRoute(metricValidation, options = {}) {
   return {
     table: fallbackTable,
     tableKind: meta ? meta.kind : TABLE_KIND.monthly,
-    physicalGrain: "month",
+    physicalGrain: meta ? meta.physicalGrain : "month",
     dateColumn: "month",
     domain,
-    grainFallback: true,
+    grainFallback: isCoarserPhysicalGrain(grain, meta ? meta.physicalGrain : "month"),
     routeLabel: `默认月表 → ${fallbackTable}`
   };
 }

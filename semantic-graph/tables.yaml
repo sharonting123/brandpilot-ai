@@ -75,8 +75,8 @@ tables:
 
   fact_poi_monthly:
     type: fact
-    kind: agg_daily
-    label: POI 月度流量
+    kind: monthly
+    label: POI 月表
     domain: poi
     date_column: month
     physical_grain: month
@@ -88,8 +88,8 @@ tables:
 
   fact_search_keyword_monthly:
     type: fact
-    kind: agg_daily
-    label: 搜索词月度
+    kind: monthly
+    label: 搜索词月表
     domain: search
     date_column: month
     physical_grain: month
@@ -99,8 +99,8 @@ tables:
 
   fact_deal_campaign_monthly:
     type: fact
-    kind: agg_daily
-    label: 套餐/活动月度
+    kind: monthly
+    label: 套餐/活动月表
     domain: campaign
     date_column: month
     physical_grain: month
