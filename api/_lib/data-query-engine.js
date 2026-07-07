@@ -46,7 +46,8 @@ function buildQueryResult(payload) {
 
 function registerQueryResult(templateId, sql, rows, context, filters, meta = {}) {
   const resultRows = (rows || []).slice(0, 50);
-  const schemaHint = SCHEMA_CATALOG.find((s) => s.table === meta.table) || null;
+  const resultTable = meta.table || "";
+  const schemaHint = SCHEMA_CATALOG.find((s) => s.table === resultTable) || null;
   const brandId = meta.brandId || filters.brandId || "haidilao";
   const metric = meta.metric || filters.metric || detectMetricFromText(meta.question || "");
   const dateColumn =
@@ -55,7 +56,7 @@ function registerQueryResult(templateId, sql, rows, context, filters, meta = {})
     "month";
 
   const finalSql = ensurePeriodInSql(sql, filters, {
-    table: meta.table,
+    table: resultTable,
     dateColumn,
     timeRoute: meta.timeRoute || null,
     skipPeriod: meta.skipPeriod === true
@@ -66,7 +67,7 @@ function registerQueryResult(templateId, sql, rows, context, filters, meta = {})
     queryType: meta.queryType || templateId,
     templateId,
     metric,
-    table: meta.table,
+    table: resultTable,
     dimension: meta.dimension || filters.dimension || null,
     brandId,
     filters,
@@ -79,7 +80,7 @@ function registerQueryResult(templateId, sql, rows, context, filters, meta = {})
   }
 
   const planRef = registerQueryPlan(compiled.plan);
-  registerDataTable(meta.table, (schemaHint || {}).description || meta.table, {
+  registerDataTable(resultTable, (schemaHint || {}).description || resultTable, {
     brandId,
     sql: finalSql,
     filters,
@@ -88,7 +89,7 @@ function registerQueryResult(templateId, sql, rows, context, filters, meta = {})
     rows: resultRows
   });
   const sqlRef = registerSqlQuery(templateId, finalSql, `返回 ${rows.length} 行`, {
-    table: meta.table,
+    table: resultTable,
     sql: finalSql,
     filters,
     rowCount: rows.length,
@@ -100,7 +101,7 @@ function registerQueryResult(templateId, sql, rows, context, filters, meta = {})
     queryPlanRef: planRef.id
   });
   return buildQueryResult({
-    table: meta.table,
+    table: resultTable,
     sql: finalSql,
     filters,
     rows: resultRows,
@@ -166,7 +167,7 @@ async function queryFromQuestion(params = {}) {
     return {
       question,
       ...registerQueryResult(template.id, sql, rows, context, filters, {
-        table: timeRoute.table || template.table,
+        table: template.table,
         brandId,
         generationMode,
         queryType,

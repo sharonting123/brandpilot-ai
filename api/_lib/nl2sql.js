@@ -25,7 +25,7 @@ const SCHEMA_CATALOG = new Proxy([], {
 const QUERY_TEMPLATES = [
   {
     id: "funnel_conversion",
-    keywords: ["漏斗", "链路", "损耗", "断点", "流失", "转化链", "搜索到核销", "搜索到", "推荐链路", "推荐路径", "推荐到", "搜索链路", "核销", "转化"],
+    keywords: ["漏斗", "链路", "损耗", "断点", "流失", "转化链", "搜索到核销", "搜索到", "推荐链路", "推荐路径", "推荐到", "搜索链路", "转化漏斗", "七阶段"],
     table: "fact_search_keyword_monthly",
     sql: (brandId, filters) => {
       const { buildFunnelSql } = require("./funnel-metrics");
@@ -39,24 +39,31 @@ const QUERY_TEMPLATES = [
   },
   {
     id: "monthly_gtv",
-    keywords: ["gmv", "gtv", "营业额", "交易额", "月度"],
+    keywords: ["gmv", "gtv", "营业额", "交易额", "月度", "核销率"],
     table: "fact_brand_monthly",
     sql: (brandId, filters) =>
-      `SELECT month, gtv, paid_orders, verified_orders, take_rate, subsidy_rate\n` +
+      `SELECT month, gtv, paid_orders, verified_orders,\n` +
+      `  ROUND(verified_orders::numeric / NULLIF(paid_orders, 0) * 100, 2) AS verified_rate_pct\n` +
       `FROM fact_brand_monthly\n` +
       `WHERE brand_id = '${brandId}'${periodClause(filters)}\n` +
       `ORDER BY month DESC`,
     run: (ctx, filters) => {
-      let rows = (ctx.monthlyFacts || []).map((m) => ({
-        month: m.month,
-        gtv: m.gtv,
-        paid_orders: m.paid_orders,
-        verified_orders: m.verified_orders,
-        take_rate: m.take_rate,
-        subsidy_rate: m.subsidy_rate,
-        avg_order_value: m.avg_order_value,
-        active_users: m.active_users
-      }));
+      let rows = (ctx.monthlyFacts || []).map((m) => {
+        const paid = Number(m.paid_orders || 0);
+        const verified = Number(m.verified_orders || 0);
+        return {
+          month: m.month,
+          gtv: m.gtv,
+          paid_orders: paid,
+          verified_orders: verified,
+          verified_rate_pct:
+            paid > 0 ? Math.round((verified / paid) * 10000) / 100 : null,
+          take_rate: m.take_rate,
+          subsidy_rate: m.subsidy_rate,
+          avg_order_value: m.avg_order_value,
+          active_users: m.active_users
+        };
+      });
       rows = filterFactsByPeriod(rows, filters);
       return rows.sort((a, b) => String(b.month).localeCompare(String(a.month)));
     }
@@ -115,7 +122,7 @@ const QUERY_TEMPLATES = [
   },
   {
     id: "competitor",
-    keywords: ["竞对", "抖音", "美团", "私域", "对比", "核销率"],
+    keywords: ["竞对", "抖音", "美团", "私域", "对比", "竞对核销", "平台对比"],
     table: "fact_competitor_benchmark_monthly",
     sql: (brandId, filters) =>
       `SELECT month, competitor, verification_rate, subsidy_rate, content_share, avg_order_value\n` +
@@ -158,7 +165,7 @@ const QUERY_TEMPLATES = [
   },
   {
     id: "campaign",
-    keywords: ["套餐", "活动", "补贴", "券", "核销"],
+    keywords: ["套餐", "活动", "补贴", "券"],
     table: "fact_deal_campaign_monthly",
     sql: (brandId, filters) =>
       `SELECT month, deal_id, impressions, paid_orders, verified_orders, pay_gmv, coupon_reduce_amount\n` +
@@ -234,15 +241,24 @@ function extractFilters(question, intentParams = {}, options = {}) {
 
 function pickTemplate(question) {
   const text = String(question || "").toLowerCase();
+
+  // 品牌月度 KPI（GMV/GTV + 核销率）优先走品牌月表，避免误命中漏斗模板
+  if (/gmv|gtv|营业额|交易额/.test(text) && /核销率/.test(text)) {
+    const kpi = QUERY_TEMPLATES.find((item) => item.id === "monthly_gtv");
+    if (kpi) return kpi;
+  }
+
   let best = null;
   let bestScore = 0;
 
   for (const template of QUERY_TEMPLATES) {
     let score = 0;
     for (const kw of template.keywords) {
-      if (text.includes(kw.toLowerCase())) {
-        score += kw.length >= 4 ? 2 : 1;
-      }
+      const needle = kw.toLowerCase();
+      if (!text.includes(needle)) continue;
+      // 短词「核销」在问核销率指标时不应命中漏斗/活动类模板
+      if (needle === "核销" && /核销率/.test(text)) continue;
+      score += needle.length >= 4 ? 2 : 1;
     }
     if (score > bestScore) {
       bestScore = score;
