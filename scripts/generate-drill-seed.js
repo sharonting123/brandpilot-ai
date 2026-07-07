@@ -54,7 +54,7 @@ function buildSql() {
   lines.push("");
 
   lines.push("delete from public.fact_city_brand_monthly where brand_id = 'haidilao' and month >= '2024-01-01' and month <= '2026-06-30';");
-  lines.push("insert into public.fact_city_brand_monthly (month, brand_id, city, store_count, search_impressions, poi_visits, paid_orders, verified_orders, gmv, coupon_reduce_amount, ad_spend, roi, avg_order_value)");
+  lines.push("insert into public.fact_city_brand_monthly (month, brand_id, city, store_count, search_impressions, recommend_impressions, poi_visits, paid_orders, verified_orders, gmv, coupon_reduce_amount, ad_spend, roi, avg_order_value)");
   lines.push("values");
   fixture.cityMonthlyFacts.forEach((row, index) => {
     const vals = "(" + [
@@ -63,6 +63,7 @@ function buildSql() {
       sqlStr(row.city),
       row.store_count,
       row.search_impressions,
+      row.recommend_impressions,
       row.poi_visits,
       row.paid_orders,
       row.verified_orders,
@@ -107,7 +108,7 @@ function buildSql() {
   lines.push("");
 
   lines.push("delete from public.fact_poi_monthly where month >= '2024-01-31' and month <= '2026-06-30' and poi_id like 'hdl-%';");
-  lines.push("insert into public.fact_poi_monthly (month, poi_id, exposure, visits, search_visits, deal_clicks, favorite_count, navigate_clicks, phone_clicks, avg_stay_seconds)");
+  lines.push("insert into public.fact_poi_monthly (month, poi_id, exposure, visits, search_visits, recommend_visits, deal_clicks, favorite_count, navigate_clicks, phone_clicks, avg_stay_seconds)");
   lines.push("values");
   const poiFacts = fixture.dailyFacts.poiFacts;
   poiFacts.forEach((row, index) => {
@@ -117,6 +118,7 @@ function buildSql() {
       row.exposure,
       row.visits,
       row.search_visits,
+      row.recommend_visits,
       row.deal_clicks,
       row.favorite_count,
       row.navigate_clicks,

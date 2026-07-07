@@ -102,6 +102,11 @@ function seededUnit(key, min = 0, max = 1) {
 }
 
 const { monthEndDates, normalizeMonthEnd } = require("./month-end");
+const {
+  searchShareForMonth,
+  buildSearchKeywordFactsFromBrandRows,
+  buildCampaignFactsFromBrandRows
+} = require("./traffic-split");
 
 function slugify(value) {
   return String(value || "item").toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/g, "_");
@@ -305,12 +310,15 @@ function buildCityMonthlyRow(month, city, storeCount, scale) {
   const paidOrders = Math.round(gmv / (310 + seededUnit(city + "aov" + month, 0, 40)));
   const verifiedOrders = Math.round(paidOrders * (0.82 + seededUnit(city + "vr" + month, 0, 0.06)));
   const adSpend = Math.round(gmv * (0.018 + seededUnit(city + "ad" + month, 0, 0.008)));
+  const trafficShare = searchShareForMonth(month);
+  const totalImpressions = Math.round(gmv * 0.95);
   return {
     month,
     brand_id: BRAND_ID,
     city,
     store_count: storeCount,
-    search_impressions: Math.round(gmv * 0.95),
+    search_impressions: Math.round(totalImpressions * trafficShare),
+    recommend_impressions: Math.round(totalImpressions * (1 - trafficShare)),
     poi_visits: Math.round(gmv * 0.14),
     paid_orders: paidOrders,
     verified_orders: verifiedOrders,
@@ -328,6 +336,7 @@ function buildBrandMonthlyRow(month, cityRows) {
     "paid_orders",
     "verified_orders",
     "search_impressions",
+    "recommend_impressions",
     "poi_visits"
   ]);
   const gtv = Math.round(totals.gmv * 8.6);
@@ -359,6 +368,9 @@ function buildPoiDailyRow(month, poiId, city, area, share) {
   const exposure = Math.round((180000 + seededUnit(poiId + month, 0, 120000)) * share * monthScale);
   const visits = Math.round(exposure * (0.14 + seededUnit(poiId + "v" + month, 0, 0.04)));
   const dealClicks = Math.round(visits * (0.09 + seededUnit(poiId + "d" + month, 0, 0.03)));
+  const trafficShare = searchShareForMonth(month);
+  const searchVisits = Math.round(visits * trafficShare);
+  const recommendVisits = Math.max(0, visits - searchVisits);
   return {
     month: normalizeMonthEnd(month),
     poi_id: poiId,
@@ -366,7 +378,8 @@ function buildPoiDailyRow(month, poiId, city, area, share) {
     business_area: area,
     exposure,
     visits,
-    search_visits: Math.round(visits * 0.22),
+    search_visits: searchVisits,
+    recommend_visits: recommendVisits,
     deal_clicks: dealClicks,
     favorite_count: Math.round(visits * 0.04),
     navigate_clicks: Math.round(visits * 0.024),
@@ -433,9 +446,9 @@ function generateHaidilaoDrillFixture() {
     pois,
     deals: [],
     dailyFacts: {
-      searchFacts: [],
+      searchFacts: buildSearchKeywordFactsFromBrandRows(brandMonthlyFacts),
       poiFacts,
-      campaignFacts: []
+      campaignFacts: buildCampaignFactsFromBrandRows(brandMonthlyFacts),
     },
     monthlyFacts: brandMonthlyFacts,
     cityMonthlyFacts,
@@ -464,6 +477,7 @@ function aggregatePoiFactsInRange(rows, from, to) {
       exposure: 0,
       visits: 0,
       search_visits: 0,
+      recommend_visits: 0,
       deal_clicks: 0,
       favorite_count: 0,
       navigate_clicks: 0,
@@ -476,6 +490,7 @@ function aggregatePoiFactsInRange(rows, from, to) {
     current.exposure += Number(row.exposure || 0);
     current.visits += Number(row.visits || 0);
     current.search_visits += Number(row.search_visits || 0);
+    current.recommend_visits += Number(row.recommend_visits || 0);
     current.deal_clicks += Number(row.deal_clicks || 0);
     current.favorite_count += Number(row.favorite_count || 0);
     current.navigate_clicks += Number(row.navigate_clicks || 0);
@@ -508,6 +523,7 @@ function aggregateCityMonthlyInRange(rows, from, to) {
     current.verified_orders += Number(row.verified_orders || 0);
     current.ad_spend += Number(row.ad_spend || 0);
     current.search_impressions += Number(row.search_impressions || 0);
+    current.recommend_impressions = (current.recommend_impressions || 0) + Number(row.recommend_impressions || 0);
     current.poi_visits += Number(row.poi_visits || 0);
     current.months += 1;
     current.store_count = Math.max(current.store_count, Number(row.store_count || 0));

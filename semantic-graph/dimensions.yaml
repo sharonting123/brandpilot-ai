@@ -75,6 +75,18 @@ dimensions:
     table: fact_search_keyword_monthly
     aliases: [关键词, 搜索词, 热搜]
 
+  traffic_source:
+    label: 流量来源
+    column: source
+    table: fact_search_keyword_monthly
+    values: [mt_search_poi, mt_search_deal, mt_feed_poi]
+    aliases: [来源, 渠道来源, 搜索, 推荐]
+    canonical:
+      mt_search_poi: 搜索
+      mt_search_deal: 搜索套餐
+      mt_feed_poi: 推荐
+    note: 搜索+推荐 paid/verified 之和 = fact_brand_monthly 品牌月度汇总
+
   campaign:
     label: 活动/套餐
     column: deal_id

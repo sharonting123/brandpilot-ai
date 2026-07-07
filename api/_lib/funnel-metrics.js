@@ -1,9 +1,11 @@
 /**
  * 搜索→核销漏斗聚合（供 computeFunnel / NL2SQL 共用）
+ * 支持搜索 + 推荐双路径；默认聚合两路径之和
  */
 
 const { monthKeyToEndDate, monthMatches } = require("./period-utils");
 const { buildTimeWhereClause } = require("./time-router");
+const { SOURCE_SEARCH, SOURCE_RECOMMEND } = require("./traffic-split");
 
 function safeRatio(numerator, denominator) {
   if (!denominator) return 0;
@@ -43,17 +45,35 @@ function filterFactsByPeriod(facts, filters = {}) {
   });
 }
 
+function filterFactsBySource(facts, filters = {}) {
+  const path = filters.trafficPath || filters.sourcePath || "all";
+  if (path === "all") return facts || [];
+  if (path === "search") {
+    return (facts || []).filter((row) => String(row.source || "").startsWith("mt_search"));
+  }
+  if (path === "recommend") {
+    return (facts || []).filter((row) => row.source === SOURCE_RECOMMEND);
+  }
+  return (facts || []).filter((row) => row.source === path);
+}
+
+function pickFunnelValue(primary, fallback, poiExtra = 0) {
+  if (primary > 0) return primary;
+  if (fallback > 0) return fallback;
+  return poiExtra;
+}
+
 function buildFunnelMetrics(context, filters = {}) {
-  const searchFacts = filterFactsByPeriod(
-    context.dailyFacts ? context.dailyFacts.searchFacts || [] : [],
+  const searchFacts = filterFactsBySource(
+    filterFactsByPeriod(context.dailyFacts ? context.dailyFacts.searchFacts || [] : [], filters),
     filters
   );
   const poiFacts = filterFactsByPeriod(
     context.dailyFacts ? context.dailyFacts.poiFacts || [] : [],
     filters
   );
-  const campaignFacts = filterFactsByPeriod(
-    context.dailyFacts ? context.dailyFacts.campaignFacts || [] : [],
+  const campaignFacts = filterFactsBySource(
+    filterFactsByPeriod(context.dailyFacts ? context.dailyFacts.campaignFacts || [] : [], filters),
     filters
   );
 
@@ -62,7 +82,7 @@ function buildFunnelMetrics(context, filters = {}) {
     "order_submits", "paid_orders", "verified_orders", "gmv"
   ]);
   const poiAgg = sumFields(poiFacts, [
-    "exposure", "visits", "search_visits", "deal_clicks"
+    "exposure", "visits", "search_visits", "recommend_visits", "deal_clicks"
   ]);
   const campaignAgg = sumFields(campaignFacts, [
     "impressions", "detail_views", "buy_clicks", "order_submits",
@@ -70,19 +90,32 @@ function buildFunnelMetrics(context, filters = {}) {
     "coupon_reduce_amount", "refunds"
   ]);
 
+  const path = filters.trafficPath || filters.sourcePath || "all";
+  const poiVisitsForPath =
+    path === "recommend"
+      ? poiAgg.recommend_visits
+      : path === "search"
+        ? poiAgg.search_visits
+        : poiAgg.search_visits + poiAgg.recommend_visits;
+
   const impressions = searchAgg.impressions || 0;
   const clicks = searchAgg.clicks || 0;
-  const poiClicks = searchAgg.poi_clicks || poiAgg.search_visits || 0;
-  const dealClicks = searchAgg.deal_clicks || campaignAgg.detail_views || 0;
-  const orderSubmits = searchAgg.order_submits || campaignAgg.order_submits || 0;
-  const paidOrders = searchAgg.paid_orders || campaignAgg.paid_orders || 0;
-  const verifiedOrders = searchAgg.verified_orders || campaignAgg.verified_orders || 0;
-  const gmv = searchAgg.gmv || campaignAgg.pay_gmv || 0;
+  const poiClicks = pickFunnelValue(searchAgg.poi_clicks, poiVisitsForPath);
+  const dealClicks = pickFunnelValue(searchAgg.deal_clicks, campaignAgg.detail_views);
+  const orderSubmits = pickFunnelValue(searchAgg.order_submits, campaignAgg.order_submits);
+  const paidOrders = searchAgg.paid_orders > 0 ? searchAgg.paid_orders : campaignAgg.paid_orders;
+  const verifiedOrders = searchAgg.verified_orders > 0 ? searchAgg.verified_orders : campaignAgg.verified_orders;
+  const gmv = searchAgg.gmv > 0 ? searchAgg.gmv : campaignAgg.pay_gmv;
+
+  const exposureLabel =
+    path === "recommend" ? "推荐曝光" : path === "search" ? "搜索曝光" : "流量曝光";
+  const clickLabel =
+    path === "recommend" ? "推荐点击" : path === "search" ? "搜索点击" : "流量点击";
 
   const funnel = [
-    { stage: "搜索曝光", count: impressions, rateFromPrevious: null, label: "起点" },
-    { stage: "搜索点击", count: clicks, rateFromPrevious: safeRatio(clicks, impressions), label: "CTR" },
-    { stage: "POI 点击", count: poiClicks, rateFromPrevious: safeRatio(poiClicks, clicks), label: "搜索→POI" },
+    { stage: exposureLabel, count: impressions, rateFromPrevious: null, label: "起点" },
+    { stage: clickLabel, count: clicks, rateFromPrevious: safeRatio(clicks, impressions), label: "CTR" },
+    { stage: "POI 点击", count: poiClicks, rateFromPrevious: safeRatio(poiClicks, clicks), label: "流量→POI" },
     { stage: "套餐详情", count: dealClicks, rateFromPrevious: safeRatio(dealClicks, poiClicks), label: "POI→套餐" },
     { stage: "下单提交", count: orderSubmits, rateFromPrevious: safeRatio(orderSubmits, dealClicks), label: "套餐→下单" },
     { stage: "支付订单", count: paidOrders, rateFromPrevious: safeRatio(paidOrders, orderSubmits), label: "下单→支付" },
@@ -104,7 +137,9 @@ function buildFunnelMetrics(context, filters = {}) {
       totalPaidOrders: paidOrders,
       totalVerifiedOrders: verifiedOrders,
       totalGMV: gmv,
-      overallConversionRate: safeRatio(verifiedOrders, impressions)
+      overallConversionRate: safeRatio(verifiedOrders, impressions),
+      trafficPath: path,
+      verificationRate: safeRatio(verifiedOrders, paidOrders)
     },
     bottleneck: {
       from: maxLeakage.from,
@@ -148,22 +183,21 @@ function buildFunnelSql(brandId, filters = {}) {
     "month"
   );
 
+  const sourceClause =
+    filters.trafficPath === "search"
+      ? " AND source LIKE 'mt_search%'"
+      : filters.trafficPath === "recommend"
+        ? ` AND source = '${SOURCE_RECOMMEND}'`
+        : "";
+
   return (
-    "-- 搜索到核销七阶段漏斗（聚合 search / poi / campaign 月表，月末口径）\n" +
+    "-- 搜索+推荐双路径七阶段漏斗（fact_search_keyword_monthly 按 source 聚合，总和=品牌月度）\n" +
     "WITH search_agg AS (\n" +
     "  SELECT SUM(impressions) impressions, SUM(clicks) clicks, SUM(poi_clicks) poi_clicks,\n" +
     "         SUM(deal_clicks) deal_clicks, SUM(order_submits) order_submits,\n" +
     "         SUM(paid_orders) paid_orders, SUM(verified_orders) verified_orders\n" +
     "  FROM fact_search_keyword_monthly\n" +
-    `  WHERE brand_id = '${brandId}'${periodClause}\n` +
-    "), poi_agg AS (\n" +
-    "  SELECT SUM(search_visits) search_visits FROM fact_poi_monthly\n" +
-    `  WHERE brand_id = '${brandId}'${periodClause}\n` +
-    "), campaign_agg AS (\n" +
-    "  SELECT SUM(detail_views) detail_views, SUM(order_submits) order_submits,\n" +
-    "         SUM(paid_orders) paid_orders, SUM(verified_orders) verified_orders\n" +
-    "  FROM fact_deal_campaign_monthly\n" +
-    `  WHERE brand_id = '${brandId}'${periodClause}\n` +
+    `  WHERE brand_id = '${brandId}'${periodClause}${sourceClause}\n` +
     ")\n" +
     "SELECT stage_order, stage, user_count, conversion_rate_pct\n" +
     "FROM funnel_stage_view\n" +
@@ -176,5 +210,6 @@ module.exports = {
   funnelRowsForSql,
   buildFunnelSql,
   filterFactsByPeriod,
+  filterFactsBySource,
   safeRatio
 };

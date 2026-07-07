@@ -93,8 +93,8 @@ async function countRows(baseUrl, key, table, filter) {
 
 async function main() {
   const env = loadEnv();
-  const baseUrl = env.SUPABASE_URL;
-  const key = env.SUPABASE_SERVICE_ROLE_KEY;
+  const baseUrl = process.env.SUPABASE_URL || env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_ROLE_KEY;
   if (!baseUrl || !key) throw new Error("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY 未配置");
 
   const fixture = generateHaidilaoDrillFixture();
@@ -140,6 +140,7 @@ async function main() {
     exposure: row.exposure,
     visits: row.visits,
     search_visits: row.search_visits,
+    recommend_visits: row.recommend_visits,
     deal_clicks: row.deal_clicks,
     favorite_count: row.favorite_count,
     navigate_clicks: row.navigate_clicks,

@@ -63,7 +63,8 @@ terms:
   漏斗:
     maps_to: metric.funnel
     scenario: funnel_diagnosis
-    stages: [搜索曝光, 搜索点击, POI访问, 套餐点击, 支付, 核销]
+    stages: [流量曝光, 流量点击, POI访问, 套餐点击, 支付, 核销]
+    note: 搜索(mt_search_*) + 推荐(mt_feed_poi) 双路径；总和与 fact_brand_monthly 对齐
 
   月末:
     maps_to: time.month
