@@ -17,6 +17,56 @@ function getModelConfig(env = process.env) {
   };
 }
 
+/** 提案结构化 Agent 默认走 LongCat（若配置了 LONGCAT_API_KEY） */
+function getStructuredModelConfig(env = process.env) {
+  const base = getModelConfig(env);
+  const structuredName =
+    env.MODEL_STRUCTURED_NAME || env.STRUCTURED_MODEL_NAME || "LongCat-2.0";
+  const longcatKey =
+    env.MODEL_STRUCTURED_API_KEY ||
+    env.LONGCAT_API_KEY ||
+    env.OCR_API_KEY ||
+    "";
+  const longcatBase = (
+    env.MODEL_STRUCTURED_API_BASE_URL ||
+    env.LONGCAT_API_BASE_URL ||
+    "https://api.longcat.chat/openai"
+  ).replace(/\/$/, "");
+
+  if (env.MODEL_STRUCTURED_API_KEY || env.MODEL_STRUCTURED_NAME) {
+    return {
+      ...base,
+      model: structuredName,
+      apiKey: env.MODEL_STRUCTURED_API_KEY || longcatKey || base.apiKey,
+      baseUrl: (env.MODEL_STRUCTURED_API_BASE_URL || longcatBase || base.baseUrl).replace(
+        /\/$/,
+        ""
+      ),
+      structuredModel: structuredName
+    };
+  }
+
+  if (longcatKey) {
+    return {
+      ...base,
+      model: structuredName,
+      apiKey: longcatKey,
+      baseUrl: longcatBase,
+      structuredModel: structuredName
+    };
+  }
+
+  if (/longcat\.chat/i.test(base.baseUrl)) {
+    return {
+      ...base,
+      model: structuredName,
+      structuredModel: structuredName
+    };
+  }
+
+  return { ...base, structuredModel: base.model };
+}
+
 function getSupabaseConfig(env = process.env) {
   return {
     url: env.SUPABASE_URL || "",
@@ -60,6 +110,7 @@ function clampNumber(value, min, max, fallback) {
 module.exports = {
   DEFAULT_MODEL,
   getModelConfig,
+  getStructuredModelConfig,
   getRuntimeConfig,
   getSupabaseConfig,
   getDashScopeConfig

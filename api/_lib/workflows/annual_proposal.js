@@ -14,6 +14,11 @@ const { emptyTokenUsage, mergeTokenUsage, extractUsageFromGenerateResult } = req
 const { forceFunnelChartPolicy } = require("../chart-normalize");
 const { getCitationRegistry } = require("../citation-registry");
 const { generateStructuredObject } = require("../structured-output");
+const { getStructuredModelConfig } = require("../env");
+const {
+  buildProposalSchema,
+  buildProposalStructuredPrompt
+} = require("../proposal-schema");
 const {
   prefetchNl2Sql,
   buildNl2SqlContextBlock,
@@ -39,7 +44,7 @@ function getSystemPrompt(brandName, params) {
     "- GTV 三因子拆解：交易用户数 × 购买频次 × 客单价",
     "- 变现率视角：take rate（佣金率+广告费率）、广告商户渗透率",
     "- 城市分层：按 GMV 和 ROI 分配资源",
-    "- 链路归因：搜索→POI→套餐→下单→支付→核销",
+    "- 链路归因：搜索/推荐→POI→套餐→下单→支付→核销",
     "",
     "约束：",
     "- 只使用工具返回的真实数据，不编造外部事实",
@@ -75,62 +80,28 @@ async function buildToolDefinitions() {
 /**
  * 用 generateObject 产出结构化提案（在 agent 推理完成后）
  */
-async function generateStructuredProposal(agentAnswer, modelConfig, brandName, params) {
+async function generateStructuredProposal(agentAnswer, _modelConfig, brandName, params) {
   const { z } = await import("zod");
+  const structuredConfig = getStructuredModelConfig();
+  if (!structuredConfig.configured) {
+    throw new Error("结构化模型未配置（需 LONGCAT_API_KEY 或 MODEL_STRUCTURED_API_KEY）");
+  }
 
-  const CitedText = z.object({
-    text: z.string(),
-    refs: z.array(z.string()).describe("引用编号，如 K1、D2、S1、A3")
-  });
-
-  const ProposalSchema = z.object({
-    title: z.string().describe("提案标题"),
-    opportunityScore: z.number().min(0).max(100).describe("机会评分 0-100"),
-    summary: z.string().describe("经营摘要，一段话概括"),
-    summaryRefs: z.array(z.string()).optional().describe("摘要引用编号"),
-    metrics: z.array(z.object({
-      label: z.string(),
-      value: z.string(),
-      delta: z.string().optional(),
-      refs: z.array(z.string()).optional()
-    })).describe("4-5个关键指标卡"),
-    insights: z.array(CitedText).describe("3-5条深度洞察，每条带 refs"),
-    actions: z.array(CitedText).describe("4-6条可执行策略，每条带 refs"),
-    timeline: z.array(z.object({
-      title: z.string(),
-      body: z.string(),
-      refs: z.array(z.string()).optional()
-    })).describe("3个阶段的推进计划"),
-    risks: z.array(CitedText).describe("风险提示，每条带 refs"),
-    assets: z.array(z.object({
-      title: z.string(),
-      body: z.string()
-    })).describe("提案资产清单"),
-    charts: z.array(z.object({
-      type: z.enum(["funnel", "bar", "line", "comparison"]),
-      title: z.string(),
-      data: z.any()
-    })).describe("可视化图表；漏斗/链路必须用 funnel")
-  });
-
-  const system = [
-    "你从 agent 的对话中提取结构化提案内容。品牌：「" + brandName + "」，周期：「" + (params.period || "2026 H1") + "」。",
-    "按 schema 填充所有字段，用中文。",
-    "insights/actions/risks 每条必须包含 refs 数组（引用编号 K/D/S/A）。",
-    "charts 中漏斗/链路类图表 type 必须为 funnel，不要用 bar 表示漏斗。"
-  ].join("\n");
+  const ProposalSchema = buildProposalSchema(z, brandName, params, agentAnswer);
+  const system = buildProposalStructuredPrompt(brandName, params);
 
   const result = await generateStructuredObject({
     schema: ProposalSchema,
     system,
-    prompt: agentAnswer,
-    modelConfig
+    prompt: String(agentAnswer || "").slice(0, 120000),
+    modelConfig: structuredConfig
   });
 
   return {
     object: result.object,
     tokenUsage: result.tokenUsage,
-    mode: result.mode
+    mode: result.mode,
+    model: structuredConfig.structuredModel || structuredConfig.model
   };
 }
 
@@ -238,11 +209,20 @@ async function execute(params) {
       tokenUsage = mergeTokenUsage(tokenUsage, structuredResult.tokenUsage);
       tracePush(agentTrace, onProgress, {
         name: "提案结构化Agent",
-        tool: structuredResult.mode === "text+json" ? "generateText+json" : "generateObject",
+        tool:
+          (structuredResult.mode === "text+json"
+            ? "generateText+json"
+            : structuredResult.mode === "json_object"
+              ? "json_object"
+              : "generateObject") +
+          " · " +
+          (structuredResult.model || "structured"),
         summary:
           structuredResult.mode === "text+json"
-            ? "thinking 模型兼容模式提取结构化提案"
-            : "成功提取结构化提案",
+            ? "LongCat 兼容模式提取结构化提案"
+            : structuredResult.mode === "json_object"
+              ? "LongCat json_object 模式提取结构化提案"
+              : "成功提取结构化提案",
         durationMs: Date.now() - genStart
       });
     } catch (error) {

@@ -3,18 +3,26 @@
  */
 
 const { getStructuredMaxTokens } = require("./token-budget");
-const { extractUsageFromGenerateResult } = require("./token-usage");
+const { extractUsageFromGenerateResult, emptyTokenUsage } = require("./token-usage");
 
 function isThinkingModeError(message) {
   return /thinking mode|tool_choice|does not support this tool/i.test(String(message || ""));
 }
 
-function shouldPreferTextJson(modelConfig = {}) {
-  const modelId = String(
+function modelIdOf(modelConfig = {}) {
+  return String(
     modelConfig.structuredModel || modelConfig.model || process.env.MODEL_STRUCTURED_NAME || ""
-  );
-  if (modelConfig.structuredModel || process.env.MODEL_STRUCTURED_NAME) return false;
-  return /thinking|reasoner|-r1\b|longcat-2\.0/i.test(modelId);
+  ).toLowerCase();
+}
+
+function isLongCatModel(modelConfig = {}) {
+  const id = modelIdOf(modelConfig);
+  return /longcat/.test(id) || /api\.longcat\.chat/i.test(String(modelConfig.baseUrl || ""));
+}
+
+function shouldPreferTextJson(modelConfig = {}) {
+  const modelId = modelIdOf(modelConfig);
+  return /longcat|thinking|reasoner|-r1\b/.test(modelId);
 }
 
 function parseJsonObject(text) {
@@ -62,11 +70,37 @@ async function generateStructuredViaText({ model, schema, system, prompt, maxOut
     temperature: 0,
     maxOutputTokens
   });
-  const object = schema.parse(parseJsonObject(result.text));
+  const parsed = schema.safeParse(parseJsonObject(result.text));
+  if (!parsed.success) {
+    throw new Error(parsed.error.message);
+  }
   return {
-    object,
+    object: parsed.data,
     tokenUsage: extractUsageFromGenerateResult(result),
     mode: "text+json"
+  };
+}
+
+async function generateStructuredViaJsonModel({ modelConfig, schema, system, prompt, maxOutputTokens }) {
+  const { requestJsonModel } = require("./model-client");
+  const raw = await requestJsonModel({
+    modelConfig: { ...modelConfig, maxTokens: maxOutputTokens },
+    system: [
+      system,
+      "",
+      "只输出一个 JSON 对象，不要 Markdown 代码块，不要任何解释文字。"
+    ].join("\n"),
+    user: prompt,
+    maxTokens: maxOutputTokens
+  });
+  const parsed = schema.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(parsed.error.message);
+  }
+  return {
+    object: parsed.data,
+    tokenUsage: emptyTokenUsage(),
+    mode: "json_object"
   };
 }
 
@@ -83,7 +117,11 @@ async function generateStructuredObject(params = {}) {
   const structuredOverride = modelConfig.structuredModel || process.env.MODEL_STRUCTURED_NAME || "";
   const model = await createLanguageModel(modelConfig, structuredOverride || undefined);
 
-  if (shouldPreferTextJson(modelConfig) && !structuredOverride) {
+  if (isLongCatModel(modelConfig)) {
+    return generateStructuredViaText({ model, schema, system, prompt, maxOutputTokens });
+  }
+
+  if (shouldPreferTextJson(modelConfig)) {
     return generateStructuredViaText({ model, schema, system, prompt, maxOutputTokens });
   }
 
@@ -110,6 +148,7 @@ async function generateStructuredObject(params = {}) {
 module.exports = {
   generateStructuredObject,
   isThinkingModeError,
+  isLongCatModel,
   parseJsonObject,
   shouldPreferTextJson
 };
