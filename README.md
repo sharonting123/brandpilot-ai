@@ -48,18 +48,18 @@ npm run local:proxy
 
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
-- `OPENAI_API_KEY` 或 `MODEL_API_KEY`
-- 可选：`OPENAI_MODEL` / `MODEL_NAME`、`MODEL_API_BASE_URL`
+- `OPENAI_API_KEY` 或 `MODEL_API_KEY`（LongCat Key）
+- 可选：`MODEL_NAME`（默认 `LongCat-2.0`）、`MODEL_API_BASE_URL`
 - 可选：`MODEL_TIMEOUT_MS`、`SUPABASE_TIMEOUT_MS`、`AGENT_RATE_LIMIT_PER_MINUTE`、`SUPABASE_BROWSER_ENABLED`
 
-DeepSeek OpenAI-compatible 示例：
+LongCat OpenAI 兼容示例：
 
 ```env
-MODEL_API_BASE_URL=https://api.deepseek.com/v1
-MODEL_API_KEY=你的 DeepSeek Key
-MODEL_NAME=deepseek-v4-pro
-MODEL_MAX_TOKENS=65536
-MODEL_TIMEOUT_MS=240000
+MODEL_API_BASE_URL=https://api.longcat.chat/openai
+MODEL_API_KEY=你的 LongCat Key
+MODEL_NAME=LongCat-2.0
+MODEL_MAX_TOKENS=8192
+MODEL_TIMEOUT_MS=120000
 ```
 
 ## Supabase 设置
@@ -142,8 +142,8 @@ docker compose ps
 4. Environment Variables 添加：
    - `SUPABASE_URL`
    - `SUPABASE_ANON_KEY`
-   - `OPENAI_API_KEY` 或 `MODEL_API_KEY`
-   - 可选：`OPENAI_MODEL` / `MODEL_NAME`、`MODEL_API_BASE_URL`
+   - `MODEL_API_KEY`（LongCat Key）
+   - 可选：`MODEL_NAME`（默认 `LongCat-2.0`）、`MODEL_API_BASE_URL`
 5. 部署后访问 Vercel 分配的域名。
 
 ## Namecheap 绑定域名

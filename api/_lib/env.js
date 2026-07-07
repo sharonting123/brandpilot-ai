@@ -1,8 +1,15 @@
-const DEFAULT_MODEL = "gpt-4o-mini";
+const DEFAULT_MODEL = "LongCat-2.0";
+const DEFAULT_API_BASE_URL = "https://api.longcat.chat/openai";
 
 function getModelConfig(env = process.env) {
-  const apiKey = env.MODEL_API_KEY || env.OPENAI_API_KEY || "";
-  const baseUrl = (env.MODEL_API_BASE_URL || env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
+  const apiKey =
+    env.MODEL_API_KEY || env.OPENAI_API_KEY || env.LONGCAT_API_KEY || env.OCR_API_KEY || "";
+  const baseUrl = (
+    env.MODEL_API_BASE_URL ||
+    env.OPENAI_BASE_URL ||
+    env.LONGCAT_API_BASE_URL ||
+    DEFAULT_API_BASE_URL
+  ).replace(/\/$/, "");
   const model = env.MODEL_NAME || env.OPENAI_MODEL || DEFAULT_MODEL;
   const maxTokens = clampNumber(env.MODEL_MAX_TOKENS, 256, 200000, 65536);
   const timeoutMs = clampNumber(env.MODEL_TIMEOUT_MS, 5000, 290000, 240000);

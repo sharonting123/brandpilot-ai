@@ -11,7 +11,7 @@
   - `npm i ai @ai-sdk/openai zod`
   - 用 `generateObject`（配 Zod schema）做意图识别和结构化提案输出 —— 解决模型是否支持 json_object 的不确定性
   - 用 `generateText` + `tools`（`tool()` + Zod）做真 function calling，让 LLM 自主决定调哪个工具
-  - 模型走 OpenAI-compatible provider：用 `createOpenAI({ baseURL: process.env.MODEL_API_BASE_URL, apiKey: process.env.MODEL_API_KEY })`，模型名 `process.env.MODEL_NAME`（线上是 deepseek 类）
+  - 模型走 OpenAI-compatible provider：用 `createOpenAI({ baseURL: process.env.MODEL_API_BASE_URL, apiKey: process.env.MODEL_API_KEY })`，模型名 `process.env.MODEL_NAME`（默认 LongCat-2.0）
 - **前端**：保持无构建、纯静态（index.html + assets/*.js + assets/*.css），依赖走 CDN
   - 图表：Chart.js（CDN）
   - PDF 下载：真 PDF 文件。用 CDN 的 `html2pdf.js`（内部是 jsPDF + html2canvas）把提案面板导出为 .pdf。注意中文字体渲染（html2canvas 截图方式天然支持中文，优先用这种）

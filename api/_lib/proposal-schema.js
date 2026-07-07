@@ -1,5 +1,5 @@
 /**
- * 年度提案结构化 schema + LongCat/DeepSeek 输出归一化
+ * 年度提案结构化 schema + LongCat JSON 输出归一化
  */
 
 function clampScore(value, fallback = 82) {
