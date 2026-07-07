@@ -9,10 +9,11 @@ const { buildSharedTools } = require("../ai-tools-factory");
 const { shouldShowGtvTrendChart } = require("../chart-policy");
 const { tracePush, reportProgress, buildStepStart } = require("../workflow-progress");
 const { buildChatMessages, ANSWER_SCOPE_RULE } = require("../workflow-utils");
-const { getAgentMaxTokens, getStructuredMaxTokens } = require("../token-budget");
+const { getAgentMaxTokens } = require("../token-budget");
 const { emptyTokenUsage, mergeTokenUsage, extractUsageFromGenerateResult } = require("../token-usage");
 const { forceFunnelChartPolicy } = require("../chart-normalize");
 const { getCitationRegistry } = require("../citation-registry");
+const { generateStructuredObject } = require("../structured-output");
 const {
   prefetchNl2Sql,
   buildNl2SqlContextBlock,
@@ -75,16 +76,7 @@ async function buildToolDefinitions() {
  * 用 generateObject 产出结构化提案（在 agent 推理完成后）
  */
 async function generateStructuredProposal(agentAnswer, modelConfig, brandName, params) {
-  const [{ generateObject }, { createOpenAI }, { z }] = await Promise.all([
-    import("ai"),
-    import("@ai-sdk/openai"),
-    import("zod")
-  ]);
-
-  const model = createOpenAI({
-    baseURL: modelConfig.baseUrl,
-    apiKey: modelConfig.apiKey
-  })(modelConfig.model);
+  const { z } = await import("zod");
 
   const CitedText = z.object({
     text: z.string(),
@@ -128,17 +120,17 @@ async function generateStructuredProposal(agentAnswer, modelConfig, brandName, p
     "charts 中漏斗/链路类图表 type 必须为 funnel，不要用 bar 表示漏斗。"
   ].join("\n");
 
-  const result = await generateObject({
-    model,
+  const result = await generateStructuredObject({
     schema: ProposalSchema,
     system,
     prompt: agentAnswer,
-    maxOutputTokens: getStructuredMaxTokens(modelConfig)
+    modelConfig
   });
 
   return {
     object: result.object,
-    tokenUsage: extractUsageFromGenerateResult(result)
+    tokenUsage: result.tokenUsage,
+    mode: result.mode
   };
 }
 
@@ -246,13 +238,21 @@ async function execute(params) {
       tokenUsage = mergeTokenUsage(tokenUsage, structuredResult.tokenUsage);
       tracePush(agentTrace, onProgress, {
         name: "提案结构化Agent",
-        tool: "generateObject",
-        summary: "成功提取结构化提案",
+        tool: structuredResult.mode === "text+json" ? "generateText+json" : "generateObject",
+        summary:
+          structuredResult.mode === "text+json"
+            ? "thinking 模型兼容模式提取结构化提案"
+            : "成功提取结构化提案",
         durationMs: Date.now() - genStart
       });
     } catch (error) {
-      // 调试态：结构化失败不再降级到对话式回答，直接抛错暴露问题
-      throw new Error("提案结构化 Agent 失败：" + error.message);
+      tracePush(agentTrace, onProgress, {
+        name: "提案结构化Agent",
+        tool: "fallback",
+        summary: "结构化提取失败，使用兜底提案：" + error.message,
+        durationMs: 0
+      });
+      structuredProposal = buildFallbackProposal(brandName);
     }
   }
 
