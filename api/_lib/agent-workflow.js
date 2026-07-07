@@ -1,4 +1,5 @@
 const { requestJsonModel } = require("./model-client");
+const { buildProposalTitle } = require("./proposal-title");
 const { enrichWorkflowWithSidecarReport, getSidecarConfig } = require("./sidecar-client");
 
 async function runDeterministicAgents(state) {
@@ -464,7 +465,7 @@ function buildDeterministicProposal(state) {
     proposal: {
       brand_id: brief.brandId,
       brand_name: brief.brandName,
-      title: `${brief.brandName} ${brief.period} 半年度经营提案`,
+      title: buildProposalTitle(brief.brandName, { period: brief.period }, state.request.scenarioLabel || ""),
       opportunity_score: analysis.opportunityScore,
       summary: analysis.summary,
       payload: {

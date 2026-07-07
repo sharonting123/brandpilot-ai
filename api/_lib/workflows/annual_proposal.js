@@ -19,6 +19,7 @@ const {
   buildProposalSchema,
   buildProposalStructuredPrompt
 } = require("../proposal-schema");
+const { buildReviewPlanPeriods, buildProposalTitle } = require("../proposal-title");
 const {
   prefetchNl2Sql,
   buildNl2SqlContextBlock,
@@ -29,15 +30,19 @@ const {
  * 获取年度提案工作流的 system prompt
  */
 function getSystemPrompt(brandName, params) {
+  const message = params._message || "";
+  const periods = buildReviewPlanPeriods(params, message);
+  const proposalTitle = buildProposalTitle(brandName, params, message);
   return [
-    "你是 BrandPilot AI 的首席经营分析师，正在为「" + brandName + "」制作" + (params.period || "周期性") + "经营提案。",
+    "你是 BrandPilot AI 的首席经营分析师，正在为「" + brandName + "」制作「" + proposalTitle + "」。",
+    periods.framing,
     "",
     "你的工作任务：",
     "1. 使用工具查询品牌数据、漏斗、月度经分和竞对基准",
     "2. 系统已预先执行 SQL 生成 Agent，请优先引用预查询 NL2SQL 结果（格式 [S1]/[D1]）",
     "3. 用 retrieveKnowledge 检索经营分析框架和品牌知识资产，回答引用 citations（格式 [K1]）",
     "4. 基于数据做深入的经营分析，识别主矛盾、机会区和风险点",
-    "5. 给出可执行的策略建议和下半年推进时间线",
+    "5. 给出可执行的策略建议和 " + periods.planPeriod + " 推进时间线",
     "6. 最终生成一份结构化提案，包含：指标卡、关键洞察、推荐动作、时间线、资产清单",
     "",
     "分析框架：",
@@ -146,7 +151,8 @@ async function execute(params) {
     agentTrace
   });
   nlPayload = nl;
-  const systemPrompt = getSystemPrompt(brandName, intentParams) + buildNl2SqlContextBlock(nl);
+  const proposalParams = { ...intentParams, _message: message };
+  const systemPrompt = getSystemPrompt(brandName, proposalParams) + buildNl2SqlContextBlock(nl);
 
   try {
     const result = await generateText({
@@ -203,7 +209,7 @@ async function execute(params) {
         promptText,
         modelConfig,
         brandName,
-        intentParams
+        proposalParams
       );
       structuredProposal = structuredResult.object;
       tokenUsage = mergeTokenUsage(tokenUsage, structuredResult.tokenUsage);
@@ -232,7 +238,7 @@ async function execute(params) {
         summary: "结构化提取失败，使用兜底提案：" + error.message,
         durationMs: 0
       });
-      structuredProposal = buildFallbackProposal(brandName);
+      structuredProposal = buildFallbackProposal(brandName, proposalParams);
     }
   }
 
@@ -277,9 +283,11 @@ function buildFallbackAnswer(brandName, params, brandData, funnelData, monthlyDa
   ].join("\n");
 }
 
-function buildFallbackProposal(brandName) {
+function buildFallbackProposal(brandName, params = {}) {
+  const message = params._message || "";
+  const periods = buildReviewPlanPeriods(params, message);
   return {
-    title: brandName + " 2026 H1 经营提案",
+    title: buildProposalTitle(brandName, params, message),
     opportunityScore: 82,
     summary: brandName + "半年度提案核心聚焦搜索到核销的经营链路：优化POI到套餐的承接效率，提升广告变现率，按城市ROI分层投放资源。",
     metrics: [
@@ -302,9 +310,9 @@ function buildFallbackProposal(brandName) {
       "核销闭环：把支付后提醒、到店核销、退款原因纳入经营看板。"
     ],
     timeline: [
-      { title: "H1 复盘（已完成）", body: "补齐H1全量日期、城市和门店分层数据，形成半年度基线。" },
-      { title: "Q3 承接（进行中）", body: "上线搜索承接与门店页套餐组实验，跟踪POI到套餐转化。" },
-      { title: "Q4 放大（计划中）", body: "沉淀高效套餐和复盘模板，复制到重点城市与高潜门店。" }
+      { title: `${periods.reviewLabel} 复盘（已完成）`, body: `补齐${periods.reviewPeriod}全量日期、城市和门店分层数据，形成基线。` },
+      { title: `${periods.planLabel} 承接（进行中）`, body: "上线搜索承接与门店页套餐组实验，跟踪POI到套餐转化。" },
+      { title: `${periods.planLabel} 放大（计划中）`, body: "沉淀高效套餐和复盘模板，复制到重点城市与高潜门店。" }
     ],
     risks: [
       "当前使用演示数据，正式提案前需接入完整H1全量数据。",

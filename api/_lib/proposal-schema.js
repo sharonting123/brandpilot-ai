@@ -2,6 +2,8 @@
  * 年度提案结构化 schema + LongCat JSON 输出归一化
  */
 
+const { buildReviewPlanPeriods, buildProposalTitle, normalizeProposalTitle } = require("./proposal-title");
+
 function clampScore(value, fallback = 82) {
   const number = Number(value);
   if (!Number.isFinite(number)) return fallback;
@@ -118,7 +120,9 @@ function extractSummaryFromAnswer(agentAnswer) {
 }
 
 function coerceProposalRaw(raw, brandName, params = {}, agentAnswer = "") {
-  const period = params.period || "2026 H1";
+  const message = params._message || "";
+  const periods = buildReviewPlanPeriods(params, message);
+  const defaultTitle = buildProposalTitle(brandName, params, message);
   const root = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
   const nested =
     root.proposal && typeof root.proposal === "object" && !Array.isArray(root.proposal)
@@ -157,7 +161,7 @@ function coerceProposalRaw(raw, brandName, params = {}, agentAnswer = "") {
   if (!summary) summary = extractSummaryFromAnswer(agentAnswer);
 
   return {
-    title: toString(source.title || source.proposalTitle, `${brandName} ${period} 经营提案`),
+    title: normalizeProposalTitle(source.title || source.proposalTitle, brandName, params, message) || defaultTitle,
     opportunityScore: clampScore(source.opportunityScore ?? source.score ?? source.opportunity),
     summary,
     summaryRefs: Array.isArray(source.summaryRefs) ? source.summaryRefs.map(String) : [],
@@ -167,9 +171,9 @@ function coerceProposalRaw(raw, brandName, params = {}, agentAnswer = "") {
     timeline: timeline.length
       ? timeline
       : [
-          { title: "阶段一：复盘", body: "补齐周期数据并形成基线。" },
-          { title: "阶段二：优化", body: "针对主矛盾推进试点。" },
-          { title: "阶段三：放大", body: "复制有效动作并跟踪指标。" }
+          { title: `阶段一：${periods.reviewLabel} 复盘`, body: `补齐 ${periods.reviewPeriod} 数据并形成基线。` },
+          { title: `阶段二：${periods.planLabel} 优化`, body: `针对主矛盾推进 ${periods.planPeriod} 试点。` },
+          { title: `阶段三：${periods.planLabel} 放大`, body: "复制有效动作并跟踪指标。" }
         ],
     risks: risks.length ? risks : [{ text: "需持续校验数据口径与统计周期。", refs: [] }],
     assets: assets.length ? assets : [{ title: "经营诊断摘要", body: "包含指标、洞察与动作建议。" }],
@@ -226,7 +230,7 @@ function buildProposalSchema(z, brandName, params, agentAnswer) {
 }
 
 const PROPOSAL_JSON_EXAMPLE = {
-  title: "海底捞 2026 H1 经营提案",
+  title: "海底捞 2026 H1 复盘・H2 经营提案",
   opportunityScore: 82,
   summary: "一段话经营摘要",
   metrics: [{ label: "H1 GTV", value: "1.1亿", delta: "环比+8%" }],
@@ -239,9 +243,14 @@ const PROPOSAL_JSON_EXAMPLE = {
 };
 
 function buildProposalStructuredPrompt(brandName, params) {
+  const message = params._message || "";
+  const periods = buildReviewPlanPeriods(params, message);
+  const titleExample = buildProposalTitle(brandName, params, message);
   return [
     "你从 agent 的分析文本中提取结构化提案 JSON。",
-    "品牌：「" + brandName + "」，周期：「" + (params.period || "2026 H1") + "」。",
+    "品牌：「" + brandName + "」，复盘周期：「" + periods.reviewPeriod + "」，规划周期：「" + periods.planPeriod + "」。",
+    "标题格式：「" + titleExample + "」（先复盘再规划）。",
+    periods.framing,
     "",
     "必须输出以下字段（英文 key，不要用中文 key）：",
     "title, opportunityScore, summary, metrics, insights, actions, timeline, risks, assets, charts",
