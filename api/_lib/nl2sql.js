@@ -1,6 +1,8 @@
 const { monthKeyToEndDate, monthMatches } = require("./period-utils");
 const { normalizeMonthEnd } = require("./month-end");
 const { routeTimeQuery, semanticsToFilters } = require("./time-router");
+const { periodClause } = require("./sql-period");
+const { filterFactsByPeriod } = require("./funnel-metrics");
 const { getSchemaCatalog: getGraphSchemaCatalog, getCities, detectTrafficPathFromText, trafficPathLabel } = require("./semantic-graph");
 
 function getSchemaCatalogResolved() {
@@ -42,7 +44,7 @@ const QUERY_TEMPLATES = [
     sql: (brandId, filters) =>
       `SELECT month, gtv, paid_orders, verified_orders, take_rate, subsidy_rate\n` +
       `FROM fact_brand_monthly\n` +
-      `WHERE brand_id = '${brandId}'${filters.month ? ` AND month = '${monthKeyToEndDate(String(filters.month).slice(0, 7))}'` : ""}\n` +
+      `WHERE brand_id = '${brandId}'${periodClause(filters)}\n` +
       `ORDER BY month DESC`,
     run: (ctx, filters) => {
       let rows = (ctx.monthlyFacts || []).map((m) => ({
@@ -55,15 +57,7 @@ const QUERY_TEMPLATES = [
         avg_order_value: m.avg_order_value,
         active_users: m.active_users
       }));
-      if (filters.month) {
-        rows = rows.filter((r) => monthMatches(r.month, String(filters.month).slice(0, 7)));
-      }
-      if (filters.monthNum) {
-        rows = rows.filter((r) => {
-          const m = String(r.month);
-          return m.includes(`-${String(filters.monthNum).padStart(2, "0")}`) || m.includes(`${filters.monthNum}月`);
-        });
-      }
+      rows = filterFactsByPeriod(rows, filters);
       return rows.sort((a, b) => String(b.month).localeCompare(String(a.month)));
     }
   },
@@ -74,7 +68,7 @@ const QUERY_TEMPLATES = [
     sql: (brandId, filters) =>
       `SELECT month, city, gmv, roi, paid_orders, verified_orders, store_count\n` +
       `FROM fact_city_brand_monthly\n` +
-      `WHERE brand_id = '${brandId}'${filters.city ? ` AND city = '${filters.city}'` : ""}\n` +
+      `WHERE brand_id = '${brandId}'${filters.city ? ` AND city = '${filters.city}'` : ""}${periodClause(filters)}\n` +
       `ORDER BY gmv DESC`,
     run: (ctx, filters) => {
       let rows = (ctx.cityMonthlyFacts || []).map((c) => ({
@@ -87,9 +81,7 @@ const QUERY_TEMPLATES = [
         store_count: c.store_count
       }));
       if (filters.city) rows = rows.filter((r) => r.city === filters.city);
-      if (filters.monthNum) {
-        rows = rows.filter((r) => String(r.month).includes(`-${String(filters.monthNum).padStart(2, "0")}`));
-      }
+      rows = filterFactsByPeriod(rows, filters);
       return rows.sort((a, b) => (b.gmv || 0) - (a.gmv || 0));
     }
   },
@@ -97,13 +89,16 @@ const QUERY_TEMPLATES = [
     id: "search_keywords",
     keywords: ["搜索", "关键词", "曝光", "点击率", "ctr"],
     table: "fact_search_keyword_monthly",
-    sql: (brandId) =>
+    sql: (brandId, filters) =>
       `SELECT month, search_word, impressions, clicks, paid_orders, verified_orders, gmv\n` +
       `FROM fact_search_keyword_monthly\n` +
-      `WHERE brand_id = '${brandId}'\n` +
+      `WHERE brand_id = '${brandId}'${periodClause(filters)}\n` +
       `ORDER BY impressions DESC\nLIMIT 20`,
-    run: (ctx) => {
-      const facts = (ctx.dailyFacts && ctx.dailyFacts.searchFacts) || [];
+    run: (ctx, filters) => {
+      const facts = filterFactsByPeriod(
+        (ctx.dailyFacts && ctx.dailyFacts.searchFacts) || [],
+        filters
+      );
       return facts
         .map((f) => ({
           month: normalizeMonthEnd(f.month || f.date),
@@ -122,23 +117,26 @@ const QUERY_TEMPLATES = [
     id: "competitor",
     keywords: ["竞对", "抖音", "美团", "私域", "对比", "核销率"],
     table: "fact_competitor_benchmark_monthly",
-    sql: (brandId) =>
+    sql: (brandId, filters) =>
       `SELECT month, competitor, verification_rate, subsidy_rate, content_share, avg_order_value\n` +
       `FROM fact_competitor_benchmark_monthly\n` +
-      `WHERE brand_id = '${brandId}'\n` +
+      `WHERE brand_id = '${brandId}'${periodClause(filters)}\n` +
       `  AND competitor NOT IN ('美团', '抖音')\n` +
       `ORDER BY month DESC`,
-    run: (ctx) =>
-      require("./column-aliases")
-        .filterCompetitorRows(ctx.competitorBenchmarks || [])
-        .map((b) => ({
-        month: b.month,
-        competitor: b.competitor,
-        verification_rate: b.verification_rate,
-        subsidy_rate: b.subsidy_rate,
-        content_share: b.content_share,
-        avg_order_value: b.avg_order_value
-      }))
+    run: (ctx, filters) =>
+      filterFactsByPeriod(
+        require("./column-aliases")
+          .filterCompetitorRows(ctx.competitorBenchmarks || [])
+          .map((b) => ({
+            month: b.month,
+            competitor: b.competitor,
+            verification_rate: b.verification_rate,
+            subsidy_rate: b.subsidy_rate,
+            content_share: b.content_share,
+            avg_order_value: b.avg_order_value
+          })),
+        filters
+      )
   },
   {
     id: "poi_list",
@@ -162,11 +160,16 @@ const QUERY_TEMPLATES = [
     id: "campaign",
     keywords: ["套餐", "活动", "补贴", "券", "核销"],
     table: "fact_deal_campaign_monthly",
-    sql: () =>
+    sql: (brandId, filters) =>
       `SELECT month, deal_id, impressions, paid_orders, verified_orders, pay_gmv, coupon_reduce_amount\n` +
-      `FROM fact_deal_campaign_monthly\nORDER BY pay_gmv DESC\nLIMIT 20`,
-    run: (ctx) => {
-      const facts = (ctx.dailyFacts && ctx.dailyFacts.campaignFacts) || [];
+      `FROM fact_deal_campaign_monthly\n` +
+      `WHERE brand_id = '${brandId}'${periodClause(filters)}\n` +
+      `ORDER BY pay_gmv DESC\nLIMIT 20`,
+    run: (ctx, filters) => {
+      const facts = filterFactsByPeriod(
+        (ctx.dailyFacts && ctx.dailyFacts.campaignFacts) || [],
+        filters
+      );
       return facts
         .map((f) => ({
           month: normalizeMonthEnd(f.month || f.date),

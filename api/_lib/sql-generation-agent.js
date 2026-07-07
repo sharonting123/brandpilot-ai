@@ -127,6 +127,12 @@ async function generateSqlPlan(params = {}) {
   });
 
   const plan = parseSqlAgentJson(result.text);
+  const mergedFilters = { ...filters, ...(plan.filters || {}) };
+  plan.sql = require("./sql-period").ensurePeriodInSql(plan.sql, mergedFilters, {
+    table: plan.table,
+    dateColumn: timeRoute && timeRoute.dateColumn ? timeRoute.dateColumn : "month",
+    timeRoute: timeRoute || null
+  });
   const validation = validateSql(plan.sql, brandId);
 
   if (!validation.valid) {

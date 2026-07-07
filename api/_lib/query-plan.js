@@ -5,6 +5,7 @@
 
 const { monthKeyToEndDate } = require("./period-utils");
 const { normalizeMonthEnd } = require("./month-end");
+const { periodClause } = require("./sql-period");
 const {
   getMetricSpec,
   getTableMeta,
@@ -269,22 +270,7 @@ function validateQueryPlan(plan) {
 }
 
 function buildPeriodClause(filters, dateColumn = "month") {
-  const col = dateColumn || "month";
-  if (filters.dateFrom && filters.dateTo) {
-    return (
-      ` AND ${col} >= '${normalizeMonthEnd(filters.dateFrom)}'` +
-      ` AND ${col} <= '${normalizeMonthEnd(filters.dateTo)}'`
-    );
-  }
-  if (filters.month) {
-    const end = normalizeMonthEnd(filters.month);
-    return end ? ` AND ${col} = '${end}'` : "";
-  }
-  if (filters.year && filters.monthNum) {
-    const end = monthKeyToEndDate(`${filters.year}-${String(filters.monthNum).padStart(2, "0")}`);
-    return end ? ` AND ${col} = '${end}'` : "";
-  }
-  return "";
+  return periodClause(filters, dateColumn);
 }
 
 function generateSqlFromPlan(plan) {

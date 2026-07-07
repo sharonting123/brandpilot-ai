@@ -17,6 +17,7 @@ const { monthMatches, periodKey, parsePeriodLabel, monthKeyToEndDate } = require
 const { routeTimeQuery, detectMetricFromText } = require("./time-router");
 const { compileQueryPlan } = require("./query-plan");
 const { getMetricFieldMap } = require("./semantic-graph");
+const { resolveQueryPeriodFilters, ensurePeriodInSql } = require("./sql-period");
 
 function getMetricField(metric) {
   const map = getMetricFieldMap();
@@ -48,6 +49,17 @@ function registerQueryResult(templateId, sql, rows, context, filters, meta = {})
   const schemaHint = SCHEMA_CATALOG.find((s) => s.table === meta.table) || null;
   const brandId = meta.brandId || filters.brandId || "haidilao";
   const metric = meta.metric || filters.metric || detectMetricFromText(meta.question || "");
+  const dateColumn =
+    (meta.timeRoute && meta.timeRoute.dateColumn) ||
+    (schemaHint && schemaHint.dateColumn) ||
+    "month";
+
+  const finalSql = ensurePeriodInSql(sql, filters, {
+    table: meta.table,
+    dateColumn,
+    timeRoute: meta.timeRoute || null,
+    skipPeriod: meta.skipPeriod === true
+  });
 
   const compiled = compileQueryPlan({
     source: meta.generationMode || "template",
@@ -59,7 +71,7 @@ function registerQueryResult(templateId, sql, rows, context, filters, meta = {})
     brandId,
     filters,
     timeRoute: meta.timeRoute || null,
-    sql
+    sql: finalSql
   });
 
   if (!compiled.validation.valid) {
@@ -69,15 +81,15 @@ function registerQueryResult(templateId, sql, rows, context, filters, meta = {})
   const planRef = registerQueryPlan(compiled.plan);
   registerDataTable(meta.table, (schemaHint || {}).description || meta.table, {
     brandId,
-    sql,
+    sql: finalSql,
     filters,
     dataMode: context.dataMode,
     rowCount: rows.length,
     rows: resultRows
   });
-  const sqlRef = registerSqlQuery(templateId, sql, `返回 ${rows.length} 行`, {
+  const sqlRef = registerSqlQuery(templateId, finalSql, `返回 ${rows.length} 行`, {
     table: meta.table,
-    sql,
+    sql: finalSql,
     filters,
     rowCount: rows.length,
     rows: resultRows,
@@ -89,7 +101,7 @@ function registerQueryResult(templateId, sql, rows, context, filters, meta = {})
   });
   return buildQueryResult({
     table: meta.table,
-    sql,
+    sql: finalSql,
     filters,
     rows: resultRows,
     rowCount: rows.length,
@@ -124,12 +136,23 @@ async function queryFromQuestion(params = {}) {
     analysisSlots,
     dimension: analysisSlots && analysisSlots.dimension
   });
-  const filters = {
+  const mergedFilters = {
     ...(analysisSlots ? analysisSlots.filters : {}),
     ...timeRoute.filters,
     ...extractFilters(question, params.intentParams || {}, { skipTimeRoute: true }),
     ...(params.filters || {})
   };
+  const filters = resolveQueryPeriodFilters(mergedFilters, context, {
+    question,
+    queryType: template ? template.id : (analysisSlots && analysisSlots.queryType) || "",
+    table: timeRoute.table || (template && template.table),
+    targetGrain: timeRoute.targetGrain,
+    requestedGrain: timeRoute.semantics && timeRoute.semantics.requestedGrain
+  });
+  if (filters._periodDefaulted && !timeRoute.sqlTimeClause && filters.month) {
+    timeRoute.sqlTimeClause = ` AND month = '${filters.month}'`;
+    timeRoute.periodLabel = timeRoute.periodLabel || `${filters.year || 2026}年${filters.monthNum || ""}月`;
+  }
   const modelConfig = params.modelConfig || getModelConfig();
 
   let generationMode = "template";
@@ -161,7 +184,10 @@ async function queryFromQuestion(params = {}) {
     try {
       const { generateSqlPlan } = require("./sql-generation-agent");
       const plan = await generateSqlPlan({ question, brandId, filters, modelConfig, timeRoute });
-      const executed = executeSqlPlan(context, plan, brandId, filters);
+      const executed = executeSqlPlan(context, plan, brandId, filters, {
+        timeRoute,
+        dateColumn: timeRoute.dateColumn
+      });
       generationMode = "agent";
       agentReasoning = plan.reasoning || "";
       queryType = plan.queryType;
@@ -422,7 +448,8 @@ async function queryTrend(params = {}) {
   return registerQueryResult("queryTrend", sql, rows, context, { brandId, metric }, {
     table: "fact_brand_monthly",
     queryType: "queryTrend",
-    brandId
+    brandId,
+    skipPeriod: true
   });
 }
 

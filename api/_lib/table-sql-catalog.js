@@ -3,35 +3,13 @@
  * 表描述与 dateColumn 来自 semantic-graph
  */
 
+const { periodClause } = require("./sql-period");
 const { buildFunnelSql } = require("./funnel-metrics");
 const { attachRowPresentation, tableLabel } = require("./column-aliases");
-const { monthKeyToEndDate } = require("./period-utils");
-const { normalizeMonthEnd } = require("./month-end");
 const { getTableRegistry, getTableDescriptions } = require("./semantic-graph");
 
 function getTableDescriptionsResolved() {
   return getTableDescriptions();
-}
-
-function periodClause(filters = {}, dateColumn = "month") {
-  if (filters.dateFrom && filters.dateTo) {
-    return (
-      ` AND ${dateColumn} >= '${normalizeMonthEnd(filters.dateFrom)}'` +
-      ` AND ${dateColumn} <= '${normalizeMonthEnd(filters.dateTo)}'`
-    );
-  }
-  if (filters.month) {
-    const end = normalizeMonthEnd(filters.month);
-    return end ? ` AND ${dateColumn} = '${end}'` : "";
-  }
-  if (filters.year && filters.monthNum) {
-    const end = monthKeyToEndDate(`${filters.year}-${String(filters.monthNum).padStart(2, "0")}`);
-    return end ? ` AND ${dateColumn} = '${end}'` : "";
-  }
-  if (filters.monthNum) {
-    return ` AND EXTRACT(MONTH FROM ${dateColumn}) = ${filters.monthNum}`;
-  }
-  return "";
 }
 
 function buildTableSql(table, brandId = "haidilao", filters = {}) {

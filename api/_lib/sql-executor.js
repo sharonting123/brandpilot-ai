@@ -3,8 +3,9 @@
  */
 
 const { getQueryTemplate } = require("./nl2sql");
+const { ensurePeriodInSql } = require("./sql-period");
 
-function executeSqlPlan(context, plan, brandId, filters = {}) {
+function executeSqlPlan(context, plan, brandId, filters = {}, options = {}) {
   const queryType = plan.queryType || plan.templateId;
   const template = getQueryTemplate(queryType);
   if (!template) {
@@ -16,11 +17,19 @@ function executeSqlPlan(context, plan, brandId, filters = {}) {
     ...(plan.filters && typeof plan.filters === "object" ? plan.filters : {})
   };
 
+  const rawSql = plan.sql || template.sql(brandId, mergedFilters);
+  const sql = ensurePeriodInSql(rawSql, mergedFilters, {
+    table: plan.table || template.table,
+    dateColumn: options.dateColumn || "month",
+    timeRoute: options.timeRoute || null,
+    skipPeriod: options.skipPeriod === true
+  });
+
   return {
     template,
     rows: template.run(context, mergedFilters),
     filters: mergedFilters,
-    sql: plan.sql || template.sql(brandId, mergedFilters)
+    sql
   };
 }
 
