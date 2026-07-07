@@ -1,4 +1,4 @@
--- 呷哺呷哺竞品品牌 + 平台名称规范化（美团 vs 抖音）
+-- 呷哺呷哺竞品品牌数据（竞对基准表保留 美团到餐 / 抖音到店 / 私域会员）
 
 insert into public.dim_brand (
   brand_id,
@@ -125,40 +125,6 @@ set
   roi = excluded.roi,
   avg_order_value = excluded.avg_order_value;
 
-update public.fact_competitor_benchmark_monthly
-set competitor = '美团'
-where competitor = '美团到餐';
-
-update public.fact_competitor_benchmark_monthly
-set competitor = '抖音'
-where competitor = '抖音到店';
-
+-- 竞对基准仅保留 canonical 平台名（美团到餐 / 抖音到店 / 私域会员），去掉与短名重复的数据
 delete from public.fact_competitor_benchmark_monthly
-where competitor = '私域会员';
-
-insert into public.fact_competitor_benchmark_monthly (
-  month,
-  brand_id,
-  competitor,
-  market_share,
-  avg_order_value,
-  verification_rate,
-  subsidy_rate,
-  ad_take_rate,
-  content_share,
-  data_confidence
-)
-values
-  ('2026-06-30', 'haidilao', '美团', 0.6700, 319.60, 0.8530, 0.0140, 0.0187, 0.2800, 'demo_directional'),
-  ('2026-06-30', 'haidilao', '抖音', 0.3300, 286.00, 0.5700, 0.0260, 0.0095, 0.5200, 'demo_directional'),
-  ('2026-05-31', 'haidilao', '美团', 0.6600, 314.20, 0.8520, 0.0150, 0.0180, 0.2700, 'demo_directional'),
-  ('2026-05-31', 'haidilao', '抖音', 0.3400, 279.00, 0.5500, 0.0280, 0.0090, 0.5400, 'demo_directional')
-on conflict (month, brand_id, competitor) do update
-set
-  market_share = excluded.market_share,
-  avg_order_value = excluded.avg_order_value,
-  verification_rate = excluded.verification_rate,
-  subsidy_rate = excluded.subsidy_rate,
-  ad_take_rate = excluded.ad_take_rate,
-  content_share = excluded.content_share,
-  data_confidence = excluded.data_confidence;
+where competitor in ('美团', '抖音');

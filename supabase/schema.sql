@@ -42,8 +42,8 @@ create table if not exists public.dim_deal (
   created_at timestamptz not null default now()
 );
 
-create table if not exists public.fact_search_keyword_daily (
-  date date not null,
+create table if not exists public.fact_search_keyword_monthly (
+  month date not null,
   brand_id text not null references public.dim_brand(brand_id) on delete cascade,
   search_word text not null,
   source text not null,
@@ -57,11 +57,11 @@ create table if not exists public.fact_search_keyword_daily (
   paid_orders integer not null default 0,
   verified_orders integer not null default 0,
   gmv numeric(14, 2) not null default 0,
-  primary key (date, brand_id, search_word, source)
+  primary key (month, brand_id, search_word, source)
 );
 
-create table if not exists public.fact_poi_daily (
-  date date not null,
+create table if not exists public.fact_poi_monthly (
+  month date not null,
   poi_id text not null references public.dim_poi(poi_id) on delete cascade,
   exposure integer not null default 0,
   visits integer not null default 0,
@@ -71,11 +71,11 @@ create table if not exists public.fact_poi_daily (
   navigate_clicks integer not null default 0,
   phone_clicks integer not null default 0,
   avg_stay_seconds numeric(10, 2) not null default 0,
-  primary key (date, poi_id)
+  primary key (month, poi_id)
 );
 
-create table if not exists public.fact_deal_campaign_daily (
-  date date not null,
+create table if not exists public.fact_deal_campaign_monthly (
+  month date not null,
   deal_id text not null references public.dim_deal(deal_id) on delete cascade,
   campaign_id text not null,
   source text not null,
@@ -88,7 +88,7 @@ create table if not exists public.fact_deal_campaign_daily (
   pay_gmv numeric(14, 2) not null default 0,
   coupon_reduce_amount numeric(14, 2) not null default 0,
   refunds integer not null default 0,
-  primary key (date, deal_id, campaign_id, source)
+  primary key (month, deal_id, campaign_id, source)
 );
 
 create table if not exists public.fact_brand_monthly (
@@ -205,9 +205,9 @@ create table if not exists public.brand_assets (
 alter table public.dim_brand enable row level security;
 alter table public.dim_poi enable row level security;
 alter table public.dim_deal enable row level security;
-alter table public.fact_search_keyword_daily enable row level security;
-alter table public.fact_poi_daily enable row level security;
-alter table public.fact_deal_campaign_daily enable row level security;
+alter table public.fact_search_keyword_monthly enable row level security;
+alter table public.fact_poi_monthly enable row level security;
+alter table public.fact_deal_campaign_monthly enable row level security;
 alter table public.fact_brand_monthly enable row level security;
 alter table public.fact_city_brand_monthly enable row level security;
 alter table public.fact_competitor_benchmark_monthly enable row level security;
@@ -219,9 +219,9 @@ alter table public.brand_assets enable row level security;
 drop policy if exists "demo read dim brand" on public.dim_brand;
 drop policy if exists "demo read dim poi" on public.dim_poi;
 drop policy if exists "demo read dim deal" on public.dim_deal;
-drop policy if exists "demo read search keyword daily" on public.fact_search_keyword_daily;
-drop policy if exists "demo read poi daily" on public.fact_poi_daily;
-drop policy if exists "demo read deal campaign daily" on public.fact_deal_campaign_daily;
+drop policy if exists "demo read search keyword monthly" on public.fact_search_keyword_monthly;
+drop policy if exists "demo read poi monthly" on public.fact_poi_monthly;
+drop policy if exists "demo read deal campaign monthly" on public.fact_deal_campaign_monthly;
 drop policy if exists "demo read brand monthly" on public.fact_brand_monthly;
 drop policy if exists "demo read city brand monthly" on public.fact_city_brand_monthly;
 drop policy if exists "demo read competitor benchmark monthly" on public.fact_competitor_benchmark_monthly;
@@ -249,18 +249,18 @@ create policy "demo read dim deal"
   to anon
   using (true);
 
-create policy "demo read search keyword daily"
-  on public.fact_search_keyword_daily for select
+create policy "demo read search keyword monthly"
+  on public.fact_search_keyword_monthly for select
   to anon
   using (true);
 
-create policy "demo read poi daily"
-  on public.fact_poi_daily for select
+create policy "demo read poi monthly"
+  on public.fact_poi_monthly for select
   to anon
   using (true);
 
-create policy "demo read deal campaign daily"
-  on public.fact_deal_campaign_daily for select
+create policy "demo read deal campaign monthly"
+  on public.fact_deal_campaign_monthly for select
   to anon
   using (true);
 
@@ -374,9 +374,9 @@ grant select on
   public.dim_brand,
   public.dim_poi,
   public.dim_deal,
-  public.fact_search_keyword_daily,
-  public.fact_poi_daily,
-  public.fact_deal_campaign_daily,
+  public.fact_search_keyword_monthly,
+  public.fact_poi_monthly,
+  public.fact_deal_campaign_monthly,
   public.fact_brand_monthly,
   public.fact_city_brand_monthly,
   public.fact_competitor_benchmark_monthly,
@@ -549,8 +549,8 @@ set
 
 
 -- ==== supabase\04_seed_daily_facts.sql ====
-insert into public.fact_search_keyword_daily (
-  date,
+insert into public.fact_search_keyword_monthly (
+  month,
   brand_id,
   search_word,
   source,
@@ -678,7 +678,7 @@ values
     29,
     14690.30
   )
-on conflict (date, brand_id, search_word, source) do update
+on conflict (month, brand_id, search_word, source) do update
 set
   query_id = excluded.query_id,
   global_id = excluded.global_id,
@@ -691,8 +691,8 @@ set
   verified_orders = excluded.verified_orders,
   gmv = excluded.gmv;
 
-insert into public.fact_poi_daily (
-  date,
+insert into public.fact_poi_monthly (
+  month,
   poi_id,
   exposure,
   visits,
@@ -715,7 +715,7 @@ values
   ('2026-06-30', 'hdl-cd-jinjiang-001', 214000, 36800, 8540, 3740, 1460, 892, 410, 98.0),
   ('2026-06-30', 'hdl-hz-binjiang-001', 178000, 30600, 7060, 3180, 1210, 738, 350, 95.0),
   (current_date, '1287671875', 18600, 2410, 436, 172, 83, 46, 18, 89.0)
-on conflict (date, poi_id) do update
+on conflict (month, poi_id) do update
 set
   exposure = excluded.exposure,
   visits = excluded.visits,
@@ -726,8 +726,8 @@ set
   phone_clicks = excluded.phone_clicks,
   avg_stay_seconds = excluded.avg_stay_seconds;
 
-insert into public.fact_deal_campaign_daily (
-  date,
+insert into public.fact_deal_campaign_monthly (
+  month,
   deal_id,
   campaign_id,
   source,
@@ -847,7 +847,7 @@ values
     1258.70,
     2
   )
-on conflict (date, deal_id, campaign_id, source) do update
+on conflict (month, deal_id, campaign_id, source) do update
 set
   impressions = excluded.impressions,
   detail_views = excluded.detail_views,

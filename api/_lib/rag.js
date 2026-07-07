@@ -12,6 +12,7 @@ const {
   mergeCandidates,
   rerankChunks
 } = require("./rag-embeddings");
+const { registerKnowledgePassage } = require("./citation-registry");
 
 const BUILTIN_CHUNKS = [
   {
@@ -172,9 +173,12 @@ async function retrieveKnowledge(params = {}) {
   let embeddingRanked = [];
 
   if (isEmbeddingConfigured()) {
-    // 调试态：Embedding 失败不再回退关键词，直接抛错暴露问题
-    embeddingRanked = await vectorRecall(query, chunks, recallSize);
-    embeddingUsed = embeddingRanked.length > 0;
+    try {
+      embeddingRanked = await vectorRecall(query, chunks, recallSize);
+      embeddingUsed = embeddingRanked.length > 0;
+    } catch (error) {
+      retrievalWarning = "Embedding 召回失败，已回退关键词检索：" + error.message;
+    }
   }
 
   let candidates = mergeCandidates(keywordRanked, embeddingRanked, recallSize);
@@ -182,23 +186,35 @@ async function retrieveKnowledge(params = {}) {
 
   let ranked = candidates;
   if (isRerankConfigured() && candidates.length > 1) {
-    // 调试态：Rerank 失败不再回退融合排序，直接抛错暴露问题
-    ranked = await rerankChunks(query, candidates, topK);
-    rerankUsed = true;
+    try {
+      ranked = await rerankChunks(query, candidates, topK);
+      rerankUsed = true;
+    } catch (error) {
+      retrievalWarning = (retrievalWarning ? retrievalWarning + "；" : "") +
+        "Rerank 失败，已回退融合排序：" + error.message;
+      ranked = candidates.slice(0, topK);
+    }
   } else {
     ranked = candidates.slice(0, topK);
   }
 
-  const passages = ranked.map((chunk, index) => ({
-    rank: chunk.rank || index + 1,
-    id: chunk.id,
-    type: chunk.type,
-    title: chunk.title,
-    content: chunk.content,
-    score: Number((chunk.rerankScore ?? chunk.rrfScore ?? chunk.embeddingScore ?? chunk.score ?? 0).toFixed(4)),
-    recallSources: chunk.recallSources || [],
-    citation: `[${index + 1}] ${chunk.title}`
-  }));
+  const passages = ranked.map((chunk, index) => {
+    const ref = registerKnowledgePassage(chunk);
+    return {
+      rank: chunk.rank || index + 1,
+      id: chunk.id,
+      type: chunk.type,
+      title: chunk.title,
+      content: chunk.content,
+      score: Number((chunk.rerankScore ?? chunk.rrfScore ?? chunk.embeddingScore ?? chunk.score ?? 0).toFixed(4)),
+      recallSources: chunk.recallSources || [],
+      refId: ref.id,
+      href: ref.href,
+      location: ref.location,
+      citation: `[${ref.id}] ${chunk.title}`,
+      citationLink: `[${ref.id}](${ref.href}) ${chunk.title}`
+    };
+  });
 
   const retrievalMode = buildRetrievalMode({
     embeddingUsed,
@@ -215,6 +231,7 @@ async function retrieveKnowledge(params = {}) {
     rerankModel: rerankUsed ? ragConfig.rerankModel : null,
     passages,
     citations: passages.map((p) => p.citation),
+    citationLinks: passages.map((p) => p.citationLink),
     dataMode: context.dataMode,
     warning: retrievalWarning,
     explanation:

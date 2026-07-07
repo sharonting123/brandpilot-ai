@@ -101,24 +101,7 @@ function seededUnit(key, min = 0, max = 1) {
   return min + (seedHash(key) % 10000) / 10000 * span;
 }
 
-function monthEndDates(from, to) {
-  const dates = [];
-  let year = parseInt(from.slice(0, 4), 10);
-  let month = parseInt(from.slice(5, 7), 10);
-  const end = to;
-  while (true) {
-    const lastDay = new Date(year, month, 0);
-    const iso = lastDay.toISOString().slice(0, 10);
-    if (iso > end) break;
-    if (iso >= from) dates.push(iso);
-    month += 1;
-    if (month > 12) {
-      month = 1;
-      year += 1;
-    }
-  }
-  return dates;
-}
+const { monthEndDates, normalizeMonthEnd } = require("./month-end");
 
 function slugify(value) {
   return String(value || "item").toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/g, "_");
@@ -133,7 +116,7 @@ function inDateRange(date, from, to) {
   return d >= from && d <= to;
 }
 
-function filterByDateRange(rows, from, to, dateField = "date") {
+function filterByDateRange(rows, from, to, dateField = "month") {
   return (rows || []).filter((row) => inDateRange(row[dateField], from, to));
 }
 
@@ -273,7 +256,7 @@ function resolveMetricsPeriod(options = {}) {
 function filterPoiFactsByMonth(rows, monthKey) {
   if (!monthKey) return rows || [];
   const prefix = String(monthKey).slice(0, 7);
-  return (rows || []).filter((row) => String(row.date || "").startsWith(prefix));
+  return (rows || []).filter((row) => String(row.month || "").startsWith(prefix));
 }
 
 function aggregateBrandMonth(rows, monthKey) {
@@ -377,7 +360,7 @@ function buildPoiDailyRow(month, poiId, city, area, share) {
   const visits = Math.round(exposure * (0.14 + seededUnit(poiId + "v" + month, 0, 0.04)));
   const dealClicks = Math.round(visits * (0.09 + seededUnit(poiId + "d" + month, 0, 0.03)));
   return {
-    date: month,
+    month: normalizeMonthEnd(month),
     poi_id: poiId,
     city,
     business_area: area,

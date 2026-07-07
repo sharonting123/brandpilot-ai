@@ -41,8 +41,8 @@ create table if not exists public.dim_deal (
   created_at timestamptz not null default now()
 );
 
-create table if not exists public.fact_search_keyword_daily (
-  date date not null,
+create table if not exists public.fact_search_keyword_monthly (
+  month date not null,
   brand_id text not null references public.dim_brand(brand_id) on delete cascade,
   search_word text not null,
   source text not null,
@@ -56,11 +56,11 @@ create table if not exists public.fact_search_keyword_daily (
   paid_orders integer not null default 0,
   verified_orders integer not null default 0,
   gmv numeric(14, 2) not null default 0,
-  primary key (date, brand_id, search_word, source)
+  primary key (month, brand_id, search_word, source)
 );
 
-create table if not exists public.fact_poi_daily (
-  date date not null,
+create table if not exists public.fact_poi_monthly (
+  month date not null,
   poi_id text not null references public.dim_poi(poi_id) on delete cascade,
   exposure integer not null default 0,
   visits integer not null default 0,
@@ -70,11 +70,11 @@ create table if not exists public.fact_poi_daily (
   navigate_clicks integer not null default 0,
   phone_clicks integer not null default 0,
   avg_stay_seconds numeric(10, 2) not null default 0,
-  primary key (date, poi_id)
+  primary key (month, poi_id)
 );
 
-create table if not exists public.fact_deal_campaign_daily (
-  date date not null,
+create table if not exists public.fact_deal_campaign_monthly (
+  month date not null,
   deal_id text not null references public.dim_deal(deal_id) on delete cascade,
   campaign_id text not null,
   source text not null,
@@ -87,7 +87,7 @@ create table if not exists public.fact_deal_campaign_daily (
   pay_gmv numeric(14, 2) not null default 0,
   coupon_reduce_amount numeric(14, 2) not null default 0,
   refunds integer not null default 0,
-  primary key (date, deal_id, campaign_id, source)
+  primary key (month, deal_id, campaign_id, source)
 );
 
 create table if not exists public.fact_brand_monthly (

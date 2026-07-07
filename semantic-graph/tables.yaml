@@ -1,0 +1,150 @@
+# 物理表语义图谱
+# month 字段统一为月末日期（如 2026-06-30）
+
+version: "1.0"
+
+table_kinds:
+  daily: 日表
+  weekly: 周表
+  monthly: 月表
+  agg_daily: 聚合日表
+
+tables:
+  dim_brand:
+    type: dimension
+    label: 品牌维表
+    domain: brand
+    grain: null
+    primary_key: [brand_id]
+    columns:
+      - { name: brand_id, label: 品牌 ID }
+      - { name: brand_name, label: 品牌名称 }
+      - { name: category, label: 品类 }
+      - { name: brand_level, label: 品牌层级 }
+      - { name: store_count, label: 门店数 }
+
+  dim_poi:
+    type: dimension
+    label: 门店维表
+    domain: poi
+    grain: null
+    primary_key: [poi_id]
+    drill_levels: [city, business_area, poi]
+    columns:
+      - { name: poi_id, label: 门店 ID }
+      - { name: poi_name, label: 门店名称 }
+      - { name: brand_id, label: 品牌 ID }
+      - { name: city, label: 城市 }
+      - { name: district, label: 区县 }
+      - { name: business_area, label: 商圈 }
+      - { name: poi_status, label: 门店状态 }
+
+  dim_deal:
+    type: dimension
+    label: 套餐维表
+    domain: campaign
+    primary_key: [deal_id]
+    columns:
+      - { name: deal_id, label: 套餐 ID }
+      - { name: deal_name, label: 套餐名称 }
+      - { name: poi_id, label: 所属门店 }
+      - { name: brand_id, label: 品牌 ID }
+
+  fact_brand_monthly:
+    type: fact
+    kind: monthly
+    label: 品牌月度经分
+    domain: brand
+    date_column: month
+    physical_grain: month
+    primary_key: [month, brand_id]
+    metrics: [gtv, active_users, avg_order_value, paid_orders, verified_orders, take_rate, subsidy_rate]
+    drill_levels: [brand]
+
+  fact_city_brand_monthly:
+    type: fact
+    kind: monthly
+    label: 城市月度经营
+    domain: city
+    date_column: month
+    physical_grain: month
+    primary_key: [month, brand_id, city]
+    dimensions: [city]
+    metrics: [gmv, roi, paid_orders, verified_orders, store_count, ad_spend, avg_order_value]
+    drill_levels: [city]
+
+  fact_poi_monthly:
+    type: fact
+    kind: agg_daily
+    label: POI 月度流量
+    domain: poi
+    date_column: month
+    physical_grain: month
+    primary_key: [month, poi_id]
+    dimensions: [poi_id]
+    metrics: [exposure, visits, search_visits, deal_clicks, favorite_count, navigate_clicks, phone_clicks]
+    drill_levels: [business_area, poi]
+    note: 门店 GMV 拆解需 JOIN dim_poi 并按 visits 权重分摊城市 GMV
+
+  fact_search_keyword_monthly:
+    type: fact
+    kind: agg_daily
+    label: 搜索词月度
+    domain: search
+    date_column: month
+    physical_grain: month
+    primary_key: [month, brand_id, search_word, source]
+    dimensions: [search_word, source]
+    metrics: [impressions, clicks, paid_orders, verified_orders, gmv]
+
+  fact_deal_campaign_monthly:
+    type: fact
+    kind: agg_daily
+    label: 套餐/活动月度
+    domain: campaign
+    date_column: month
+    physical_grain: month
+    primary_key: [month, deal_id, campaign_id, source]
+    dimensions: [deal_id, campaign_id]
+    metrics: [impressions, paid_orders, verified_orders, pay_gmv, coupon_reduce_amount]
+
+  fact_competitor_benchmark_monthly:
+    type: fact
+    kind: monthly
+    label: 竞对基准
+    domain: competitor
+    date_column: month
+    physical_grain: month
+    primary_key: [month, brand_id, competitor]
+    dimensions: [competitor]
+    metrics: [market_share, verification_rate, subsidy_rate, avg_order_value, content_share]
+
+  fact_meituan_funnel_events:
+    type: fact
+    kind: daily
+    label: 链路事件流
+    domain: funnel
+    date_column: occurred_at
+    physical_grain: event
+    note: 事件级明细，非月度汇总；漏斗模板优先用三张 monthly 事实表聚合
+
+# 域 → 默认表（Time Router 选表路由）
+domain_default_table:
+  brand: fact_brand_monthly
+  city: fact_city_brand_monthly
+  competitor: fact_competitor_benchmark_monthly
+  search: fact_search_keyword_monthly
+  poi: fact_poi_monthly
+  campaign: fact_deal_campaign_monthly
+  funnel: fact_search_keyword_monthly
+
+# 逻辑粒度 → 优先匹配的物理表 kind（Time Router）
+grain_table_priority:
+  day: [daily, agg_daily, weekly, monthly]
+  week: [weekly, agg_daily, monthly]
+  month: [monthly, agg_daily]
+  quarter: [monthly]
+  half_year: [monthly]
+  year: [monthly]
+  range: [monthly, agg_daily]
+  cumulative: [monthly]

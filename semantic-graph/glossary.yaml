@@ -1,0 +1,118 @@
+# 业务术语表 / 口语 → 语义映射
+# 供 Intent Router、NL2SQL、Agent 统一口径
+
+version: "1.0"
+
+terms:
+  GMV:
+    maps_to: metric.gmv
+    definition: 商品交易总额，Demo 中城市级为主口径
+    aliases: [营业额, 交易额, 销售额]
+    not_same_as: GTV
+
+  GTV:
+    maps_to: metric.gtv
+    definition: 平台流水，品牌级经分口径
+    aliases: [流水, 平台流水]
+
+  核销率:
+    maps_to: metric.verified_rate
+    formula: 核销订单数 / 支付订单数
+    aliases: [verification rate]
+
+  客单价:
+    maps_to: metric.avg_order_value
+    aliases: [AOV, 单均]
+
+  商圈:
+    maps_to: dimension.business_area
+    column: dim_poi.business_area
+    not_same_as: district
+    note: 商业区域/商场，如「静安大悦城」；下钻层级在 city 与 poi 之间
+
+  区县:
+    maps_to: dimension.district
+    column: dim_poi.district
+    note: 行政区划，如「静安」「浦东」
+
+  门店:
+    maps_to: dimension.poi
+    column: dim_poi.poi_id / poi_name
+    aliases: [POI, 店铺, 分店]
+
+  城市:
+    maps_to: dimension.city
+    drill_level: city
+    aliases: [分城市, 各城市]
+
+  环比:
+    maps_to: operator.computePeriodCompare.mom
+    aliases: [MoM, 比上月, 较上月]
+    scenario: period_compare
+
+  同比:
+    maps_to: operator.computePeriodCompare.yoy
+    aliases: [YoY, 较去年同期, 和去年比]
+    scenario: period_compare
+
+  拖累:
+    maps_to: operator.computeContribution.largestDrag
+    implies: 需要 breakdown 维度拆解
+    drill_hint: 问「哪里拖累」时按当前 scope 下一级维度拆解
+
+  漏斗:
+    maps_to: metric.funnel
+    scenario: funnel_diagnosis
+    stages: [搜索曝光, 搜索点击, POI访问, 套餐点击, 支付, 核销]
+
+  月末:
+    maps_to: time.month
+    format: YYYY-MM-DD
+    rule: month 字段一律存月末日期，如 2026-06-30
+
+  美团:
+    maps_to: dimension.platform
+    value: 美团到餐
+    aliases: [美团到餐, 美团]
+    scenario: competitor_benchmark
+
+  抖音:
+    maps_to: dimension.platform
+    value: 抖音到店
+    aliases: [抖音到店, 抖音]
+    scenario: competitor_benchmark
+
+# 常见错误问法 → 正确理解
+disambiguation:
+  - wrong: 6月上海GMV环比，哪个城市拖累？
+    reason: 上海已是城市，不应再按城市拆解
+    correct_scope: city
+    correct_dimension: business_area
+    suggested_question: 6月上海GMV环比，哪个商圈拖累？
+
+  - wrong: 6月静安大悦城GMV，哪个城市贡献最大？
+    reason: 商圈层级不应向上问城市
+    correct_scope: business_area
+    correct_dimension: poi
+
+  - note: GTV 与 GMV 不可混用；品牌问 GMV 常落到城市表或 GTV 代理
+
+# 时间口语
+time_expressions:
+  - pattern: "6月"
+    grain: month
+    example_month_end: "2026-06-30"
+  - pattern: "2026年上半年"
+    grain: half_year
+    range: ["2026-01-31", "2026-06-30"]
+  - pattern: "近3个月"
+    grain: range
+  - pattern: "按日"
+    grain: day
+    fallback: month
+
+# 默认品牌
+brand:
+  id: haidilao
+  name: 海底捞
+  peer: xiabuxiabu

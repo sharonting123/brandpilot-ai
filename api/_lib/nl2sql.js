@@ -1,48 +1,40 @@
-/**
- * NL2SQL 引擎
- * 自然语言 → 安全查询计划 → 只读 SQL 文本 + 行结果。
- * 不向数据库执行任意 SQL，只对内存中的品牌上下文跑模板查询，避免注入风险。
- */
+const { monthKeyToEndDate, monthMatches } = require("./period-utils");
+const { normalizeMonthEnd } = require("./month-end");
+const { routeTimeQuery, semanticsToFilters } = require("./time-router");
+const { getSchemaCatalog: getGraphSchemaCatalog, getCities } = require("./semantic-graph");
 
-const SCHEMA_CATALOG = [
-  {
-    table: "fact_brand_monthly",
-    description: "品牌月度经分：GTV、活跃用户、客单价、take_rate、补贴率",
-    columns: ["month", "gtv", "active_users", "avg_order_value", "paid_orders", "verified_orders", "take_rate", "subsidy_rate"]
-  },
-  {
-    table: "fact_city_brand_monthly",
-    description: "城市月度经营：GMV、ROI、核销、门店数",
-    columns: ["month", "city", "gmv", "roi", "paid_orders", "verified_orders", "store_count"]
-  },
-  {
-    table: "fact_search_keyword_daily",
-    description: "搜索词日粒度：曝光、点击、下单、核销、GMV",
-    columns: ["date", "search_word", "impressions", "clicks", "paid_orders", "verified_orders", "gmv"]
-  },
-  {
-    table: "fact_poi_daily",
-    description: "POI 日粒度：曝光、访问、套餐点击",
-    columns: ["date", "poi_id", "exposure", "visits", "deal_clicks"]
-  },
-  {
-    table: "fact_deal_campaign_daily",
-    description: "套餐/活动日粒度：曝光、下单、支付、核销、GMV、补贴",
-    columns: ["date", "deal_id", "impressions", "paid_orders", "verified_orders", "pay_gmv", "coupon_reduce_amount"]
-  },
-  {
-    table: "fact_competitor_benchmark_monthly",
-    description: "竞对基准：核销率、补贴率、内容占比",
-    columns: ["month", "competitor", "verification_rate", "subsidy_rate", "content_share", "avg_order_value"]
-  },
-  {
-    table: "dim_poi",
-    description: "门店维表",
-    columns: ["poi_id", "poi_name", "city", "district", "business_area"]
+function getSchemaCatalogResolved() {
+  return getGraphSchemaCatalog();
+}
+
+const SCHEMA_CATALOG = new Proxy([], {
+  get(target, prop) {
+    const catalog = getSchemaCatalogResolved();
+    if (prop === "find" || prop === "filter" || prop === "map" || prop === "slice" || prop === "length") {
+      return catalog[prop].bind(catalog);
+    }
+    if (typeof prop === "string" && /^\d+$/.test(prop)) {
+      return catalog[Number(prop)];
+    }
+    return target[prop];
   }
-];
+});
 
 const QUERY_TEMPLATES = [
+  {
+    id: "funnel_conversion",
+    keywords: ["漏斗", "链路", "损耗", "断点", "流失", "转化链", "搜索到核销", "搜索到", "核销", "转化"],
+    table: "fact_search_keyword_monthly",
+    sql: (brandId, filters) => {
+      const { buildFunnelSql } = require("./funnel-metrics");
+      return buildFunnelSql(brandId, filters);
+    },
+    run: (ctx, filters) => {
+      const { buildFunnelMetrics, funnelRowsForSql } = require("./funnel-metrics");
+      const metrics = buildFunnelMetrics(ctx, filters);
+      return funnelRowsForSql(metrics.funnel);
+    }
+  },
   {
     id: "monthly_gtv",
     keywords: ["gmv", "gtv", "营业额", "交易额", "月度"],
@@ -50,7 +42,7 @@ const QUERY_TEMPLATES = [
     sql: (brandId, filters) =>
       `SELECT month, gtv, paid_orders, verified_orders, take_rate, subsidy_rate\n` +
       `FROM fact_brand_monthly\n` +
-      `WHERE brand_id = '${brandId}'${filters.month ? ` AND month = '${filters.month}'` : ""}\n` +
+      `WHERE brand_id = '${brandId}'${filters.month ? ` AND month = '${monthKeyToEndDate(String(filters.month).slice(0, 7))}'` : ""}\n` +
       `ORDER BY month DESC`,
     run: (ctx, filters) => {
       let rows = (ctx.monthlyFacts || []).map((m) => ({
@@ -64,7 +56,7 @@ const QUERY_TEMPLATES = [
         active_users: m.active_users
       }));
       if (filters.month) {
-        rows = rows.filter((r) => String(r.month).includes(filters.month.replace("-01", "").slice(0, 7)) || String(r.month).includes(filters.month));
+        rows = rows.filter((r) => monthMatches(r.month, String(filters.month).slice(0, 7)));
       }
       if (filters.monthNum) {
         rows = rows.filter((r) => {
@@ -104,17 +96,17 @@ const QUERY_TEMPLATES = [
   {
     id: "search_keywords",
     keywords: ["搜索", "关键词", "曝光", "点击率", "ctr"],
-    table: "fact_search_keyword_daily",
+    table: "fact_search_keyword_monthly",
     sql: (brandId) =>
-      `SELECT date, search_word, impressions, clicks, paid_orders, verified_orders, gmv\n` +
-      `FROM fact_search_keyword_daily\n` +
+      `SELECT month, search_word, impressions, clicks, paid_orders, verified_orders, gmv\n` +
+      `FROM fact_search_keyword_monthly\n` +
       `WHERE brand_id = '${brandId}'\n` +
       `ORDER BY impressions DESC\nLIMIT 20`,
     run: (ctx) => {
       const facts = (ctx.dailyFacts && ctx.dailyFacts.searchFacts) || [];
       return facts
         .map((f) => ({
-          date: f.date,
+          month: normalizeMonthEnd(f.month || f.date),
           search_word: f.search_word,
           impressions: f.impressions,
           clicks: f.clicks,
@@ -134,9 +126,12 @@ const QUERY_TEMPLATES = [
       `SELECT month, competitor, verification_rate, subsidy_rate, content_share, avg_order_value\n` +
       `FROM fact_competitor_benchmark_monthly\n` +
       `WHERE brand_id = '${brandId}'\n` +
+      `  AND competitor NOT IN ('美团', '抖音')\n` +
       `ORDER BY month DESC`,
     run: (ctx) =>
-      (ctx.competitorBenchmarks || []).map((b) => ({
+      require("./column-aliases")
+        .filterCompetitorRows(ctx.competitorBenchmarks || [])
+        .map((b) => ({
         month: b.month,
         competitor: b.competitor,
         verification_rate: b.verification_rate,
@@ -166,15 +161,15 @@ const QUERY_TEMPLATES = [
   {
     id: "campaign",
     keywords: ["套餐", "活动", "补贴", "券", "核销"],
-    table: "fact_deal_campaign_daily",
+    table: "fact_deal_campaign_monthly",
     sql: () =>
-      `SELECT date, deal_id, impressions, paid_orders, verified_orders, pay_gmv, coupon_reduce_amount\n` +
-      `FROM fact_deal_campaign_daily\nORDER BY pay_gmv DESC\nLIMIT 20`,
+      `SELECT month, deal_id, impressions, paid_orders, verified_orders, pay_gmv, coupon_reduce_amount\n` +
+      `FROM fact_deal_campaign_monthly\nORDER BY pay_gmv DESC\nLIMIT 20`,
     run: (ctx) => {
       const facts = (ctx.dailyFacts && ctx.dailyFacts.campaignFacts) || [];
       return facts
         .map((f) => ({
-          date: f.date,
+          month: normalizeMonthEnd(f.month || f.date),
           deal_id: f.deal_id,
           impressions: f.impressions,
           paid_orders: f.paid_orders,
@@ -188,26 +183,39 @@ const QUERY_TEMPLATES = [
   }
 ];
 
-function extractFilters(question) {
+function extractFilters(question, intentParams = {}, options = {}) {
   const text = String(question || "");
-  const filters = {};
+  let filters = {};
 
-  const monthMatch = text.match(/(\d{1,2})\s*月/);
-  if (monthMatch) filters.monthNum = Number(monthMatch[1]);
-
-  const isoMonth = text.match(/(20\d{2})[-/](\d{1,2})/);
-  if (isoMonth) {
-    filters.month = `${isoMonth[1]}-${String(isoMonth[2]).padStart(2, "0")}-01`;
-    filters.monthNum = Number(isoMonth[2]);
+  if (!options.skipTimeRoute) {
+    const timeRoute = routeTimeQuery({ question: text, intentParams });
+    filters = { ...semanticsToFilters(timeRoute.semantics), ...timeRoute.filters };
+    filters._timeRoute = {
+      targetGrain: timeRoute.targetGrain,
+      effectiveGrain: timeRoute.effectiveGrain,
+      table: timeRoute.table,
+      tableKind: timeRoute.tableKind,
+      periodLabel: timeRoute.periodLabel
+    };
+  } else if (intentParams.analysisSlots) {
+    filters = { ...intentParams.analysisSlots.filters };
+  } else if (intentParams.filters) {
+    filters = { ...intentParams.filters };
   }
 
-  const cities = ["上海", "北京", "深圳", "广州", "成都", "杭州", "南京", "武汉", "重庆", "西安"];
+  const monthMatch = text.match(/(\d{1,2})\s*月/);
+  if (monthMatch && !filters.monthNum) filters.monthNum = Number(monthMatch[1]);
+
+  const cities = getCities().length ? getCities() : ["上海", "北京", "深圳", "广州", "成都", "杭州", "南京", "武汉", "重庆", "西安"];
   for (const city of cities) {
     if (text.includes(city)) {
       filters.city = city;
       break;
     }
   }
+
+  if (intentParams.city && !filters.city) filters.city = intentParams.city;
+  if (intentParams.dimension && !filters.dimension) filters.dimension = intentParams.dimension;
 
   return filters;
 }
@@ -220,7 +228,9 @@ function pickTemplate(question) {
   for (const template of QUERY_TEMPLATES) {
     let score = 0;
     for (const kw of template.keywords) {
-      if (text.includes(kw.toLowerCase())) score += 1;
+      if (text.includes(kw.toLowerCase())) {
+        score += kw.length >= 4 ? 2 : 1;
+      }
     }
     if (score > bestScore) {
       bestScore = score;
@@ -228,64 +238,76 @@ function pickTemplate(question) {
     }
   }
 
-  // 调试态：命不中模板不再回落到默认模板，直接返回 null，由调用方报「没有此类数据」
-  return best;
+  return bestScore > 0 ? best : null;
+}
+
+function getQueryTemplate(id) {
+  return QUERY_TEMPLATES.find((item) => item.id === id) || null;
 }
 
 /**
  * 主入口：自然语言转 SQL 并返回结果
+ * 委托统一 Data Query Engine（模板 > Agent）
  */
 async function runNl2Sql(params = {}) {
-  const { getContext } = require("./agent-tools");
-  const brandId = params.brandId || "haidilao";
+  const { queryFromQuestion } = require("./data-query-engine");
   const question = String(params.question || params.query || "").trim();
-  if (!question) {
-    return JSON.stringify({ error: "question 不能为空", schema: SCHEMA_CATALOG });
-  }
+  const result = await queryFromQuestion(params);
 
-  const context = await getContext(brandId);
-  const filters = extractFilters(question);
-  const template = pickTemplate(question);
-  // 调试态：未命中任何模板，直接报「没有此类数据」，不再默认回落
-  if (!template) {
+  if (result.error) {
     return JSON.stringify({
       question,
-      error: "NO_MATCHING_TEMPLATE",
-      message: "没有此类数据：未匹配到对应的数据查询模板，请换一种问法或说明具体指标/维度。",
-      filters,
-      dataMode: context.dataMode,
-      availableTemplates: QUERY_TEMPLATES.map((t) => ({ id: t.id, keywords: t.keywords }))
+      error: result.error,
+      message: result.message,
+      filters: result.filters,
+      dataMode: result.dataMode,
+      availableTemplates: result.availableTemplates
     });
   }
-  const sql = template.sql(brandId, filters);
-  const rows = template.run(context, filters);
+
+  const modeLabel =
+    result.generationMode === "agent"
+      ? `SQL 生成 Agent 识别为「${result.queryType}」`
+      : `模板匹配「${result.templateId || result.queryType}」`;
 
   return JSON.stringify({
-    question,
-    templateId: template.id,
-    table: template.table,
-    sql,
-    filters,
-    rowCount: rows.length,
-    rows: rows.slice(0, 50),
-    dataMode: context.dataMode,
-    schemaHint: SCHEMA_CATALOG.find((s) => s.table === template.table) || null,
+    question: result.question || question,
+    templateId: result.templateId || result.queryType,
+    queryType: result.queryType,
+    table: result.table,
+    sql: result.sql,
+    filters: result.filters,
+    rowCount: result.rowCount,
+    rows: result.rows,
+    dataMode: result.dataMode,
+    generationMode: result.generationMode,
+    agentReasoning: result.agentReasoning || "",
+    citationRefs: result.citationRef ? [result.citationRef] : [],
+    queryPlanRef: result.queryPlanRef || null,
+    citationLink: result.citationRef ? `[${result.citationRef}](#ref-${result.citationRef})` : "",
     explanation:
-      `已将问题映射到只读模板「${template.id}」，查询表 ${template.table}` +
-      (filters.city ? `，城市=${filters.city}` : "") +
-      (filters.monthNum ? `，月份=${filters.monthNum}` : "") +
-      `，返回 ${rows.length} 行。`
+      (result.explanation || modeLabel) +
+      `，查询表 ${result.table}` +
+      (result.filters && result.filters.city ? `，城市=${result.filters.city}` : "") +
+      (result.filters && result.filters.year && result.filters.monthNum
+        ? `，周期=${result.filters.year}年${result.filters.monthNum}月`
+        : result.filters && result.filters.monthNum
+          ? `，月份=${result.filters.monthNum}`
+          : "") +
+      `，返回 ${result.rowCount} 行。`
   });
 }
 
 function getSchemaCatalog() {
-  return SCHEMA_CATALOG;
+  return getSchemaCatalogResolved();
 }
 
 module.exports = {
   runNl2Sql,
   getSchemaCatalog,
   SCHEMA_CATALOG,
+  QUERY_TEMPLATES,
   pickTemplate,
-  extractFilters
+  extractFilters,
+  getQueryTemplate
 };

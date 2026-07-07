@@ -21,7 +21,9 @@ function getAdminConfig(env = process.env) {
       timeoutMs: base.timeoutMs
     };
   }
-  // 调试态：不再降级到内存模式，直接抛错暴露 Supabase service_role 配置缺失
+  if (env.LOCAL_DEV_AUTH === "true") {
+    return { mode: "memory", url: "", key: "", timeoutMs: base.timeoutMs };
+  }
   throw new Error("会话存储失败：Supabase service_role 未配置（SUPABASE_SERVICE_ROLE_KEY 缺失）。调试态已关闭内存降级。");
 }
 
@@ -75,7 +77,7 @@ async function createUser({ username, passwordHash }) {
       throw new HttpError(409, "USERNAME_EXISTS", "用户名已被注册。");
     }
     const user = {
-      id: `mem_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      id: `mem_${normalized}`,
       username: normalized,
       password_hash: passwordHash,
       display_name: normalized,

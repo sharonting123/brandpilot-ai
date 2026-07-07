@@ -10,10 +10,19 @@ const { appendMessages } = require("./chat-store");
 const { resetContextCache, getContext } = require("./agent-tools");
 const { persistWorkflowRun } = require("./event-store");
 const { filterWorkflowCharts } = require("./chart-policy");
+const { normalizeCharts } = require("./chart-normalize");
 const { buildDataSpec, attachDataSpecToCharts } = require("./data-spec");
 const { composeMessageWithAttachments } = require("./document-parser");
 const { buildDrillMetrics } = require("./drill-data");
 const { streamTextChunks } = require("./sse");
+const {
+  resetCitationRegistry,
+  getEnrichedCitationRegistry
+} = require("./citation-registry");
+const {
+  buildAgentDossier,
+  enrichProposalWithReferences
+} = require("./agent-dossier");
 const {
   friendlyStepName,
   friendlyTool,
@@ -21,12 +30,28 @@ const {
   friendlyDuration,
   sanitizeTechTerms
 } = require("./friendly-steps");
+const { runQualityGates } = require("./quality-gates");
 const WORKFLOW_REGISTRY = {
+  greeting: () => require("./workflows/greeting"),
   annual_proposal: () => require("./workflows/annual_proposal"),
   funnel_diagnosis: () => require("./workflows/funnel_diagnosis"),
   competitor_benchmark: () => require("./workflows/competitor_benchmark"),
+  period_compare: () => require("./workflows/period_compare"),
   data_query: () => require("./workflows/data_query")
 };
+
+function isLightweightWorkflow(workflow) {
+  return workflow === "greeting";
+}
+
+function workflowStartSummary(workflow) {
+  if (workflow === "greeting") return "悦悦跟你打个招呼…";
+  return "开始帮你查数、算指标、写分析…";
+}
+
+function getDisplayReferences(brandId = "haidilao") {
+  return getEnrichedCitationRegistry(brandId).filter((ref) => ref.type !== "agent");
+}
 
 function emitFriendlyStep(emit, payload) {
   if (!emit) return;
@@ -105,9 +130,22 @@ async function runChatRequest(ctx) {
   };
   if (emit) {
     emitFriendlyStep(emit, { id: intentId, status: "done", ...intentTrace });
+    if (intent.analysisSlots && Array.isArray(intent.analysisSlots.steps)) {
+      intent.analysisSlots.steps.forEach((step, index) => {
+        emitFriendlyStep(emit, {
+          id: intentId + "_slot_" + (index + 1),
+          status: "done",
+          name: step.label,
+          tool: step.stage,
+          summary: step.summary,
+          durationMs: 0
+        });
+      });
+    }
   }
 
   resetContextCache();
+  resetCitationRegistry();
 
   const workflowLoader = WORKFLOW_REGISTRY[intent.workflow];
   if (!workflowLoader) {
@@ -117,21 +155,63 @@ async function runChatRequest(ctx) {
   const workflowModule = workflowLoader();
   const workflowId = progress.start(
     workflowLabel(intent.workflow),
-    "开始帮你查数、算指标、写分析…"
+    workflowStartSummary(intent.workflow)
   );
+
+  let workflowSubSeq = 0;
+  let openWorkflowSubId = null;
+
+  function finishOpenWorkflowSub(step) {
+    if (!emit || !openWorkflowSubId) return;
+    emitFriendlyStep(emit, {
+      id: openWorkflowSubId,
+      status: "done",
+      ...(step || {})
+    });
+    openWorkflowSubId = null;
+  }
 
   const workflowResult = await workflowModule.execute({
     message: effectiveMessage,
     userMessage: message,
     attachments,
     modelConfig,
+    brandId,
     brandName,
     intentParams: intent.params || {},
     history,
     onProgress: (step) => {
-      emitFriendlyStep(emit, { id: workflowId, status: "running", ...step });
+      if (!emit) return;
+
+      if (step.phase === "start") {
+        finishOpenWorkflowSub();
+        workflowSubSeq += 1;
+        openWorkflowSubId = workflowId + "_sub_" + workflowSubSeq;
+        emitFriendlyStart(emit, openWorkflowSubId, step.name, step.summary);
+        return;
+      }
+
+      finishOpenWorkflowSub();
+      workflowSubSeq += 1;
+      const subId = workflowId + "_sub_" + workflowSubSeq;
+      emitFriendlyStart(
+        emit,
+        subId,
+        step.name,
+        step.summary || friendlyStepSummary(step)
+      );
+      emitFriendlyStep(emit, {
+        id: subId,
+        status: "done",
+        name: step.name,
+        tool: step.tool,
+        summary: step.summary,
+        durationMs: step.durationMs
+      });
     }
   });
+
+  finishOpenWorkflowSub();
 
   if (emit) {
     emitFriendlyStep(emit, {
@@ -147,102 +227,121 @@ async function runChatRequest(ctx) {
   let dataMode = "empty";
   let warnings = [];
   let dataSpec = null;
-  const contextId = progress.start("经营数据", "加载品牌经营数据…");
-  const contextStart = Date.now();
-  const context = await getContext(brandId);
-  dataMode = context.dataMode || "empty";
-  warnings = context.warnings || [];
-  dataSpec = buildDataSpec({
-    message: effectiveMessage,
-    workflow: intent.workflow,
-    intentParams: intent.params || {},
-    context,
-    dataMode
-  });
-  const drillMetrics = buildDrillMetrics(context, {
-    message: effectiveMessage,
-    workflow: intent.workflow,
-    intentParams: intent.params || {},
-    dataSpec
-  });
+  let context = null;
+  let drillMetrics = null;
+  let agentTrace = [intentTrace, ...(workflowResult.agentTrace || [])];
 
-  const contextTrace = {
-    name: "经营数据",
-    tool: dataMode === "supabase" ? "Supabase" : "empty",
-    summary:
-      dataMode === "supabase"
-        ? "已连接 Supabase 经营底表"
-        : "当前无可用经营数据",
-    durationMs: Date.now() - contextStart
-  };
-  if (emit) {
-    emitFriendlyStep(emit, { id: contextId, status: "done", ...contextTrace });
-  }
-
-  let agentTrace = [intentTrace, ...(workflowResult.agentTrace || []), contextTrace];
-
-  const persistId = progress.start("事件持久化", "把这次分析记下来…");
-  const persistStart = Date.now();
-  let persistResult;
-  try {
-    persistResult = await persistWorkflowRun({
-      requestId,
-      brandId,
-      brandName,
-      workflow: intent.workflow,
-      message,
-      intent: {
-        confidence: intent.confidence,
-        reasoning: intent.reasoning,
-        recognitionMode: intent.recognitionMode,
-        recognitionModeLabel: recognitionModeLabel(intent.recognitionMode),
-        llmError: intent.llmError || null
-      },
-      agentTrace,
-      proposal: workflowResult.proposal || null,
-      answer: workflowResult.answer || "",
-      charts: workflowResult.charts || [],
-      dataMode,
-      warnings: [...warnings, ...(workflowResult.warnings || [])],
-      totalDurationMs: Date.now() - startedAt
-    });
-  } catch (persistError) {
-    // 调试态：持久化失败不降级到内存，标记为 failed 暴露问题
-    persistResult = {
-      persisted: false,
-      mode: "failed",
-      error: persistError.message,
-      warning: "事件持久化失败：" + persistError.message,
-      eventIds: [],
-      proposalId: null
-    };
-  }
-
-  const persistTrace = {
-    name: "事件持久化",
-    tool: persistResult.persisted ? persistResult.mode || "supabase" : "failed",
-    summary: persistResult.persisted
-      ? "已写入 " + ((persistResult.eventIds || []).length) + " 条 Agent 事件"
-      : persistResult.warning || "事件持久化失败",
-    durationMs: Date.now() - persistStart
-  };
-  agentTrace.push(persistTrace);
-  if (emit) {
-    emitFriendlyStep(emit, { id: persistId, status: "done", ...persistTrace });
-  }
-
-  if (persistResult.warning) warnings.push(persistResult.warning);
-
-  const responseCharts = attachDataSpecToCharts(
-    filterWorkflowCharts(workflowResult.charts || [], {
+  if (!isLightweightWorkflow(intent.workflow)) {
+    const contextId = progress.start("经营数据", "加载品牌经营数据…");
+    const contextStart = Date.now();
+    context = await getContext(brandId);
+    dataMode = context.dataMode || "empty";
+    warnings = context.warnings || [];
+    dataSpec = buildDataSpec({
       message: effectiveMessage,
       workflow: intent.workflow,
-      agentTrace
-    }),
-    dataSpec
+      intentParams: intent.params || {},
+      context,
+      dataMode
+    });
+    drillMetrics = buildDrillMetrics(context, {
+      message: effectiveMessage,
+      workflow: intent.workflow,
+      intentParams: intent.params || {},
+      dataSpec
+    });
+
+    const contextTrace = {
+      name: "经营数据",
+      tool: dataMode === "supabase" ? "Supabase" : "empty",
+      summary:
+        dataMode === "supabase"
+          ? "已连接 Supabase 经营底表"
+          : "当前无可用经营数据",
+      durationMs: Date.now() - contextStart
+    };
+    agentTrace.push(contextTrace);
+    if (emit) {
+      emitFriendlyStep(emit, { id: contextId, status: "done", ...contextTrace });
+    }
+  } else {
+    warnings = workflowResult.warnings || [];
+  }
+
+  let persistResult = {
+    persisted: false,
+    mode: "skipped",
+    warning: null,
+    eventIds: [],
+    proposalId: null
+  };
+
+  if (!isLightweightWorkflow(intent.workflow)) {
+    const persistId = progress.start("事件持久化", "把这次分析记下来…");
+    const persistStart = Date.now();
+    try {
+      persistResult = await persistWorkflowRun({
+        requestId,
+        brandId,
+        brandName,
+        workflow: intent.workflow,
+        message,
+        intent: {
+          confidence: intent.confidence,
+          reasoning: intent.reasoning,
+          recognitionMode: intent.recognitionMode,
+          recognitionModeLabel: recognitionModeLabel(intent.recognitionMode),
+          llmError: intent.llmError || null
+        },
+        agentTrace,
+        proposal: workflowResult.proposal || null,
+        answer: workflowResult.answer || "",
+        charts: workflowResult.charts || [],
+        dataMode,
+        warnings: [...warnings, ...(workflowResult.warnings || [])],
+        totalDurationMs: Date.now() - startedAt
+      });
+    } catch (persistError) {
+      persistResult = {
+        persisted: false,
+        mode: "failed",
+        error: persistError.message,
+        warning: "事件持久化失败：" + persistError.message,
+        eventIds: [],
+        proposalId: null
+      };
+    }
+
+    const persistTrace = {
+      name: "事件持久化",
+      tool: persistResult.persisted ? persistResult.mode || "supabase" : "failed",
+      summary: persistResult.persisted
+        ? "已写入 " + ((persistResult.eventIds || []).length) + " 条 Agent 事件"
+        : persistResult.warning || "事件持久化失败",
+      durationMs: Date.now() - persistStart
+    };
+    agentTrace.push(persistTrace);
+    if (emit) {
+      emitFriendlyStep(emit, { id: persistId, status: "done", ...persistTrace });
+    }
+
+    if (persistResult.warning) warnings.push(persistResult.warning);
+  }
+
+  const responseCharts = normalizeCharts(
+    attachDataSpecToCharts(
+      filterWorkflowCharts(workflowResult.charts || [], {
+        message: effectiveMessage,
+        workflow: intent.workflow,
+        agentTrace
+      }),
+      dataSpec
+    )
   );
 
-  const answer = workflowResult.answer || "分析完成，请查看右侧面板。";
+  const answer =
+    workflowResult.answer ||
+    (isLightweightWorkflow(intent.workflow) ? "你好！" : "分析完成，请查看右侧面板。");
   if (emit) {
     const answerId = progress.start("生成回答", "正在把结论写成你能直接看的文字…");
     await streamTextChunks(answer, emit, { chunkSize: 28, delayMs: 10 });
@@ -262,6 +361,32 @@ async function runChatRequest(ctx) {
     workflowResult.tokenUsage || emptyTokenUsage()
   );
 
+  const references = getDisplayReferences(brandId);
+  const quality = runQualityGates({
+    answer,
+    references,
+    calculations: workflowResult.calculations || [],
+    dataMode,
+    requireReferences: !["data_query", "greeting"].includes(intent.workflow)
+  });
+  if (quality.issues.length) {
+    warnings.push(...quality.issues.map((item) => item.message));
+  }
+  const enrichedProposal = workflowResult.proposal
+    ? enrichProposalWithReferences(workflowResult.proposal, references)
+    : null;
+  const dossier = isLightweightWorkflow(intent.workflow)
+    ? null
+    : buildAgentDossier({
+        workflow: intent.workflow,
+        workflowLabel: workflowLabel(intent.workflow),
+        brandName,
+        period: (intent.params && intent.params.period) || (dataSpec && dataSpec.period && dataSpec.period.label) || "",
+        agentTrace,
+        proposal: enrichedProposal,
+        references
+      });
+
   const response = {
     requestId,
     workflow: intent.workflow,
@@ -278,8 +403,13 @@ async function runChatRequest(ctx) {
     agentTrace,
     answer,
     charts: responseCharts,
-    proposal: workflowResult.proposal || null,
-    scene: buildArSandboxScene(drillMetrics, workflowResult),
+    proposal: enrichedProposal,
+    references,
+    quality,
+    dossier,
+    scene: isLightweightWorkflow(intent.workflow)
+      ? null
+      : buildArSandboxScene(drillMetrics, { ...workflowResult, proposal: enrichedProposal }),
     dataSpec,
     persistence: {
       mode: persistResult.mode,
@@ -289,6 +419,7 @@ async function runChatRequest(ctx) {
     },
     dataMode,
     warnings: [...warnings, ...(workflowResult.warnings || [])],
+    calculations: workflowResult.calculations || [],
     supabaseStatus: supabaseConfig.configured ? "已连接" : "未配置",
     capabilities: {
       nl2sql: true,
@@ -313,6 +444,8 @@ async function runChatRequest(ctx) {
             workflowLabel: response.workflowLabel,
             proposal: response.proposal,
             charts: response.charts,
+            references: response.references,
+            dossier: response.dossier,
             capabilities: response.capabilities,
             dataSpec: response.dataSpec,
             intent: response.intent,

@@ -5,11 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content="BrandPilot AI: 连锁餐饮品牌经营分析 Agent 编排系统，含 NL2SQL / RAG" />
   <title>BrandPilot AI — 悦悦 · 品牌经营顾问</title>
-  <link rel="stylesheet" href="assets/styles.css?v=gesture-ar" />
+  <link rel="stylesheet" href="assets/styles.css?v=report-edit" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-  <script src="https://raw.githack.com/AR-js-org/AR.js/master/three.js/build/ar-threex.js"></script>
 </head>
 <body class="auth-pending">
   <div class="app-shell">
@@ -22,6 +20,7 @@
         </div>
       </div>
       <div class="topbar-status">
+        <a href="/sandbox.html" class="ghost-button sm topbar-sandbox-link" title="在独立页面打开 3D 经营沙盘">经营沙盘</a>
         <span class="status-dot" id="connectionDot" title="连接状态"></span>
         <span class="status-text" id="statusText">就绪</span>
       </div>
@@ -88,18 +87,22 @@
 
         <div class="chat-attachments" id="chatAttachments" hidden aria-label="已上传文档"></div>
         <div class="chat-input-area">
-          <input
-            type="file"
-            id="documentUploadInput"
-            hidden
-            multiple
-            accept=".txt,.md,.markdown,.html,.htm,.csv,.json,.docx,.pdf,.jpg,.jpeg,.png,.webp,.gif,.bmp"
-          />
-          <button type="button" id="documentUploadButton" class="doc-upload-button" title="上传文档或图片（支持 OCR 识别）" aria-label="上传文档或图片">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21.44 11.05l-9.19 9.19a6 6 0 1 1-8.49-8.49l9.19-9.19a4 4 0 1 1 5.66 5.66l-9.2 9.19a2 2 0 1 1-2.83-2.83l8.49-8.48" />
-            </svg>
-          </button>
+          <label
+            id="documentUploadButton"
+            class="doc-upload-button"
+            title="上传文档或图片"
+            aria-label="上传文档或图片"
+          >
+            <input
+              type="file"
+              id="documentUploadInput"
+              class="file-input-overlay"
+              multiple
+              accept=".txt,.md,.markdown,.html,.htm,.csv,.json,.docx,.pdf,.jpg,.jpeg,.png,.webp,.gif,.bmp"
+            />
+            <span class="doc-upload-icon" aria-hidden="true">📎</span>
+            <span class="doc-upload-badge" id="documentUploadBadge" hidden aria-hidden="true">0</span>
+          </label>
           <textarea
             id="chatInput"
             class="chat-input"
@@ -129,41 +132,59 @@
               <p class="viz-toolbar-subtitle" id="vizToolbarSubtitle"></p>
             </div>
             <div class="viz-export-actions">
-              <button id="downloadHtmlButton" class="export-button" type="button" title="下载 HTML 文档">HTML</button>
-              <button id="downloadPdfButton" class="pdf-button" type="button" title="下载 PDF 文档">PDF</button>
-              <button id="downloadWordButton" class="export-button" type="button" title="下载 Word 文档">Word</button>
-              <button id="downloadMarkdownButton" class="export-button" type="button" title="下载 Markdown 文档">Markdown</button>
+              <button id="sidecarReportButton" class="export-button sidecar-button" type="button" title="生成正式 HTML 报告">正式报告</button>
+              <div class="export-menu">
+                <button id="exportMenuButton" class="export-button" type="button" aria-haspopup="true" aria-expanded="false">导出 ▾</button>
+                <div class="export-menu-panel" id="exportMenuPanel" hidden>
+                  <button type="button" class="export-menu-item" data-export="html">HTML</button>
+                  <button type="button" class="export-menu-item" data-export="pdf">PDF</button>
+                  <button type="button" class="export-menu-item" data-export="word">Word</button>
+                  <button type="button" class="export-menu-item" data-export="markdown">Markdown</button>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div class="viz-proposal" id="vizProposal" style="display:none;">
-            <div class="proposal-toolbar">
-              <h2 class="proposal-title" id="proposalTitle">经营提案</h2>
+          <section class="viz-results" id="vizResults">
+            <div class="viz-results-header" id="vizResultsHeader" hidden>
+              <h2>分析结果</h2>
+              <p>结论、图表与结构化提案优先展示</p>
             </div>
-            <div class="proposal-body" id="proposalBody"></div>
-          </div>
 
-          <div class="viz-charts" id="vizCharts"></div>
-          <div class="viz-answer" id="vizAnswer" style="display:none;"></div>
-
-          <section class="ar-live-panel" id="panelAr" hidden>
-            <div class="ar-toolbar">
-              <div>
-                <h2>真 AR 中国经营沙盘</h2>
-                <p id="arMeta">生成分析后，3D 中国地图会同步城市 GMV、商圈和门店指标。</p>
+            <div class="viz-proposal" id="vizProposal" style="display:none;">
+              <div class="proposal-toolbar">
+                <h2 class="proposal-title" id="proposalTitle">经营提案</h2>
               </div>
-              <div class="ar-actions">
-                <button id="enterXrButton" class="ghost-button sm" type="button">进入 WebXR AR</button>
-                <button id="enterMarkerArButton" class="ghost-button sm" type="button">Marker AR</button>
-                <button id="resetArButton" class="ghost-button sm" type="button">重置沙盘</button>
-              </div>
+              <div class="proposal-body" id="proposalBody"></div>
             </div>
-            <div class="ar-stage ar-stage--sandbox" id="arStage"></div>
-            <div class="ar-legend">
-              <span><i class="dot green"></i>中国轮廓</span>
-              <span><i class="dot blue"></i>城市 GMV 柱</span>
-              <span><i class="dot amber"></i>选中城市</span>
-              <span><i class="dot purple"></i>下钻门店</span>
+
+            <div class="viz-answer" id="vizAnswer" style="display:none;"></div>
+            <div class="viz-charts" id="vizCharts"></div>
+
+            <div class="viz-sandbox-link" id="vizSandboxLink" hidden>
+              <a href="/sandbox.html" class="sandbox-open-button" target="_blank" rel="noopener noreferrer">
+                <span class="sandbox-open-icon">🗺️</span>
+                <span class="sandbox-open-copy">
+                  <strong>打开经营沙盘</strong>
+                  <small id="sandboxMeta">3D 中国地图 · 城市 GMV 与门店下钻</small>
+                </span>
+              </a>
+            </div>
+          </section>
+
+          <section class="viz-process" id="vizProcess" style="display:none;">
+            <div class="viz-process-header">
+              <h2>分析过程</h2>
+              <p>各 Agent 执行结论、证据链路与引用索引</p>
+            </div>
+
+            <div class="viz-dossier" id="vizDossier">
+              <div class="dossier-toolbar">
+                <h3 class="dossier-title" id="dossierTitle">Agent 分析汇总</h3>
+                <p class="dossier-subtitle" id="dossierSubtitle"></p>
+              </div>
+              <div class="dossier-body" id="dossierBody"></div>
+              <div class="reference-index" id="referenceIndex"></div>
             </div>
           </section>
         </section>
@@ -171,11 +192,38 @@
     </div>
   </div>
 
+  <div class="report-preview-modal" id="reportPreviewModal" hidden>
+    <div class="report-preview-backdrop" id="reportPreviewBackdrop"></div>
+    <div class="report-preview-card">
+      <div class="report-preview-header">
+        <div>
+          <h2 id="reportPreviewTitle">正式报告预览</h2>
+          <p id="reportPreviewMeta" class="report-preview-meta"></p>
+        </div>
+        <div class="report-preview-actions">
+          <span class="report-preview-status" id="reportPreviewStatus">可直接编辑报告内容</span>
+          <button type="button" class="export-button" id="reportPreviewSave">保存</button>
+          <div class="export-menu report-export-menu">
+            <button type="button" class="export-button" id="reportExportMenuButton" aria-haspopup="true" aria-expanded="false">导出 ▾</button>
+            <div class="export-menu-panel" id="reportExportMenuPanel" hidden>
+              <button type="button" class="export-menu-item" data-report-export="html">HTML</button>
+              <button type="button" class="export-menu-item" data-report-export="pdf">PDF</button>
+              <button type="button" class="export-menu-item" data-report-export="word">Word</button>
+            </div>
+          </div>
+          <button type="button" class="ghost-button sm" id="reportPreviewClose">关闭</button>
+        </div>
+      </div>
+      <iframe class="report-preview-frame is-editable" id="reportPreviewFrame" title="正式报告编辑"></iframe>
+    </div>
+  </div>
+
+  <script src="assets/color-registry.js?v=series-bar-colors" defer></script>
+  <script src="assets/column-aliases.js?v=column-aliases" defer></script>
   <script src="assets/assistant.js" defer></script>
   <script src="assets/markdown.js" defer></script>
   <script src="assets/auth.js?v=username-fix" defer></script>
   <script src="assets/document-upload.js?v=upload-done" defer></script>
-  <script src="assets/ar-sandbox.js?v=gesture-ar" defer></script>
-  <script src="assets/app.js?v=upload-done" defer></script>
+  <script src="assets/app.js?v=series-bar-colors" defer></script>
 </body>
 </html>

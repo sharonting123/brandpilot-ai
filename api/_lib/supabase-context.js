@@ -1,5 +1,6 @@
 const { getSupabaseConfig } = require("./env");
 const { DATE_RANGE, generateHaidilaoDrillFixture, filterByDateRange, filterMonthsByRange } = require("./drill-data");
+const { filterCompetitorBenchmarks } = require("./column-aliases");
 
 async function loadSupabaseContext(config = getSupabaseConfig(process.env), options = {}) {
   const brandId = options.brandId || "haidilao";
@@ -39,9 +40,9 @@ async function loadSupabaseContext(config = getSupabaseConfig(process.env), opti
     pois: `${endpoint}/rest/v1/dim_poi?brand_id=eq.${encodeURIComponent(brandId)}&select=*&limit=200`,
     deals: `${endpoint}/rest/v1/dim_deal?brand_id=eq.${encodeURIComponent(brandId)}&select=*&limit=50`,
     funnelEvents: `${endpoint}/rest/v1/vw_meituan_funnel_demo?select=*&order=occurred_at.asc&limit=30`,
-    searchFacts: `${endpoint}/rest/v1/fact_search_keyword_daily?brand_id=eq.${encodeURIComponent(brandId)}&date=gte.${dateFrom}&date=lte.${dateTo}&select=*&order=date.desc&limit=500`,
-    poiFacts: `${endpoint}/rest/v1/fact_poi_daily?date=gte.${dateFrom}&date=lte.${dateTo}&select=*&order=date.desc&limit=2000`,
-    campaignFacts: `${endpoint}/rest/v1/fact_deal_campaign_daily?date=gte.${dateFrom}&date=lte.${dateTo}&select=*&order=date.desc&limit=500`,
+    searchFacts: `${endpoint}/rest/v1/fact_search_keyword_monthly?brand_id=eq.${encodeURIComponent(brandId)}&month=gte.${dateFrom}&month=lte.${dateTo}&select=*&order=month.desc&limit=500`,
+    poiFacts: `${endpoint}/rest/v1/fact_poi_monthly?month=gte.${dateFrom}&month=lte.${dateTo}&select=*&order=month.desc&limit=2000`,
+    campaignFacts: `${endpoint}/rest/v1/fact_deal_campaign_monthly?month=gte.${dateFrom}&month=lte.${dateTo}&select=*&order=month.desc&limit=500`,
     brandMonthly: `${endpoint}/rest/v1/fact_brand_monthly?brand_id=eq.${encodeURIComponent(brandId)}&month=gte.${dateFrom}&month=lte.${dateTo}&select=*&order=month.asc&limit=80`,
     cityMonthly: `${endpoint}/rest/v1/fact_city_brand_monthly?brand_id=eq.${encodeURIComponent(brandId)}&month=gte.${dateFrom}&month=lte.${dateTo}&select=*&order=month.asc&limit=500`,
     competitorBenchmarks: `${endpoint}/rest/v1/fact_competitor_benchmark_monthly?brand_id=eq.${encodeURIComponent(brandId)}&month=gte.${dateFrom}&month=lte.${dateTo}&select=*&order=month.desc&limit=80`,
@@ -78,7 +79,9 @@ async function loadSupabaseContext(config = getSupabaseConfig(process.env), opti
     },
     monthlyFacts: filterMonthsByRange(rowsByKey.brandMonthly || [], dateFrom, dateTo),
     cityMonthlyFacts: filterMonthsByRange(rowsByKey.cityMonthly || [], dateFrom, dateTo),
-    competitorBenchmarks: filterMonthsByRange(rowsByKey.competitorBenchmarks || [], dateFrom, dateTo),
+    competitorBenchmarks: filterCompetitorBenchmarks(
+      filterMonthsByRange(rowsByKey.competitorBenchmarks || [], dateFrom, dateTo)
+    ),
     peerBrandProfile: rowsByKey.peerBrandProfile?.[0] || null,
     peerBrandMonthlyFacts: rowsByKey.peerBrandMonthly || [],
     peerCityMonthlyFacts: rowsByKey.peerCityMonthly || [],
@@ -151,7 +154,9 @@ function withFixture(context) {
     },
     monthlyFacts: context.monthlyFacts?.length ? context.monthlyFacts : fixture.monthlyFacts,
     cityMonthlyFacts: context.cityMonthlyFacts?.length ? context.cityMonthlyFacts : fixture.cityMonthlyFacts,
-    competitorBenchmarks: context.competitorBenchmarks?.length ? context.competitorBenchmarks : fixture.competitorBenchmarks,
+    competitorBenchmarks: filterCompetitorBenchmarks(
+      context.competitorBenchmarks?.length ? context.competitorBenchmarks : fixture.competitorBenchmarks
+    ),
     assets: context.assets?.length ? context.assets : fixture.assets
   };
 }
@@ -209,7 +214,7 @@ function getHaidilaoFixtureLegacy() {
         poi_status: "active"
       },
       {
-        poi_id: "hdl-sh-jingan-001",
+        poi_id: "hdl-上海-静安大悦城-01",
         brand_id: "haidilao",
         poi_name: "海底捞上海静安大悦城店",
         city: "上海",
@@ -219,7 +224,7 @@ function getHaidilaoFixtureLegacy() {
         poi_status: "active"
       },
       {
-        poi_id: "hdl-bj-chaoyang-001",
+        poi_id: "hdl-北京-朝阳合生汇-01",
         brand_id: "haidilao",
         poi_name: "海底捞北京朝阳合生汇店",
         city: "北京",
@@ -229,7 +234,7 @@ function getHaidilaoFixtureLegacy() {
         poi_status: "active"
       },
       {
-        poi_id: "hdl-sz-nanshan-001",
+        poi_id: "hdl-深圳-万象天地-01",
         brand_id: "haidilao",
         poi_name: "海底捞深圳南山万象天地店",
         city: "深圳",
@@ -254,7 +259,7 @@ function getHaidilaoFixtureLegacy() {
       },
       {
         deal_id: "hdl-family-499",
-        poi_id: "hdl-sh-jingan-001",
+        poi_id: "hdl-上海-静安大悦城-01",
         brand_id: "haidilao",
         deal_name: "4人家庭聚餐套餐",
         deal_type: "多人套餐",
@@ -266,7 +271,7 @@ function getHaidilaoFixtureLegacy() {
       },
       {
         deal_id: "hdl-weekday-199",
-        poi_id: "hdl-bj-chaoyang-001",
+        poi_id: "hdl-北京-朝阳合生汇-01",
         brand_id: "haidilao",
         deal_name: "工作日双人错峰套餐",
         deal_type: "错峰套餐",
@@ -280,7 +285,7 @@ function getHaidilaoFixtureLegacy() {
     dailyFacts: {
       searchFacts: [
         {
-          date: "2026-07-05",
+          month: "2026-06-30",
           brand_id: "haidilao",
           search_word: "haidilao",
           source: "mt_search_poi",
@@ -296,7 +301,7 @@ function getHaidilaoFixtureLegacy() {
           gmv: 14690.3
         },
         {
-          date: "2026-06-30",
+          month: "2026-06-30",
           brand_id: "haidilao",
           search_word: "haidilao",
           source: "mt_search_poi",
@@ -310,7 +315,7 @@ function getHaidilaoFixtureLegacy() {
           gmv: 1730634
         },
         {
-          date: "2026-05-31",
+          month: "2026-05-31",
           brand_id: "haidilao",
           search_word: "海底捞生日",
           source: "mt_search_poi",
@@ -326,7 +331,7 @@ function getHaidilaoFixtureLegacy() {
       ],
       poiFacts: [
         {
-          date: "2026-07-05",
+          month: "2026-06-30",
           poi_id: "1287671875",
           exposure: 18600,
           visits: 2410,
@@ -338,8 +343,8 @@ function getHaidilaoFixtureLegacy() {
           avg_stay_seconds: 89
         },
         {
-          date: "2026-06-30",
-          poi_id: "hdl-sh-jingan-001",
+          month: "2026-06-30",
+          poi_id: "hdl-上海-静安大悦城-01",
           exposure: 342000,
           visits: 57800,
           search_visits: 12840,
@@ -350,8 +355,8 @@ function getHaidilaoFixtureLegacy() {
           avg_stay_seconds: 116
         },
         {
-          date: "2026-06-30",
-          poi_id: "hdl-bj-chaoyang-001",
+          month: "2026-06-30",
+          poi_id: "hdl-北京-朝阳合生汇-01",
           exposure: 306000,
           visits: 51400,
           search_visits: 11620,
@@ -364,7 +369,7 @@ function getHaidilaoFixtureLegacy() {
       ],
       campaignFacts: [
         {
-          date: "2026-07-05",
+          month: "2026-06-30",
           deal_id: "1651151438",
           campaign_id: "1151457400",
           source: "mt_search_poi",
@@ -379,7 +384,7 @@ function getHaidilaoFixtureLegacy() {
           refunds: 2
         },
         {
-          date: "2026-06-30",
+          month: "2026-06-30",
           deal_id: "hdl-family-499",
           campaign_id: "hdl-2026h1-family",
           source: "mt_search_poi",
@@ -394,7 +399,7 @@ function getHaidilaoFixtureLegacy() {
           refunds: 41
         },
         {
-          date: "2026-06-30",
+          month: "2026-06-30",
           deal_id: "hdl-weekday-199",
           campaign_id: "hdl-2026h1-weekday",
           source: "mt_search_poi",
@@ -426,10 +431,12 @@ function getHaidilaoFixtureLegacy() {
       { month: "2026-06-30", brand_id: "haidilao", city: "杭州", store_count: 49, search_impressions: 625000, poi_visits: 103500, paid_orders: 34200, verified_orders: 28728, gmv: 10944000, coupon_reduce_amount: 154300, ad_spend: 206000, roi: 53.13, avg_order_value: 320 }
     ],
     competitorBenchmarks: [
-      { month: "2026-06-30", brand_id: "haidilao", competitor: "美团", market_share: 0.67, avg_order_value: 319.6, verification_rate: 0.853, subsidy_rate: 0.014, ad_take_rate: 0.0187, content_share: 0.28, data_confidence: "demo_directional" },
-      { month: "2026-06-30", brand_id: "haidilao", competitor: "抖音", market_share: 0.33, avg_order_value: 286, verification_rate: 0.57, subsidy_rate: 0.026, ad_take_rate: 0.0095, content_share: 0.52, data_confidence: "demo_directional" },
-      { month: "2026-05-31", brand_id: "haidilao", competitor: "美团", market_share: 0.66, avg_order_value: 314.2, verification_rate: 0.852, subsidy_rate: 0.015, ad_take_rate: 0.018, content_share: 0.27, data_confidence: "demo_directional" },
-      { month: "2026-05-31", brand_id: "haidilao", competitor: "抖音", market_share: 0.34, avg_order_value: 279, verification_rate: 0.55, subsidy_rate: 0.028, ad_take_rate: 0.009, content_share: 0.54, data_confidence: "demo_directional" }
+      { month: "2026-06-30", brand_id: "haidilao", competitor: "美团到餐", market_share: 0.6, avg_order_value: 319.6, verification_rate: 0.853, subsidy_rate: 0.014, ad_take_rate: 0.0187, content_share: 0.28, data_confidence: "demo_directional" },
+      { month: "2026-06-30", brand_id: "haidilao", competitor: "抖音到店", market_share: 0.3, avg_order_value: 286, verification_rate: 0.57, subsidy_rate: 0.026, ad_take_rate: 0.0095, content_share: 0.52, data_confidence: "demo_directional" },
+      { month: "2026-06-30", brand_id: "haidilao", competitor: "私域会员", market_share: 0.1, avg_order_value: 352, verification_rate: 0.91, subsidy_rate: 0.006, ad_take_rate: 0, content_share: 0.2, data_confidence: "demo_directional" },
+      { month: "2026-05-31", brand_id: "haidilao", competitor: "美团到餐", market_share: 0.59, avg_order_value: 314.2, verification_rate: 0.852, subsidy_rate: 0.015, ad_take_rate: 0.018, content_share: 0.27, data_confidence: "demo_directional" },
+      { month: "2026-05-31", brand_id: "haidilao", competitor: "抖音到店", market_share: 0.31, avg_order_value: 279, verification_rate: 0.55, subsidy_rate: 0.028, ad_take_rate: 0.009, content_share: 0.54, data_confidence: "demo_directional" },
+      { month: "2026-05-31", brand_id: "haidilao", competitor: "私域会员", market_share: 0.1, avg_order_value: 346, verification_rate: 0.905, subsidy_rate: 0.006, ad_take_rate: 0, content_share: 0.19, data_confidence: "demo_directional" }
     ],
     funnelEvents: [
       { event_type: "home_open", activity_class: "MainActivity", route_uri: "imeituan://www.meituan.com/" },

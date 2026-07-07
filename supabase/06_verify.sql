@@ -4,11 +4,11 @@ select 'dim_poi', count(*) from public.dim_poi
 union all
 select 'dim_deal', count(*) from public.dim_deal
 union all
-select 'fact_search_keyword_daily', count(*) from public.fact_search_keyword_daily
+select 'fact_search_keyword_monthly', count(*) from public.fact_search_keyword_monthly
 union all
-select 'fact_poi_daily', count(*) from public.fact_poi_daily
+select 'fact_poi_monthly', count(*) from public.fact_poi_monthly
 union all
-select 'fact_deal_campaign_daily', count(*) from public.fact_deal_campaign_daily
+select 'fact_deal_campaign_monthly', count(*) from public.fact_deal_campaign_monthly
 union all
 select 'fact_brand_monthly', count(*) from public.fact_brand_monthly
 union all

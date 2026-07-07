@@ -106,13 +106,13 @@ function buildSql() {
   lines.push("on conflict (month, brand_id) do update set gtv = excluded.gtv, paid_orders = excluded.paid_orders;");
   lines.push("");
 
-  lines.push("delete from public.fact_poi_daily where date >= '2024-01-01' and date <= '2026-06-30' and poi_id like 'hdl-%';");
-  lines.push("insert into public.fact_poi_daily (date, poi_id, exposure, visits, search_visits, deal_clicks, favorite_count, navigate_clicks, phone_clicks, avg_stay_seconds)");
+  lines.push("delete from public.fact_poi_monthly where month >= '2024-01-31' and month <= '2026-06-30' and poi_id like 'hdl-%';");
+  lines.push("insert into public.fact_poi_monthly (month, poi_id, exposure, visits, search_visits, deal_clicks, favorite_count, navigate_clicks, phone_clicks, avg_stay_seconds)");
   lines.push("values");
   const poiFacts = fixture.dailyFacts.poiFacts;
   poiFacts.forEach((row, index) => {
     const vals = "(" + [
-      sqlStr(row.date),
+      sqlStr(row.month),
       sqlStr(row.poi_id),
       row.exposure,
       row.visits,
@@ -125,7 +125,7 @@ function buildSql() {
     ].join(", ") + ")";
     lines.push(vals + (index < poiFacts.length - 1 ? "," : ""));
   });
-  lines.push("on conflict (date, poi_id) do update set exposure = excluded.exposure, visits = excluded.visits;");
+  lines.push("on conflict (month, poi_id) do update set exposure = excluded.exposure, visits = excluded.visits;");
   lines.push("");
 
   return lines.join("\n");

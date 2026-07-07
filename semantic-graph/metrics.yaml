@@ -1,0 +1,390 @@
+# 指标语义图谱（唯一事实源）
+# 粒度 / 基数 / fanout / 估算口径供 QueryPlan 校验与引用
+
+version: "1.0"
+brand: haidilao
+
+metrics:
+  gtv:
+    label: GTV
+    aliases: [流水, 平台流水, 交易额]
+    unit: 元
+    domain: brand
+    description: 品牌级平台总流水（Gross Transaction Value）
+    formula: 来自 fact_brand_monthly.gtv
+    column: gtv
+    storage_grain: month
+    supported_grains: [month, quarter, half_year, year, range]
+    preferred_grain: month
+    primary_table: fact_brand_monthly
+    drill_levels: [brand]
+    cardinality:
+      brand: 1
+      month: 1
+    fanout:
+      level: none
+      multiplier: 1
+    estimation:
+      method: direct_sum
+      formula: "SUM(gtv) GROUP BY month"
+      expected_rows: "months_in_range"
+
+  gmv:
+    label: GMV
+    aliases: [营业额, 交易额, 销售额]
+    unit: 元
+    domain: city
+    description: 城市/经营 GMV；品牌级问 GMV 时通常映射城市汇总或 GTV 代理
+    formula: fact_city_brand_monthly.gmv；门店级按 POI 流量权重分摊城市 GMV
+    column: gmv
+    brand_proxy_column: gtv
+    storage_grain: month
+    supported_grains: [month, quarter, half_year, year, range]
+    preferred_grain: month
+    primary_table: fact_city_brand_monthly
+    drill_levels: [brand, city, business_area, poi]
+    cardinality:
+      brand: 1
+      city: 15
+      business_area: 40
+      poi: 31
+    fanout:
+      level: low
+      multiplier: 1
+      with_poi_join: medium
+    estimation:
+      method: direct_sum
+      formula: "SUM(gmv) GROUP BY dimensions"
+      poi_proxy: "city_gmv * poi_visits / SUM(poi_visits) GROUP BY business_area|poi"
+      expected_rows: "cities_or_pois_in_scope * months_in_range"
+
+  verified_orders:
+    label: 核销订单数
+    aliases: [核销, 核销单量]
+    unit: 单
+    domain: brand
+    column: verified_orders
+    storage_grain: month
+    supported_grains: [month, week, day, range]
+    preferred_grain: month
+    primary_table: fact_brand_monthly
+    drill_levels: [brand, city]
+    cardinality:
+      brand: 1
+      city: 15
+    fanout:
+      level: none
+      multiplier: 1
+    estimation:
+      method: direct_sum
+      formula: "SUM(verified_orders)"
+
+  verified_rate:
+    label: 核销率
+    aliases: [核销率]
+    unit: 比率
+    domain: brand
+    formula: verified_orders / paid_orders
+    column: verified_rate
+    storage_grain: month
+    supported_grains: [month, quarter, range]
+    preferred_grain: month
+    primary_table: fact_brand_monthly
+    derived: true
+    cardinality:
+      brand: 1
+    fanout:
+      level: none
+      multiplier: 1
+    estimation:
+      method: ratio
+      formula: "SUM(verified_orders) / NULLIF(SUM(paid_orders), 0)"
+
+  roi:
+    label: ROI
+    aliases: [投放回报, 广告 ROI]
+    unit: 倍
+    domain: city
+    formula: gmv / ad_spend
+    column: roi
+    storage_grain: month
+    supported_grains: [month, quarter, range]
+    preferred_grain: month
+    primary_table: fact_city_brand_monthly
+    drill_levels: [city]
+    derived: true
+    cardinality:
+      city: 15
+    fanout:
+      level: none
+      multiplier: 1
+    estimation:
+      method: ratio
+      formula: "SUM(gmv) / NULLIF(SUM(ad_spend), 0)"
+
+  avg_order_value:
+    label: 客单价
+    aliases: [AOV, 单均]
+    unit: 元
+    domain: brand
+    formula: gmv_or_gtv / paid_orders
+    column: avg_order_value
+    storage_grain: month
+    supported_grains: [month, quarter, range]
+    preferred_grain: month
+    primary_table: fact_brand_monthly
+    drill_levels: [brand, city]
+    derived: true
+    cardinality:
+      brand: 1
+      city: 15
+    fanout:
+      level: none
+      multiplier: 1
+    estimation:
+      method: ratio
+      formula: "SUM(gmv_or_gtv) / NULLIF(SUM(paid_orders), 0)"
+
+  take_rate:
+    label: Take Rate
+    aliases: [变现率, take rate]
+    unit: 比率
+    domain: brand
+    column: take_rate
+    storage_grain: month
+    supported_grains: [month, quarter, half_year, range]
+    preferred_grain: month
+    primary_table: fact_brand_monthly
+    cardinality:
+      brand: 1
+    fanout:
+      level: none
+      multiplier: 1
+    estimation:
+      method: direct_avg
+      formula: "AVG(take_rate)"
+
+  subsidy_rate:
+    label: 补贴率
+    aliases: [补贴占比]
+    unit: 比率
+    domain: brand
+    column: subsidy_rate
+    storage_grain: month
+    supported_grains: [month, quarter, range]
+    preferred_grain: month
+    primary_table: fact_brand_monthly
+    cardinality:
+      brand: 1
+    fanout:
+      level: none
+      multiplier: 1
+    estimation:
+      method: direct_avg
+      formula: "AVG(subsidy_rate)"
+
+  impressions:
+    label: 搜索曝光
+    aliases: [曝光, 搜索曝光量]
+    unit: 次
+    domain: search
+    column: impressions
+    storage_grain: month
+    supported_grains: [day, week, month, range]
+    preferred_grain: month
+    primary_table: fact_search_keyword_monthly
+    drill_levels: [brand, keyword]
+    cardinality:
+      keyword: 500
+    fanout:
+      level: medium
+      multiplier: 20
+    estimation:
+      method: direct_sum
+      formula: "SUM(impressions) GROUP BY search_word"
+      expected_rows: "keywords_in_scope * months_in_range"
+
+  clicks:
+    label: 搜索点击
+    aliases: [点击, 点击量]
+    unit: 次
+    domain: search
+    column: clicks
+    storage_grain: month
+    supported_grains: [day, week, month, range]
+    preferred_grain: month
+    primary_table: fact_search_keyword_monthly
+    cardinality:
+      keyword: 500
+    fanout:
+      level: medium
+      multiplier: 20
+    estimation:
+      method: direct_sum
+      formula: "SUM(clicks)"
+
+  exposure:
+    label: POI 曝光
+    aliases: [门店曝光]
+    unit: 次
+    domain: poi
+    column: exposure
+    storage_grain: month
+    supported_grains: [day, week, month, range]
+    preferred_grain: month
+    primary_table: fact_poi_monthly
+    drill_levels: [city, business_area, poi]
+    cardinality:
+      poi: 31
+    fanout:
+      level: low
+      multiplier: 1
+      with_poi_dim: low
+    estimation:
+      method: direct_sum
+      formula: "SUM(exposure) GROUP BY poi_id"
+
+  visits:
+    label: POI 访问
+    aliases: [访问, 到店访问, 门店访问]
+    unit: 次
+    domain: poi
+    column: visits
+    storage_grain: month
+    supported_grains: [day, week, month, range]
+    preferred_grain: month
+    primary_table: fact_poi_monthly
+    drill_levels: [city, business_area, poi]
+    cardinality:
+      poi: 31
+    fanout:
+      level: low
+      multiplier: 1
+    estimation:
+      method: direct_sum
+      formula: "SUM(visits) GROUP BY poi_id|business_area"
+
+  deal_clicks:
+    label: 套餐点击
+    aliases: [deal 点击, 套餐点击量]
+    unit: 次
+    domain: poi
+    column: deal_clicks
+    storage_grain: month
+    primary_table: fact_poi_monthly
+    cardinality:
+      poi: 31
+    fanout:
+      level: low
+      multiplier: 1
+    estimation:
+      method: direct_sum
+      formula: "SUM(deal_clicks)"
+
+  market_share:
+    label: 渠道份额
+    aliases: [份额, 市场占有率, 平台份额]
+    unit: 比率
+    domain: competitor
+    column: market_share
+    storage_grain: month
+    supported_grains: [month, quarter, range]
+    preferred_grain: month
+    primary_table: fact_competitor_benchmark_monthly
+    drill_levels: [platform]
+    cardinality:
+      platform: 3
+    fanout:
+      level: none
+      multiplier: 1
+    estimation:
+      method: direct_avg
+      formula: "AVG(market_share) GROUP BY competitor"
+
+  verification_rate:
+    label: 竞对核销率
+    unit: 比率
+    domain: competitor
+    column: verification_rate
+    storage_grain: month
+    primary_table: fact_competitor_benchmark_monthly
+    cardinality:
+      platform: 3
+    fanout:
+      level: none
+      multiplier: 1
+    estimation:
+      method: direct_avg
+      formula: "AVG(verification_rate)"
+
+  funnel:
+    label: 转化漏斗
+    aliases: [漏斗, 链路, 转化链, 搜索到核销]
+    domain: funnel
+    description: 搜索曝光 → 点击 → POI 访问 → 下单 → 支付 → 核销 多阶段复合指标
+    storage_grain: month
+    supported_grains: [day, week, month, range]
+    preferred_grain: month
+    primary_tables:
+      - fact_search_keyword_monthly
+      - fact_poi_monthly
+      - fact_deal_campaign_monthly
+    derived: true
+    cardinality:
+      stage: 6
+    fanout:
+      level: high
+      multiplier: 3
+    estimation:
+      method: multi_table_aggregate
+      formula: "按 month 对齐三表 SUM 各阶段指标"
+      expected_rows: "months_in_range * stage_count"
+
+  pay_gmv:
+    label: 支付 GMV
+    unit: 元
+    domain: campaign
+    column: pay_gmv
+    storage_grain: month
+    primary_table: fact_deal_campaign_monthly
+    cardinality:
+      deal: 50
+    fanout:
+      level: medium
+      multiplier: 10
+    estimation:
+      method: direct_sum
+      formula: "SUM(pay_gmv) GROUP BY deal_id"
+
+  store_count:
+    label: 门店数
+    unit: 家
+    domain: city
+    column: store_count
+    storage_grain: month
+    primary_table: fact_city_brand_monthly
+    drill_levels: [city]
+    cardinality:
+      city: 15
+    fanout:
+      level: none
+      multiplier: 1
+    estimation:
+      method: direct_max
+      formula: "MAX(store_count) GROUP BY city"
+
+  active_users:
+    label: 活跃用户数
+    unit: 人
+    domain: brand
+    column: active_users
+    storage_grain: month
+    primary_table: fact_brand_monthly
+    cardinality:
+      brand: 1
+    fanout:
+      level: none
+      multiplier: 1
+    estimation:
+      method: direct_sum
+      formula: "SUM(active_users)"

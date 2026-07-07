@@ -7,6 +7,7 @@ const root = __dirname;
 const port = Number(process.env.PORT || 4173);
 const host = process.env.HOST || "127.0.0.1";
 const envFile = path.join(root, ".env.local");
+const secretsEnvFile = path.join(root, ".env.secrets");
 const prodEnvFile = path.join(root, ".env.production");
 const fileTypes = {
   ".html": "text/html; charset=utf-8",
@@ -21,6 +22,8 @@ const fileTypes = {
 
 loadDotEnv(prodEnvFile);
 loadDotEnv(envFile);
+loadDotEnv(secretsEnvFile);
+seedLocalDevUser();
 
 // API 路由处理器（包括新增的 /api/chat）
 const apiHandlers = {
@@ -29,6 +32,8 @@ const apiHandlers = {
   "/api/chat": require("./api/chat"),
   "/api/events": require("./api/events"),
   "/api/health": require("./api/health"),
+  "/api/sidecar-health": require("./api/sidecar-health"),
+  "/api/sidecar-report": require("./api/sidecar-report"),
   "/api/auth/register": require("./api/auth/register"),
   "/api/auth/login": require("./api/auth/login"),
   "/api/auth/me": require("./api/auth/me"),
@@ -49,6 +54,9 @@ const server = http.createServer(async (req, res) => {
     let rel = decodeURIComponent(url.pathname === "/" ? "/index.html" : url.pathname);
     if (url.pathname === "/login") {
       rel = "login.html";
+    }
+    if (url.pathname === "/sandbox") {
+      rel = "sandbox.html";
     }
     rel = rel.replace(/^\/+/, "");
     const file = path.resolve(root, rel);
@@ -122,4 +130,27 @@ function cacheControlFor(file) {
 function shutdown() {
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(1), 8000).unref();
+}
+
+function seedLocalDevUser() {
+  if (process.env.LOCAL_DEV_AUTH !== "true") return;
+  const { hashPassword } = require("./api/_lib/auth");
+  const chatStore = require("./api/_lib/chat-store");
+  const username = "121212";
+  const password = "121212";
+  chatStore
+    .findUserByUsername(username)
+    .then((existing) => {
+      if (existing) return existing;
+      return chatStore.createUser({
+        username,
+        passwordHash: hashPassword(password)
+      });
+    })
+    .then(() => {
+      console.log("Local dev user ready:", username);
+    })
+    .catch((error) => {
+      console.warn("Local dev user seed skipped:", error.message);
+    });
 }

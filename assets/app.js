@@ -19,21 +19,33 @@
   var vizProposal = document.getElementById("vizProposal");
   var proposalTitle = document.getElementById("proposalTitle");
   var proposalBody = document.getElementById("proposalBody");
+  var vizDossier = document.getElementById("vizDossier");
+  var dossierTitle = document.getElementById("dossierTitle");
+  var dossierSubtitle = document.getElementById("dossierSubtitle");
+  var dossierBody = document.getElementById("dossierBody");
+  var referenceIndex = document.getElementById("referenceIndex");
   var vizCharts = document.getElementById("vizCharts");
   var vizAnswer = document.getElementById("vizAnswer");
-  var downloadPdfButton = document.getElementById("downloadPdfButton");
-  var downloadHtmlButton = document.getElementById("downloadHtmlButton");
-  var downloadWordButton = document.getElementById("downloadWordButton");
-  var downloadMarkdownButton = document.getElementById("downloadMarkdownButton");
+  var sidecarReportButton = document.getElementById("sidecarReportButton");
+  var exportMenuButton = document.getElementById("exportMenuButton");
+  var exportMenuPanel = document.getElementById("exportMenuPanel");
+  var reportPreviewModal = document.getElementById("reportPreviewModal");
+  var reportPreviewBackdrop = document.getElementById("reportPreviewBackdrop");
+  var reportPreviewClose = document.getElementById("reportPreviewClose");
+  var reportPreviewSave = document.getElementById("reportPreviewSave");
+  var reportPreviewStatus = document.getElementById("reportPreviewStatus");
+  var reportExportMenuButton = document.getElementById("reportExportMenuButton");
+  var reportExportMenuPanel = document.getElementById("reportExportMenuPanel");
+  var reportPreviewFrame = document.getElementById("reportPreviewFrame");
+  var reportPreviewTitle = document.getElementById("reportPreviewTitle");
+  var reportPreviewMeta = document.getElementById("reportPreviewMeta");
   var documentUploadButton = document.getElementById("documentUploadButton");
   var documentUploadInput = document.getElementById("documentUploadInput");
   var chatAttachments = document.getElementById("chatAttachments");
-  var arPanel = document.getElementById("panelAr");
-  var arStage = document.getElementById("arStage");
-  var arMeta = document.getElementById("arMeta");
-  var enterXrButton = document.getElementById("enterXrButton");
-  var enterMarkerArButton = document.getElementById("enterMarkerArButton");
-  var resetArButton = document.getElementById("resetArButton");
+  var vizProcess = document.getElementById("vizProcess");
+  var vizResultsHeader = document.getElementById("vizResultsHeader");
+  var vizSandboxLink = document.getElementById("vizSandboxLink");
+  var sandboxMeta = document.getElementById("sandboxMeta");
   var authGuest = document.getElementById("authGuest");
   var authUser = document.getElementById("authUser");
   var authUserName = document.getElementById("authUserName");
@@ -53,12 +65,19 @@
   var chartInstances = [];
   var chartExports = [];
   var currentDataSpec = null;
+  var currentReferences = [];
   var lastResponse = null;
+  var lastSidecarHtml = "";
+  var sidecarReportSaved = false;
+  var sidecarReportDirty = false;
   var lastChartDefs = [];
   var conversationHistory = [];
   var progressMessageEl = null;
+  var progressRunningStepId = null;
   var streamAnswerText = "";
   var currentSessionId = null;
+  var SESSION_STORAGE_KEY = "bp_current_session_id";
+  var AR_SCENE_STORAGE_KEY = "brandpilot_ar_scene";
 
   function assistant() {
     return window.BrandPilotAssistant || null;
@@ -125,6 +144,15 @@
       var summary = stepSummary
         ? '<span class="trace-summary">' + escapeHtml(stepSummary) + "</span>"
         : "";
+      var formulas = t.formulas || [];
+      var formulaHtml = "";
+      if (formulas.length && !compact) {
+        formulaHtml = '<ul class="trace-formulas">';
+        formulas.forEach(function (line) {
+          formulaHtml += "<li><code>" + escapeHtml(line) + "</code></li>";
+        });
+        formulaHtml += "</ul>";
+      }
 
       if (compact) {
         html +=
@@ -139,7 +167,7 @@
         html +=
           '<div class="trace-item">' +
           '<span class="trace-name">' + escapeHtml(stepName) + "</span> " +
-          duration + summary +
+          duration + summary + formulaHtml +
           "</div>";
       }
     });
@@ -153,13 +181,17 @@
     sendButton.addEventListener("click", handleSend);
     chatInput.addEventListener("keydown", handleInputKey);
     brandSelect.addEventListener("change", handleBrandChange);
-    if (downloadPdfButton) downloadPdfButton.addEventListener("click", handleDownloadPdf);
-    if (downloadHtmlButton) downloadHtmlButton.addEventListener("click", handleDownloadHtml);
-    if (downloadWordButton) downloadWordButton.addEventListener("click", handleDownloadWord);
-    if (downloadMarkdownButton) downloadMarkdownButton.addEventListener("click", handleDownloadMarkdown);
+    if (sidecarReportButton) sidecarReportButton.addEventListener("click", handleSidecarReport);
+    bindExportMenu();
+    if (reportPreviewClose) reportPreviewClose.addEventListener("click", closeReportPreview);
+    if (reportPreviewBackdrop) reportPreviewBackdrop.addEventListener("click", closeReportPreview);
+    if (reportPreviewSave) reportPreviewSave.addEventListener("click", handleSaveSidecarReport);
+    bindReportExportMenu();
     bindDocumentUpload();
-    bindArSandboxControls();
     bindExampleButtons();
+    bindCitationNavigation(vizProposal);
+    bindCitationNavigation(vizDossier);
+    bindCitationNavigation(vizAnswer);
     chatInput.addEventListener("input", autoResizeInput);
 
     if (window.BrandPilotAuth) {
@@ -170,13 +202,41 @@
         }
         document.body.classList.remove("auth-pending");
         refreshAuthUI();
-        return createNewSession().then(function () {
-          setResultPanelsEnabled(false);
+        return restoreSessionAfterAuth().then(function () {
+          setResultPanelsEnabled(Boolean(lastResponse));
         });
       });
     } else {
       redirectToLogin();
     }
+  }
+
+  function persistCurrentSessionId(sessionId) {
+    currentSessionId = sessionId || null;
+    try {
+      if (sessionId) sessionStorage.setItem(SESSION_STORAGE_KEY, sessionId);
+      else sessionStorage.removeItem(SESSION_STORAGE_KEY);
+    } catch (error) {
+      // ignore quota errors
+    }
+  }
+
+  function readPersistedSessionId() {
+    try {
+      return sessionStorage.getItem(SESSION_STORAGE_KEY);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function restoreSessionAfterAuth() {
+    var savedSessionId = readPersistedSessionId();
+    if (savedSessionId) {
+      return selectSession(savedSessionId).catch(function () {
+        return createNewSession();
+      });
+    }
+    return createNewSession();
   }
 
   function loginPageUrl(options) {
@@ -196,7 +256,7 @@
     if (logoutButton) {
       logoutButton.addEventListener("click", function () {
         if (window.BrandPilotAuth) window.BrandPilotAuth.logout();
-        currentSessionId = null;
+        persistCurrentSessionId(null);
         conversationHistory = [];
         window.location.href = "/login";
       });
@@ -262,7 +322,7 @@
     }
     var brandId = brandSelect.value || "haidilao";
     return window.BrandPilotAuth.createSession(brandId, "新对话").then(function (data) {
-      currentSessionId = data.session && data.session.id;
+      persistCurrentSessionId(data.session && data.session.id);
       if (!skipReset) {
         conversationHistory = [];
         lastResponse = null;
@@ -275,6 +335,9 @@
         vizAnswer.innerHTML = "";
         vizCharts.innerHTML = "";
         vizCharts.style.display = "none";
+        if (vizProcess) vizProcess.style.display = "none";
+        if (vizResultsHeader) vizResultsHeader.hidden = true;
+        if (vizSandboxLink) vizSandboxLink.hidden = true;
         setResultPanelsEnabled(false);
       }
       return refreshSessionList();
@@ -282,8 +345,8 @@
   }
 
   function selectSession(sessionId) {
-    if (!window.BrandPilotAuth || !sessionId) return;
-    currentSessionId = sessionId;
+    if (!window.BrandPilotAuth || !sessionId) return Promise.resolve();
+    persistCurrentSessionId(sessionId);
     conversationHistory = [];
     lastResponse = null;
     resetChatToWelcome(false);
@@ -378,6 +441,23 @@
   function revealResultExperience(data) {
     if (!data) return;
 
+    lastResponse = data;
+    try {
+      sessionStorage.setItem(
+        "bp_last_response",
+        JSON.stringify({
+          answer: data.answer || "",
+          proposal: data.proposal || null,
+          charts: data.charts || [],
+          dataSpec: data.dataSpec || null,
+          workflow: data.workflow || "",
+          workflowLabel: data.workflowLabel || ""
+        })
+      );
+    } catch (error) {
+      // ignore quota errors
+    }
+
     setResultPanelsEnabled(true);
     renderVisualization(data);
   }
@@ -426,15 +506,105 @@
     docUploadBusy = Boolean(busy);
     if (!documentUploadButton) return;
     documentUploadButton.classList.toggle("is-uploading", docUploadBusy);
-    documentUploadButton.disabled = docUploadBusy || isProcessing;
+    documentUploadButton.classList.toggle("is-disabled", docUploadBusy || isProcessing);
     documentUploadButton.setAttribute("aria-busy", docUploadBusy ? "true" : "false");
+  }
+
+  function bindReportExportMenu() {
+    if (!reportExportMenuButton || !reportExportMenuPanel) return;
+
+    function closeReportExportMenu() {
+      reportExportMenuPanel.hidden = true;
+      reportExportMenuButton.setAttribute("aria-expanded", "false");
+    }
+
+    reportExportMenuButton.addEventListener("click", function (event) {
+      event.stopPropagation();
+      var open = reportExportMenuPanel.hidden;
+      closeReportExportMenu();
+      if (open) {
+        reportExportMenuPanel.hidden = false;
+        reportExportMenuButton.setAttribute("aria-expanded", "true");
+      }
+    });
+
+    reportExportMenuPanel.addEventListener("click", function (event) {
+      var item = event.target.closest("[data-report-export]");
+      if (!item) return;
+      closeReportExportMenu();
+      var kind = item.getAttribute("data-report-export");
+      if (kind === "html") handleDownloadSidecarHtml();
+      else if (kind === "pdf") handleDownloadSidecarPdf();
+      else if (kind === "word") handleDownloadSidecarWord();
+    });
+
+    document.addEventListener("click", function (event) {
+      if (reportExportMenuPanel.hidden) return;
+      if (event.target.closest(".report-export-menu")) return;
+      closeReportExportMenu();
+    });
+  }
+
+  function bindExportMenu() {
+    if (!exportMenuButton || !exportMenuPanel) return;
+
+    function closeExportMenu() {
+      exportMenuPanel.hidden = true;
+      exportMenuButton.setAttribute("aria-expanded", "false");
+    }
+
+    exportMenuButton.addEventListener("click", function (event) {
+      event.stopPropagation();
+      var open = exportMenuPanel.hidden;
+      closeExportMenu();
+      if (open) {
+        exportMenuPanel.hidden = false;
+        exportMenuButton.setAttribute("aria-expanded", "true");
+      }
+    });
+
+    exportMenuPanel.addEventListener("click", function (event) {
+      var item = event.target.closest("[data-export]");
+      if (!item) return;
+      closeExportMenu();
+      var kind = item.getAttribute("data-export");
+      if (kind === "html") handleDownloadHtml();
+      else if (kind === "pdf") handleDownloadPdf();
+      else if (kind === "word") handleDownloadWord();
+      else if (kind === "markdown") handleDownloadMarkdown();
+    });
+
+    document.addEventListener("click", function (event) {
+      if (exportMenuPanel.hidden) return;
+      if (event.target.closest(".export-menu")) return;
+      closeExportMenu();
+    });
+  }
+
+  function updateUploadBadge() {
+    var badge = document.getElementById("documentUploadBadge");
+    if (!badge || !window.BrandPilotDocuments) return;
+    var count = window.BrandPilotDocuments.getAttachments().length;
+    if (count > 0) {
+      badge.hidden = false;
+      badge.textContent = String(count);
+      badge.setAttribute("aria-hidden", "false");
+    } else {
+      badge.hidden = true;
+      badge.setAttribute("aria-hidden", "true");
+    }
   }
 
   function bindDocumentUpload() {
     if (!documentUploadButton || !documentUploadInput) return;
 
-    documentUploadButton.addEventListener("click", function () {
-      documentUploadInput.click();
+    documentUploadInput.addEventListener("click", function (event) {
+      if (docUploadBusy || isProcessing) {
+        event.preventDefault();
+        setStatusText("请等待当前分析完成后再上传", { protectMs: 3000 });
+        return;
+      }
+      setStatusText("请选择要上传的文件…", { protectMs: 3000 });
     });
 
     documentUploadInput.addEventListener("change", function () {
@@ -451,6 +621,7 @@
             justCompleted: true,
             addedCount: (added && added.length) || 1
           });
+          updateUploadBadge();
           var count = (added && added.length) || 1;
           var hasOcr = (added || []).some(function (item) { return item.sourceType === "ocr"; });
           var names = (added || []).map(function (item) { return item.filename; }).join("、");
@@ -482,6 +653,7 @@
         if (!btn || !window.BrandPilotDocuments) return;
         window.BrandPilotDocuments.removeAttachment(btn.getAttribute("data-doc-remove"));
         window.BrandPilotDocuments.renderChips(chatAttachments);
+        updateUploadBadge();
         resetChatInputPlaceholder();
         if (!window.BrandPilotDocuments.getAttachments().length) {
           setStatusText("就绪");
@@ -527,6 +699,7 @@
     if (window.BrandPilotDocuments) {
       window.BrandPilotDocuments.clearAttachments();
       window.BrandPilotDocuments.renderChips(chatAttachments);
+      updateUploadBadge();
       resetChatInputPlaceholder();
     }
 
@@ -563,7 +736,11 @@
         var latency = Date.now() - startTime;
         lastResponse = data;
         finalizeStreamMessage(latency, data);
-        revealResultExperience(data);
+        if (data.workflow !== "greeting") {
+          revealResultExperience(data);
+        } else {
+          setResultPanelsEnabled(false);
+        }
 
         conversationHistory.push({
           role: "assistant",
@@ -655,7 +832,7 @@
       upsertProgressStep(data.id, {
         name: data.name,
         summary: data.summary,
-        status: "active"
+        status: "running"
       });
       return;
     }
@@ -665,7 +842,7 @@
         tool: data.tool,
         summary: data.summary,
         durationMs: data.durationMs,
-        status: data.status === "done" ? "done" : "active"
+        status: data.status === "done" ? "done" : "running"
       });
       return;
     }
@@ -674,13 +851,42 @@
     }
   }
 
+  function markProgressStepDone(stepId) {
+    if (!progressMessageEl || !stepId) return;
+    var li = progressMessageEl.querySelector('[data-step-id="' + stepId + '"]');
+    if (!li) return;
+    li.classList.remove("active", "running");
+    li.classList.add("done");
+  }
+
+  function dismissLocalStartStep() {
+    if (!progressMessageEl) return;
+    var local = progressMessageEl.querySelector('[data-step-id="local_start"]');
+    if (!local) return;
+    local.classList.remove("running", "active");
+    local.classList.add("done");
+    if (progressRunningStepId === "local_start") progressRunningStepId = null;
+  }
+
   function upsertProgressStep(stepId, step) {
     if (!progressMessageEl) return;
     var stepsEl = progressMessageEl.querySelector(".progress-steps");
-    var waitingEl = progressMessageEl.querySelector(".progress-waiting");
     if (!stepsEl) return;
-    stepsEl.hidden = false;
-    if (waitingEl) waitingEl.hidden = true;
+
+    if (!stepId) stepId = "run_" + Date.now();
+    if (stepId !== "local_start") dismissLocalStartStep();
+
+    var isRunning = step.status === "running" || step.status === "active";
+    var isDone = step.status === "done";
+
+    if (isRunning) {
+      if (progressRunningStepId && progressRunningStepId !== stepId) {
+        markProgressStepDone(progressRunningStepId);
+      }
+      progressRunningStepId = stepId;
+    } else if (isDone && progressRunningStepId === stepId) {
+      progressRunningStepId = null;
+    }
 
     var li = stepsEl.querySelector('[data-step-id="' + stepId + '"]');
     if (!li) {
@@ -690,13 +896,13 @@
       stepsEl.appendChild(li);
     }
 
-    li.classList.toggle("active", step.status === "active");
-    li.classList.toggle("done", step.status === "done");
-    li.classList.toggle("running", step.status === "running");
+    li.classList.toggle("running", isRunning);
+    li.classList.toggle("active", isRunning);
+    li.classList.toggle("done", isDone);
 
     var stepName = friendlyStepName(step.name);
     var stepSummary = friendlyStepSummary(step);
-    var duration = step.durationMs && step.status === "done"
+    var duration = step.durationMs && isDone
       ? '<span class="trace-duration">' + escapeHtml(friendlyDuration(step.durationMs)) + "</span> "
       : "";
     var summary = stepSummary
@@ -716,8 +922,6 @@
     streamAnswerText += text;
     if (!progressMessageEl) return;
     var answerEl = progressMessageEl.querySelector(".stream-answer");
-    var waitingEl = progressMessageEl.querySelector(".progress-waiting");
-    if (waitingEl) waitingEl.hidden = true;
     if (!answerEl) return;
     answerEl.hidden = false;
     answerEl.textContent = streamAnswerText;
@@ -727,6 +931,7 @@
   function startProgressMessage() {
     removeProgressMessage();
     streamAnswerText = "";
+    progressRunningStepId = "local_start";
 
     var div = document.createElement("div");
     div.className = "message assistant progress streaming";
@@ -741,11 +946,12 @@
     content.className = "message-content progress-content";
     content.innerHTML =
       '<div class="progress-title">' + escapeHtml(assistantName()) + " 正在帮你分析</div>" +
-      '<div class="progress-waiting">' +
-      '<span class="progress-spinner" aria-hidden="true"></span>' +
-      "<span>稍等，我这就开始…</span>" +
-      "</div>" +
-      '<ul class="progress-steps" hidden></ul>' +
+      '<ul class="progress-steps">' +
+      '<li class="progress-step running active" data-step-id="local_start">' +
+      '<span class="progress-dot"></span>' +
+      '<span class="progress-text"><strong>听懂你的问题</strong> ' +
+      '<span class="trace-summary">这就开始处理…</span></span>' +
+      "</li></ul>" +
       '<div class="stream-answer" hidden></div>';
 
     body.appendChild(content);
@@ -770,6 +976,7 @@
       progressMessageEl.parentNode.removeChild(progressMessageEl);
     }
     progressMessageEl = null;
+    progressRunningStepId = null;
     streamAnswerText = "";
   }
 
@@ -864,20 +1071,32 @@
       body.appendChild(specBlock);
     }
 
-    // Agent 执行轨迹
-    if (data.agentTrace && data.agentTrace.length > 0) {
-      var trace = document.createElement("div");
-      trace.className = "agent-trace";
-      trace.innerHTML = renderTraceStepsHtml(data.agentTrace);
-      body.appendChild(trace);
-    }
-
     // 数据模式提醒
     if (data.dataMode === "empty" || data.dataMode === "unavailable") {
       var notice = document.createElement("div");
       notice.className = "data-notice";
       notice.textContent = "⚠️ 当前无可用经营数据，请检查 Supabase 配置与种子数据。";
       body.appendChild(notice);
+    }
+
+    // 完整回答（不截断）— 结果优先展示
+    var content = document.createElement("div");
+    content.className = "message-content message-full";
+    var answerText = data.answer || "";
+    if (!answerText && data.proposal && data.proposal.summary) {
+      answerText = data.proposal.summary;
+    }
+    content.innerHTML = window.BrandPilotMarkdown
+      ? window.BrandPilotMarkdown.renderMarkdown(answerText)
+      : renderMarkdown(answerText);
+    body.appendChild(content);
+
+    // Agent 执行轨迹 — 分析过程放在回答之后（寒暄类不展示轨迹）
+    if (data.agentTrace && data.agentTrace.length > 0 && data.workflow !== "greeting") {
+      var trace = document.createElement("div");
+      trace.className = "agent-trace";
+      trace.innerHTML = renderTraceStepsHtml(data.agentTrace);
+      body.appendChild(trace);
     }
 
     // 能力与持久化提示
@@ -891,18 +1110,6 @@
       (persist.persisted ? "分析已保存" : "分析暂存本地") +
       "</span>";
     body.appendChild(capability);
-
-    // 完整回答（不截断）
-    var content = document.createElement("div");
-    content.className = "message-content message-full";
-    var answerText = data.answer || "";
-    if (!answerText && data.proposal && data.proposal.summary) {
-      answerText = data.proposal.summary;
-    }
-    content.innerHTML = window.BrandPilotMarkdown
-      ? window.BrandPilotMarkdown.renderMarkdown(answerText)
-      : renderMarkdown(answerText);
-    body.appendChild(content);
 
     div.appendChild(avatar);
     div.appendChild(body);
@@ -986,15 +1193,332 @@
     container.appendChild(foot);
   }
 
+  function buildReferenceIndex(refs) {
+    var map = Object.create(null);
+    (refs || []).forEach(function (ref) {
+      if (ref && ref.id) map[ref.id] = ref;
+    });
+    return map;
+  }
+
+  function renderCitationRefs(refs, refIndex) {
+    if (!refs || !refs.length) return "";
+    return refs
+      .map(function (id) {
+        var ref = refIndex[id];
+        var href = ref ? ref.href : "#ref-" + id;
+        var title = ref ? ref.title + " · " + (ref.location || ref.source || "") : id;
+        return (
+          '<a class="citation-ref" href="' +
+          escapeHtml(href) +
+          '" data-ref-id="' +
+          escapeHtml(id) +
+          '" title="' +
+          escapeHtml(title) +
+          '">[' +
+          escapeHtml(id) +
+          "]</a>"
+        );
+      })
+      .join("");
+  }
+
+  function citedItemText(item) {
+    if (typeof item === "string") return item;
+    return item.text || item.label || "";
+  }
+
+  function citedItemRefs(item) {
+    if (typeof item === "string") return [];
+    return item.refs || [];
+  }
+
+  function linkifyCitations(html, refIndex) {
+    if (!html) return "";
+    return String(html).replace(/\[([KDSAP]\d+)\]/g, function (_, id) {
+      var ref = refIndex[id];
+      if (!ref) {
+        return (
+          '<a class="citation-ref" href="#ref-' +
+          escapeHtml(id) +
+          '" data-ref-id="' +
+          escapeHtml(id) +
+          '">[' +
+          escapeHtml(id) +
+          "]</a>"
+        );
+      }
+      return (
+        '<a class="citation-ref" href="' +
+        escapeHtml(ref.href) +
+        '" data-ref-id="' +
+        escapeHtml(id) +
+        '" title="' +
+        escapeHtml(ref.title || id) +
+        '">[' +
+        escapeHtml(id) +
+        "]</a>"
+      );
+    });
+  }
+
+  function scrollToReference(refId) {
+    if (!refId) return;
+    var target = document.getElementById("ref-" + refId);
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      target.classList.add("is-highlight");
+      window.setTimeout(function () {
+        target.classList.remove("is-highlight");
+      }, 1600);
+    }
+  }
+
+  function bindCitationNavigation(root) {
+    if (!root) return;
+    root.addEventListener("click", function (event) {
+      var link = event.target.closest(".citation-ref");
+      if (!link) return;
+      var refId = link.getAttribute("data-ref-id");
+      if (!refId) return;
+      event.preventDefault();
+      scrollToReference(refId);
+    });
+  }
+
+  function renderReferenceDetails(ref) {
+    var details = ref && (ref.details || ref.meta);
+    if (!details && ref && ref.type === "data" && ref.source) {
+      details = { table: ref.source };
+    }
+    if (!details) return "";
+
+    var rows = Array.isArray(details.rows) ? details.rows : (Array.isArray(details) ? details : []);
+    var rowCount = Number(details.rowCount || rows.length || 0);
+    var html = '<div class="reference-details">';
+    var sqlOpen = ref.type === "data" || ref.type === "sql" ? " open" : "";
+
+    if (details.table || details.dataMode || rowCount) {
+      var meta = [];
+      var tableLabel =
+        details.tableLabel ||
+        (window.BrandPilotColumnAliases && window.BrandPilotColumnAliases.tableLabel(details.table)) ||
+        details.table;
+      if (details.table) meta.push("表：" + tableLabel + (tableLabel !== details.table ? "（" + details.table + "）" : ""));
+      if (details.dataMode) meta.push("数据源：" + details.dataMode);
+      if (rowCount || rows.length) meta.push("结果：" + rowCount + " 行");
+      if (meta.length) html += '<p class="reference-detail-meta">' + escapeHtml(meta.join(" · ")) + "</p>";
+    }
+
+    if (details.filters && Object.keys(details.filters).length) {
+      html += '<p class="reference-detail-meta">筛选：' + escapeHtml(formatReferenceValue(details.filters)) + "</p>";
+    }
+
+    if (details.sql) {
+      html +=
+        '<details class="reference-sql"' +
+        sqlOpen +
+        '><summary>查询 SQL</summary><pre>' +
+        escapeHtml(details.sql) +
+        "</pre></details>";
+    }
+
+    if (rows.length) {
+      html += '<div class="reference-result-block"><div class="reference-result-title">结果明细（前 ' + rows.length + " 行" + (rowCount > rows.length ? " / 共 " + rowCount + " 行" : "") + "）</div>";
+      html += renderReferenceRows(rows, details.table, details.columnLabels);
+      html += "</div>";
+    } else if (ref.type === "data" && !details.sql && details && typeof details === "object") {
+      html += '<pre class="reference-detail-json">' + escapeHtml(JSON.stringify(details, null, 2)) + "</pre>";
+    }
+
+    if (ref.type === "calculation" && (details.formula || details.formulaLines)) {
+      html += '<div class="reference-calc"><div class="reference-result-title">计算公式</div>';
+      var formulaLines = details.formulaLines || [details.formula];
+      formulaLines.forEach(function (line) {
+        if (!line) return;
+        html += "<pre>" + escapeHtml(line) + "</pre>";
+      });
+      if (details.formula && details.formulaLines && details.formulaLines.length) {
+        html += '<p class="reference-detail-meta">通用口径：' + escapeHtml(details.formula) + "</p>";
+      }
+      if (details.result) {
+        html += '<div class="reference-result-title">计算结果</div><pre class="reference-detail-json">' + escapeHtml(JSON.stringify(details.result, null, 2)) + "</pre>";
+      }
+      if (details.inputs && details.inputs.length) {
+        html += '<p class="reference-detail-meta">输入引用：' + escapeHtml(details.inputs.join(", ")) + "</p>";
+      }
+      html += "</div>";
+    }
+
+    html += "</div>";
+    return html;
+  }
+
+  function columnHeaderLabel(key, table, columnLabels) {
+    if (columnLabels && columnLabels[key]) return columnLabels[key];
+    if (window.BrandPilotColumnAliases) {
+      return window.BrandPilotColumnAliases.labelForColumn(key, table);
+    }
+    return key;
+  }
+
+  function renderReferenceRows(rows, table, columnLabels) {
+    var list = rows || [];
+    if (!list.length) return "";
+    var keys = [];
+    list.forEach(function (row) {
+      Object.keys(row || {}).forEach(function (key) {
+        if (keys.indexOf(key) < 0) keys.push(key);
+      });
+    });
+    if (!keys.length) return '<pre class="reference-detail-json">' + escapeHtml(JSON.stringify(list, null, 2)) + "</pre>";
+
+    var html = '<div class="reference-table-wrap"><table class="reference-table"><thead><tr>';
+    keys.forEach(function (key) {
+      html +=
+        "<th title=\"" +
+        escapeHtml(key) +
+        "\">" +
+        escapeHtml(columnHeaderLabel(key, table, columnLabels)) +
+        "</th>";
+    });
+    html += "</tr></thead><tbody>";
+    list.forEach(function (row) {
+      html += "<tr>";
+      keys.forEach(function (key) {
+        html += "<td>" + escapeHtml(formatReferenceValue(row ? row[key] : "")) + "</td>";
+      });
+      html += "</tr>";
+    });
+    html += "</tbody></table></div>";
+    return html;
+  }
+
+  function formatReferenceValue(value) {
+    if (value === null || value === undefined || value === "") return "-";
+    if (typeof value === "number") return Number.isFinite(value) ? String(value) : "-";
+    if (typeof value === "boolean") return value ? "true" : "false";
+    if (typeof value === "object") return JSON.stringify(value);
+    return String(value);
+  }
+  function renderDossier(dossier, references) {
+    if (!vizDossier) return;
+    var refs = references || (dossier && dossier.references) || [];
+    if (!dossier && !refs.length) {
+      if (vizProcess) vizProcess.style.display = "none";
+      if (referenceIndex) referenceIndex.innerHTML = "";
+      if (dossierBody) dossierBody.innerHTML = "";
+      return;
+    }
+
+    if (vizProcess) vizProcess.style.display = "block";
+    if (dossierTitle) {
+      dossierTitle.textContent = dossier ? (dossier.title || "Agent 分析汇总") : "引用索引";
+    }
+    if (dossierSubtitle) {
+      dossierSubtitle.textContent = dossier
+        ? (dossier.workflowLabel || "") +
+          (dossier.generatedAt ? " · " + new Date(dossier.generatedAt).toLocaleString("zh-CN") : "")
+        : "数据与知识来源";
+    }
+
+    var refIndex = buildReferenceIndex(refs);
+    if (dossier && dossierBody) {
+      var html = "";
+      (dossier.agents || []).forEach(function (agent) {
+      var anchorId = String(agent.location || agent.id || "agent")
+        .replace(/^#/, "")
+        .replace(/[^\w\u4e00-\u9fa5-]+/g, "-");
+      html += '<section class="dossier-agent" id="' + escapeHtml(anchorId) + '">';
+      html +=
+        "<h3>" +
+        escapeHtml(agent.name) +
+        ' <a class="dossier-location" href="' +
+        escapeHtml(agent.location || "#") +
+        '">[' +
+        escapeHtml(agent.citation || agent.id) +
+        "]</a></h3>";
+      if (agent.role) html += '<p class="dossier-role">' + escapeHtml(agent.role) + "</p>";
+      if (agent.summary) html += '<p class="dossier-summary">' + escapeHtml(agent.summary) + "</p>";
+      if (agent.tool) html += '<p class="dossier-tool">工具：' + escapeHtml(agent.tool) + "</p>";
+      if (agent.formulas && agent.formulas.length) {
+        html += '<div class="dossier-formulas"><div class="dossier-formulas-title">计算公式</div><ul>';
+        agent.formulas.forEach(function (formula) {
+          html += "<li><code>" + escapeHtml(formula) + "</code></li>";
+        });
+        html += "</ul></div>";
+      }
+      if (agent.conclusions && agent.conclusions.length) {
+        html += '<ul class="dossier-conclusions">';
+        agent.conclusions.forEach(function (conclusion) {
+          html +=
+            "<li>" +
+            escapeHtml(conclusion.text) +
+            " " +
+            renderCitationRefs(conclusion.refs, refIndex) +
+            "</li>";
+        });
+        html += "</ul>";
+      }
+      html += "</section>";
+      });
+      dossierBody.innerHTML = html;
+    } else if (dossierBody) {
+      dossierBody.innerHTML = "";
+    }
+
+    if (referenceIndex) {
+      var indexRefs = refs.filter(function (ref) {
+        return ref.type !== "agent";
+      });
+      var refHtml = "<h3>引用索引</h3><ul class=\"reference-list\">";
+      indexRefs.forEach(function (ref) {
+        refHtml +=
+          '<li id="ref-' +
+          escapeHtml(ref.id) +
+          '" class="reference-item" data-ref-type="' +
+          escapeHtml(ref.type || "") +
+          '">';
+        refHtml += "<strong>[" + escapeHtml(ref.id) + "]</strong> ";
+        refHtml +=
+          '<a href="' +
+          escapeHtml(ref.href || "#ref-" + ref.id) +
+          '">' +
+          escapeHtml(ref.title || ref.id) +
+          "</a>";
+        refHtml +=
+          '<span class="reference-location">' +
+          escapeHtml(ref.location || ref.source || "") +
+          "</span>";
+        if (ref.excerpt) {
+          refHtml +=
+            '<p class="reference-excerpt">' +
+            escapeHtml(String(ref.excerpt).slice(0, 180)) +
+            "</p>";
+        }
+        refHtml += renderReferenceDetails(ref);
+        refHtml += "</li>";
+      });
+      refHtml += "</ul>";
+      referenceIndex.innerHTML = refHtml;
+    }
+  }
+
   // ===== 可视化渲染 =====
   function renderVisualization(data) {
     destroyCharts();
     currentDataSpec = data.dataSpec || null;
+    currentReferences = data.references || (data.proposal && data.proposal.references) || [];
     vizEmpty.style.display = "none";
+
+    var hasResults = Boolean(
+      data.proposal || data.answer || (data.charts && data.charts.length)
+    );
+    if (vizResultsHeader) vizResultsHeader.hidden = !hasResults;
 
     if (data.proposal) {
       vizProposal.style.display = "block";
-      renderProposal(data.proposal, currentDataSpec);
+      renderProposal(data.proposal, currentDataSpec, currentReferences);
     } else {
       vizProposal.style.display = "none";
     }
@@ -1009,9 +1533,11 @@
           "<p class=\"viz-answer-hint\">上方为结构化提案，以下为 AI 完整回答。</p>" +
           "</div>";
       }
-      answerHtml += window.BrandPilotMarkdown
-        ? window.BrandPilotMarkdown.renderMarkdown(data.answer)
+      var refIndex = buildReferenceIndex(currentReferences);
+      var markdownHtml = window.BrandPilotMarkdown
+        ? window.BrandPilotMarkdown.renderMarkdown(data.answer, { references: currentReferences })
         : renderMarkdown(data.answer);
+      answerHtml += linkifyCitations(markdownHtml, refIndex);
       if (currentDataSpec) {
         answerHtml += renderDataSpecHtml(currentDataSpec, { compact: true });
       }
@@ -1032,69 +1558,50 @@
       vizCharts.style.display = "none";
     }
 
+    if (data.dossier || currentReferences.length) {
+      renderDossier(data.dossier, currentReferences);
+    } else if (vizProcess) {
+      vizProcess.style.display = "none";
+    }
+
     updateExportToolbar(data);
     syncArSandbox(data);
   }
 
-  function bindArSandboxControls() {
-    if (enterXrButton) {
-      enterXrButton.addEventListener("click", function () {
-        if (!window.BrandPilotAR) return;
-        window.BrandPilotAR.enterXR().catch(function (error) {
-          alert(error.message || "当前设备暂不支持 WebXR AR。");
-        });
-      });
-    }
-
-    if (enterMarkerArButton) {
-      enterMarkerArButton.addEventListener("click", function () {
-        if (!window.BrandPilotAR) return;
-        window.BrandPilotAR.enterMarkerAR().catch(function (error) {
-          alert(error.message || "当前环境无法启动 Marker AR。");
-        });
-      });
-    }
-
-    if (resetArButton) {
-      resetArButton.addEventListener("click", function () {
-        if (window.BrandPilotAR && typeof window.BrandPilotAR.reset === "function") {
-          window.BrandPilotAR.reset();
-        }
-      });
-    }
-
-    window.addEventListener("resize", function () {
-      if (window.BrandPilotAR && typeof window.BrandPilotAR.resize === "function") {
-        window.BrandPilotAR.resize();
-      }
-    });
-  }
-
   function syncArSandbox(data) {
-    if (!arPanel || !arStage || !window.BrandPilotAR) return;
     var scene = data && data.scene;
-    if (!scene) {
-      arPanel.hidden = true;
-      return;
+    if (scene) {
+      try {
+        sessionStorage.setItem(
+          AR_SCENE_STORAGE_KEY,
+          JSON.stringify({
+            scene: scene,
+            savedAt: Date.now(),
+            workflowLabel: data.workflowLabel || "",
+            brandName: scene.brandName || "",
+            sessionId: currentSessionId || readPersistedSessionId() || ""
+          })
+        );
+      } catch (error) {
+        // ignore quota errors
+      }
     }
 
-    arPanel.hidden = false;
-    window.BrandPilotAR.init(arStage);
-    window.BrandPilotAR.update(scene);
-
-    if (arMeta) {
+    if (!vizSandboxLink) return;
+    vizSandboxLink.hidden = !scene;
+    if (scene && sandboxMeta) {
       var cityCount = scene.cities ? scene.cities.length : 0;
       var poiCount = scene.pois ? scene.pois.length : 0;
       var period = scene.dateRange && scene.dateRange.label ? scene.dateRange.label : "当前统计周期";
-      arMeta.textContent =
+      sandboxMeta.textContent =
         (scene.brandName || "品牌") +
         " · " +
         period +
         " · " +
         cityCount +
-        " 个城市柱 · " +
+        " 个城市 · " +
         poiCount +
-        " 个门店点，可拖拽旋转、滚轮缩放、点击城市下钻。";
+        " 个门店";
     }
   }
 
@@ -1120,8 +1627,9 @@
   }
 
 
-  function renderProposal(proposal, dataSpec) {
+  function renderProposal(proposal, dataSpec, references) {
     proposalTitle.textContent = proposal.title || "经营提案";
+    var refIndex = buildReferenceIndex(references || proposal.references || currentReferences || []);
 
     var html = "";
 
@@ -1136,7 +1644,12 @@
 
     // 摘要
     if (proposal.summary) {
-      html += '<div class="proposal-summary"><p>' + escapeHtml(proposal.summary) + '</p></div>';
+      html +=
+        '<div class="proposal-summary"><p>' +
+        escapeHtml(proposal.summary) +
+        " " +
+        renderCitationRefs(proposal.summaryRefs, refIndex) +
+        "</p></div>";
     }
 
     // 指标卡
@@ -1145,30 +1658,43 @@
       proposal.metrics.forEach(function (m) {
         html +=
           '<div class="metric-card">' +
-          '<span class="metric-label">' + m.label + '</span>' +
-          '<strong class="metric-value">' + m.value + '</strong>' +
-          (m.delta ? '<span class="metric-delta">' + m.delta + '</span>' : "") +
-          '</div>';
+          '<span class="metric-label">' + escapeHtml(m.label) + "</span>" +
+          '<strong class="metric-value">' + escapeHtml(m.value) + "</strong>" +
+          (m.delta ? '<span class="metric-delta">' + escapeHtml(m.delta) + "</span>" : "") +
+          '<span class="metric-refs">' + renderCitationRefs(m.refs, refIndex) + "</span>" +
+          "</div>";
       });
-      html += '</div>';
+      html += "</div>";
     }
 
     // 洞察
     if (proposal.insights && proposal.insights.length > 0) {
       html += '<div class="proposal-section"><h3>📌 关键洞察</h3><ul class="insight-list">';
       proposal.insights.forEach(function (insight) {
-        html += '<li>' + escapeHtml(insight) + '</li>';
+        html +=
+          "<li>" +
+          escapeHtml(citedItemText(insight)) +
+          " " +
+          renderCitationRefs(citedItemRefs(insight), refIndex) +
+          "</li>";
       });
-      html += '</ul></div>';
+      html += "</ul></div>";
     }
 
     // 推荐动作
     if (proposal.actions && proposal.actions.length > 0) {
       html += '<div class="proposal-section"><h3>🎯 推荐动作</h3><div class="action-list">';
       proposal.actions.forEach(function (action, i) {
-        html += '<div class="action-item"><span class="action-num">' + (i + 1) + '</span><span>' + escapeHtml(action) + '</span></div>';
+        html +=
+          '<div class="action-item"><span class="action-num">' +
+          (i + 1) +
+          '</span><span>' +
+          escapeHtml(citedItemText(action)) +
+          " " +
+          renderCitationRefs(citedItemRefs(action), refIndex) +
+          "</span></div>";
       });
-      html += '</div></div>';
+      html += "</div></div>";
     }
 
     // 时间线
@@ -1178,19 +1704,30 @@
         html +=
           '<div class="timeline-item">' +
           '<div class="timeline-dot"></div>' +
-          '<div class="timeline-content"><strong>' + escapeHtml(t.title) + '</strong><p>' + escapeHtml(t.body) + '</p></div>' +
-          '</div>';
+          '<div class="timeline-content"><strong>' +
+          escapeHtml(t.title) +
+          "</strong><p>" +
+          escapeHtml(t.body) +
+          " " +
+          renderCitationRefs(t.refs, refIndex) +
+          "</p></div>" +
+          "</div>";
       });
-      html += '</div></div>';
+      html += "</div></div>";
     }
 
     // 风险提示
     if (proposal.risks && proposal.risks.length > 0) {
       html += '<div class="proposal-section"><h3>⚠️ 风险提示</h3><ul class="risk-list">';
       proposal.risks.forEach(function (risk) {
-        html += '<li>' + escapeHtml(risk) + '</li>';
+        html +=
+          "<li>" +
+          escapeHtml(citedItemText(risk)) +
+          " " +
+          renderCitationRefs(citedItemRefs(risk), refIndex) +
+          "</li>";
       });
-      html += '</ul></div>';
+      html += "</ul></div>";
     }
 
     // 资产清单
@@ -1199,11 +1736,15 @@
       proposal.assets.forEach(function (asset) {
         html +=
           '<div class="asset-item">' +
-          '<strong>' + escapeHtml(asset.title) + '</strong>' +
-          '<p>' + escapeHtml(asset.body) + '</p>' +
-          '</div>';
+          "<strong>" +
+          escapeHtml(asset.title) +
+          "</strong>" +
+          "<p>" +
+          escapeHtml(asset.body) +
+          "</p>" +
+          "</div>";
       });
-      html += '</div></div>';
+      html += "</div></div>";
     }
 
     html += renderDataSpecHtml(dataSpec || currentDataSpec);
@@ -1324,26 +1865,74 @@
     return root;
   }
 
+  function hexToRgba(hex, alpha) {
+    var normalized = String(hex || "").replace("#", "");
+    if (normalized.length !== 6) return "rgba(37, 99, 235, " + alpha + ")";
+    var r = parseInt(normalized.slice(0, 2), 16);
+    var g = parseInt(normalized.slice(2, 4), 16);
+    var b = parseInt(normalized.slice(4, 6), 16);
+    return "rgba(" + r + ", " + g + ", " + b + ", " + alpha + ")";
+  }
+
   function buildChartConfig(chartDef) {
     var type = chartDef.type;
     var data = chartDef.data;
+    var colors = window.BrandPilotColors || null;
+    var labels = data.labels || [];
+    var activeBrandId = brandSelect ? brandSelect.value : "haidilao";
 
-    var datasets = (data.datasets || []).map(function (ds, dsIndex) {
+    var isCompareChart = chartDef.title && /当期|上期|vs|对比|美团|抖音|竞品|拖累/.test(chartDef.title);
+    var isPeriodCompareChart = chartDef.title && /当期\s*vs|环比|同比/.test(chartDef.title);
+    var rawDatasets = data.datasets || [];
+    var useSeriesColors = rawDatasets.length > 1 && type !== "line";
+
+    var datasets = rawDatasets.map(function (ds, dsIndex) {
       var isRateChart = chartDef.title && /转化率|核销率|份额/.test(chartDef.title);
-      var yellowBase = "rgba(255, 195, 0, 0.88)";
-      var yellowAlt = "rgba(245, 184, 0, 0.72)";
+      var barValues = ds.data || [];
+      var seriesColor = null;
+      if (useSeriesColors && colors) {
+        seriesColor = colors.resolveSeriesColor(ds.label, dsIndex, activeBrandId);
+      }
+      var perBarColors = barValues.map(function (_, barIndex) {
+        if (seriesColor) return seriesColor;
+        var label = labels[barIndex] || "";
+        if (colors) {
+          var resolved = colors.resolveChartColor(label, {
+            chartTitle: chartDef.title,
+            barIndex: barIndex,
+            barCount: barValues.length,
+            datasetLabel: ds.label,
+            datasetIndex: dsIndex,
+            isRateChart: isRateChart,
+            isPeriodCompare: isPeriodCompareChart,
+            isCompare: isCompareChart,
+            activeBrandId: activeBrandId,
+            fallbackIndex: barIndex + dsIndex
+          });
+          if (resolved) {
+            if (isRateChart && resolved.indexOf("rgba(") !== 0 && resolved.indexOf("hsla(") !== 0) {
+              return colors.hexToRgba(resolved, 0.9);
+            }
+            return resolved;
+          }
+        }
+        if (isRateChart) {
+          return "hsla(" + (210 + barIndex * 18) + ", 82%, " + (48 + barIndex * 3) + "%, 0.9)";
+        }
+        var palette = colors ? colors.FALLBACK_PALETTE : ["#2563EB", "#F97316", "#16A34A", "#DC2626", "#7C3AED", "#0891B2"];
+        return palette[(barIndex + dsIndex) % palette.length];
+      });
+
       return {
         label: ds.label,
-        data: ds.data,
-        borderWidth: 0,
+        data: barValues,
+        borderWidth: 1,
         borderRadius: 6,
         borderSkipped: false,
-        backgroundColor: isRateChart
-          ? (ds.data || []).map(function (_, i) {
-              return "hsla(" + (45 - i * 4) + ", 100%, " + (50 + i * 2) + "%, 0.88)";
-            })
-          : dsIndex % 2 === 0 ? yellowBase : yellowAlt,
-        borderColor: "#f5b800",
+        backgroundColor: perBarColors,
+        borderColor: perBarColors.map(function (color) {
+          return String(color).replace("0.9)", "1)").replace("0.88)", "1)");
+        }),
         tension: type === "line" ? 0.35 : 0,
         fill: type === "line",
         maxBarThickness: isRateChart ? 28 : 48
@@ -1356,16 +1945,48 @@
     else if (type === "bar") chartType = "bar";
 
     if (chartType === "line") {
-      datasets.forEach(function (ds) {
-        ds.borderColor = "#f5b800";
-        ds.backgroundColor = "rgba(255, 195, 0, 0.18)";
-        ds.pointBackgroundColor = "#ffc300";
+      datasets.forEach(function (ds, dsIndex) {
+        var lineLabel = ds.label || (labels[dsIndex] || "");
+        var lineColor = colors
+          ? colors.resolveLineColor(lineLabel, dsIndex, activeBrandId)
+          : ["#2563EB", "#F97316", "#16A34A", "#DC2626", "#7C3AED", "#0891B2"][dsIndex % 6];
+        ds.borderColor = lineColor;
+        ds.backgroundColor = hexToRgba(lineColor, 0.12);
+        ds.pointBackgroundColor = lineColor;
         ds.pointBorderColor = "#fff";
         ds.pointRadius = 4;
       });
     }
 
     var isHorizontalBar = chartType === "bar" && chartDef.title && /转化率/.test(chartDef.title);
+    var valueAxis = isHorizontalBar ? "x" : "y";
+    var categoryAxis = isHorizontalBar ? "y" : "x";
+
+    var scales = {};
+    scales[categoryAxis] = {
+      grid: { display: false },
+      ticks: {
+        font: { size: 11, family: "'Microsoft YaHei', 'PingFang SC', sans-serif" },
+        autoSkip: false,
+        maxRotation: 45,
+        minRotation: 0
+      }
+    };
+    scales[valueAxis] = {
+      beginAtZero: true,
+      grid: { color: "rgba(255, 195, 0, 0.14)" },
+      ticks: {
+        font: { size: 11 },
+        callback: function (value) {
+          if (isHorizontalBar) return value + "%";
+          if (typeof value !== "number") return value;
+          return value >= 10000 ? (value / 10000).toFixed(0) + "万" : value.toLocaleString("zh-CN");
+        }
+      }
+    };
+    if (isHorizontalBar) {
+      scales.x.max = 100;
+    }
 
     var options = {
       responsive: true,
@@ -1389,39 +2010,12 @@
           }
         }
       },
-      scales: {
-        x: {
-          beginAtZero: true,
-          grid: { color: "rgba(255, 195, 0, 0.14)" },
-          ticks: {
-            font: { size: 11 },
-            callback: function (value) {
-              if (isHorizontalBar) return value + "%";
-              return value >= 10000 ? (value / 10000).toFixed(0) + "万" : value.toLocaleString();
-            }
-          }
-        },
-        y: {
-          beginAtZero: true,
-          grid: { color: "rgba(255, 195, 0, 0.14)" },
-          ticks: {
-            font: { size: 11 },
-            callback: function (value) {
-              if (isHorizontalBar) return value;
-              return value >= 10000 ? (value / 10000).toFixed(0) + "万" : value.toLocaleString();
-            }
-          }
-        }
-      }
+      scales: scales
     };
-
-    if (isHorizontalBar) {
-      options.scales.x.max = 100;
-    }
 
     return {
       type: chartType,
-      data: { labels: data.labels, datasets: datasets },
+      data: { labels: data.labels || [], datasets: datasets },
       options: options
     };
   }
@@ -1448,6 +2042,11 @@
   function handleDownloadPdf() {
     if (!window.html2pdf) {
       alert("PDF 组件未加载，请刷新页面后重试。");
+      return;
+    }
+
+    if (hasSavedFormalReport()) {
+      exportFormalReportPdf();
       return;
     }
 
@@ -1516,6 +2115,11 @@
   }
 
   function handleDownloadHtml() {
+    if (hasSavedFormalReport()) {
+      handleDownloadSidecarHtml();
+      return;
+    }
+
     var element = buildExportDocument();
     if (!element) {
       alert("当前没有可下载的分析内容。");
@@ -1528,6 +2132,11 @@
   }
 
   function handleDownloadWord() {
+    if (hasSavedFormalReport()) {
+      handleDownloadSidecarWord();
+      return;
+    }
+
     var element = buildExportDocument();
     if (!element) {
       alert("当前没有可下载的分析内容。");
@@ -1540,6 +2149,69 @@
     showPdfStatus("就绪");
   }
 
+  function getExportableResponse() {
+    if (
+      lastResponse &&
+      (lastResponse.proposal ||
+        lastResponse.answer ||
+        (lastResponse.charts && lastResponse.charts.length))
+    ) {
+      return lastResponse;
+    }
+
+    try {
+      var cached = sessionStorage.getItem("bp_last_response");
+      if (cached) {
+        var parsed = JSON.parse(cached);
+        if (
+          parsed &&
+          (parsed.proposal || parsed.answer || (parsed.charts && parsed.charts.length))
+        ) {
+          return parsed;
+        }
+      }
+    } catch (error) {
+      // ignore parse errors
+    }
+
+    var hasAnswer = vizAnswer && vizAnswer.style.display !== "none" && vizAnswer.innerHTML.trim();
+    var hasProposal = vizProposal && vizProposal.style.display !== "none";
+    var hasCharts = lastChartDefs && lastChartDefs.length > 0;
+    if (!hasAnswer && !hasProposal && !hasCharts) return null;
+
+    return {
+      answer: hasAnswer ? vizAnswer.innerText || vizAnswer.textContent || "" : "",
+      proposal: hasProposal ? lastResponse && lastResponse.proposal : null,
+      charts: hasCharts ? lastChartDefs : [],
+      dataSpec: currentDataSpec,
+      workflow: lastResponse && lastResponse.workflow,
+      workflowLabel: lastResponse && lastResponse.workflowLabel
+    };
+  }
+
+  function setSidecarButtonLoading(loading) {
+    if (!sidecarReportButton) return;
+    sidecarReportButton.classList.toggle("is-loading", Boolean(loading));
+    sidecarReportButton.disabled = Boolean(loading);
+  }
+
+  function parseJsonResponse(res) {
+    return res.text().then(function (text) {
+      var data = {};
+      if (text) {
+        try {
+          data = JSON.parse(text);
+        } catch (error) {
+          data = { message: text };
+        }
+      }
+      if (!res.ok) {
+        throw new Error((data && data.message) || "请求失败 (" + res.status + ")");
+      }
+      return data;
+    });
+  }
+
   function handleDownloadMarkdown() {
     var markdown = buildExportMarkdown();
     if (!markdown) {
@@ -1547,6 +2219,379 @@
       return;
     }
     downloadBlob(markdown, "text/markdown", buildExportBaseName() + ".md");
+  }
+
+  function buildLocalFormalReportHtml(exportData) {
+    var element = buildExportDocument();
+    var title =
+      (exportData && exportData.proposal && exportData.proposal.title) ||
+      (exportData && exportData.workflowLabel) ||
+      "BrandPilot AI 经营分析报告";
+
+    if (element) {
+      return wrapExportHtml(element.innerHTML, title);
+    }
+
+    if (!exportData) return "";
+
+    var sections = [];
+    sections.push("<h1>" + escapeHtml(title) + "</h1>");
+    if (vizToolbarSubtitle && vizToolbarSubtitle.textContent) {
+      sections.push('<p class="export-meta">' + escapeHtml(vizToolbarSubtitle.textContent) + "</p>");
+    }
+
+    if (exportData.proposal) {
+      var proposal = exportData.proposal;
+      sections.push("<h2>" + escapeHtml(proposal.title || "经营提案") + "</h2>");
+      if (proposal.summary) sections.push("<p>" + escapeHtml(proposal.summary) + "</p>");
+      if (proposal.insights && proposal.insights.length) {
+        sections.push("<h3>关键洞察</h3><ul>");
+        proposal.insights.forEach(function (item) {
+          sections.push("<li>" + escapeHtml(item) + "</li>");
+        });
+        sections.push("</ul>");
+      }
+    }
+
+    if (exportData.answer) {
+      sections.push("<h2>完整分析</h2>");
+      sections.push(
+        window.BrandPilotMarkdown
+          ? window.BrandPilotMarkdown.renderMarkdown(exportData.answer)
+          : "<p>" + escapeHtml(exportData.answer) + "</p>"
+      );
+    }
+
+    if (!sections.length) return "";
+    return wrapExportHtml(sections.join("\n"), title);
+  }
+
+  function openLocalFormalReport(exportData, reason) {
+    var html = buildLocalFormalReportHtml(exportData);
+    if (!html) {
+      setStatusText("无法生成本地报告", { protectMs: 5000 });
+      alert("当前没有可生成报告的分析内容。");
+      return false;
+    }
+    var meta = "基于当前分析结果生成的可编辑报告";
+    if (reason) meta += "（" + reason + "）";
+    openReportPreview(html, meta + " · 可直接编辑，保存后可导出");
+    setStatusText("正式报告已打开（本地模式）", { protectMs: 5000 });
+    return true;
+  }
+
+  function handleSidecarReport() {
+    var exportData = getExportableResponse();
+    if (
+      !exportData ||
+      (!exportData.proposal && !exportData.answer && !(exportData.charts && exportData.charts.length))
+    ) {
+      setStatusText("请先完成一次分析，再生成正式报告。", { protectMs: 5000 });
+      alert("请先完成一次分析，再生成正式报告。");
+      return;
+    }
+
+    setSidecarButtonLoading(true);
+    setStatusText("正在生成正式报告…", { protectMs: 30000 });
+
+    var payload = {
+      templateType: "fix",
+      proposal: exportData.proposal || null,
+      summary: exportData.answer || (exportData.proposal && exportData.proposal.summary) || "",
+      brandName: (exportData.proposal && exportData.proposal.title) || "海底捞",
+      period:
+        (exportData.dataSpec && exportData.dataSpec.period && exportData.dataSpec.period.label) ||
+        "2026 H1",
+      charts: exportData.charts || []
+    };
+
+    var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    var timeoutId = controller
+      ? window.setTimeout(function () { controller.abort(); }, 45000)
+      : null;
+
+    fetch("/api/sidecar-report", {
+      method: "POST",
+      headers: window.BrandPilotAuth
+        ? window.BrandPilotAuth.authHeaders({ "Content-Type": "application/json" })
+        : { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller ? controller.signal : undefined
+    })
+      .then(parseJsonResponse)
+      .then(function (data) {
+        var html = extractSidecarHtml(data);
+        if (!html) throw new Error("未返回 HTML 报告内容");
+        lastSidecarHtml = html;
+        openReportPreview(html, describeSidecarMode(data) + " · 可直接编辑，保存后可导出");
+        setStatusText("正式报告已生成", { protectMs: 4000 });
+      })
+      .catch(function (error) {
+        var reason =
+          error && error.name === "AbortError"
+            ? "侧车服务超时"
+            : (error && error.message) || "侧车服务不可用";
+        if (openLocalFormalReport(exportData, reason)) return;
+        setStatusText("正式报告生成失败", { protectMs: 6000 });
+        alert("正式报告生成失败：" + reason);
+      })
+      .finally(function () {
+        if (timeoutId) window.clearTimeout(timeoutId);
+        setSidecarButtonLoading(false);
+      });
+  }
+
+  function extractSidecarHtml(data) {
+    if (!data) return "";
+    if (data.report && data.report.html) return data.report.html;
+    if (data.sidecar && data.sidecar.report && data.sidecar.report.html) return data.sidecar.report.html;
+    if (data.sidecar && data.sidecar.orchestration && data.sidecar.orchestration.html) {
+      return data.sidecar.orchestration.html;
+    }
+    return "";
+  }
+
+  function describeSidecarMode(data) {
+    if (!data) return "";
+    if (data.mode === "direct-task") return "基于当前分析真实数据生成的正式 HTML 报告";
+    if (data.mode === "workflow-report") return "基于多 Agent 工作流真实数据生成的正式 HTML 报告";
+    return "正式 HTML 报告";
+  }
+
+  function hasSavedFormalReport() {
+    return Boolean(lastSidecarHtml && sidecarReportSaved && !sidecarReportDirty);
+  }
+
+  function updateReportPreviewStatus() {
+    if (!reportPreviewStatus) return;
+    if (sidecarReportDirty) {
+      reportPreviewStatus.textContent = "有未保存的修改";
+      reportPreviewStatus.classList.add("is-dirty");
+      reportPreviewStatus.classList.remove("is-saved");
+    } else if (sidecarReportSaved) {
+      reportPreviewStatus.textContent = "已保存，可导出";
+      reportPreviewStatus.classList.add("is-saved");
+      reportPreviewStatus.classList.remove("is-dirty");
+    } else {
+      reportPreviewStatus.textContent = "可直接编辑报告内容";
+      reportPreviewStatus.classList.remove("is-dirty", "is-saved");
+    }
+
+    if (reportPreviewSave) {
+      reportPreviewSave.disabled = !sidecarReportDirty;
+      reportPreviewSave.textContent = sidecarReportDirty ? "保存 *" : "保存";
+    }
+    if (reportExportMenuButton) {
+      reportExportMenuButton.disabled = !sidecarReportSaved || sidecarReportDirty;
+    }
+  }
+
+  function enableReportEditing() {
+    var doc = reportPreviewFrame && reportPreviewFrame.contentDocument;
+    if (!doc || !doc.body) {
+      window.setTimeout(enableReportEditing, 50);
+      return;
+    }
+
+    doc.body.contentEditable = "true";
+    doc.body.setAttribute("spellcheck", "false");
+
+    if (!doc.getElementById("bp-report-edit-style")) {
+      var style = doc.createElement("style");
+      style.id = "bp-report-edit-style";
+      style.textContent =
+        "body{cursor:text;min-height:100%;box-sizing:border-box;}" +
+        "body:focus{outline:2px solid #a78bfa;outline-offset:-2px;}" +
+        "[contenteditable]:empty:before{content:attr(data-placeholder);color:#94a3b8;}";
+      (doc.head || doc.documentElement).appendChild(style);
+    }
+
+    if (!doc.body.getAttribute("data-edit-bound")) {
+      doc.body.setAttribute("data-edit-bound", "true");
+      doc.body.addEventListener("input", function () {
+        sidecarReportDirty = true;
+        sidecarReportSaved = false;
+        updateReportPreviewStatus();
+      });
+    }
+  }
+
+  function getReportHtmlFromFrame() {
+    var doc = reportPreviewFrame && reportPreviewFrame.contentDocument;
+    if (!doc || !doc.documentElement) return lastSidecarHtml || "";
+    return "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
+  }
+
+  function ensureSidecarSavedForExport() {
+    if (hasSavedFormalReport()) return true;
+    if (sidecarReportDirty) {
+      if (window.confirm("导出前需要先保存修改，是否现在保存？")) {
+        handleSaveSidecarReport();
+        return hasSavedFormalReport();
+      }
+      return false;
+    }
+    alert("请先在正式报告中保存内容，再导出。");
+    return false;
+  }
+
+  function handleSaveSidecarReport() {
+    if (!reportPreviewFrame) return;
+    lastSidecarHtml = getReportHtmlFromFrame();
+    if (!lastSidecarHtml) {
+      alert("没有可保存的报告内容。");
+      return;
+    }
+    sidecarReportSaved = true;
+    sidecarReportDirty = false;
+    updateReportPreviewStatus();
+    if (reportPreviewMeta) {
+      reportPreviewMeta.textContent = "报告已保存，可继续导出 HTML / PDF / Word";
+    }
+    setStatusText("正式报告已保存", { protectMs: 4000 });
+  }
+
+  function openReportPreview(html, metaText) {
+    if (!reportPreviewModal || !reportPreviewFrame) return;
+    if (reportPreviewTitle) {
+      reportPreviewTitle.textContent =
+        (lastResponse && lastResponse.proposal && lastResponse.proposal.title) || "正式报告编辑";
+    }
+    if (reportPreviewMeta) reportPreviewMeta.textContent = metaText || "";
+    lastSidecarHtml = html;
+    sidecarReportSaved = true;
+    sidecarReportDirty = false;
+    updateReportPreviewStatus();
+
+    reportPreviewFrame.onload = function () {
+      enableReportEditing();
+    };
+    reportPreviewFrame.srcdoc = html;
+    reportPreviewModal.hidden = false;
+    document.body.style.overflow = "hidden";
+  }
+
+  function closeReportPreview() {
+    if (!reportPreviewModal) return;
+    if (sidecarReportDirty && !window.confirm("有未保存的修改，确定关闭吗？")) return;
+    reportPreviewModal.hidden = true;
+    if (reportPreviewFrame) {
+      reportPreviewFrame.onload = null;
+      reportPreviewFrame.srcdoc = "";
+    }
+    document.body.style.overflow = "";
+  }
+
+  function handleDownloadSidecarHtml() {
+    if (!ensureSidecarSavedForExport()) return;
+    downloadBlob(lastSidecarHtml, "text/html", buildExportBaseName() + "_formal.html");
+    setStatusText("HTML 报告已导出", { protectMs: 4000 });
+  }
+
+  function handleDownloadSidecarWord() {
+    if (!ensureSidecarSavedForExport()) return;
+    showPdfStatus("正在生成 Word…");
+    downloadBlob("\ufeff" + lastSidecarHtml, "application/msword", buildExportBaseName() + "_formal.doc");
+    showPdfStatus("就绪");
+    setStatusText("Word 报告已导出", { protectMs: 4000 });
+  }
+
+  function handleDownloadSidecarPdf() {
+    if (!window.html2pdf) {
+      alert("PDF 组件未加载，请刷新页面后重试。");
+      return;
+    }
+    if (!ensureSidecarSavedForExport()) return;
+
+    var doc = reportPreviewFrame && reportPreviewFrame.contentDocument;
+    var element = doc && doc.body;
+    if (!element) {
+      alert("无法读取报告内容，请重新打开正式报告。");
+      return;
+    }
+
+    showPdfStatus("正在生成 PDF…");
+    var opt = {
+      margin: [10, 10, 10, 10],
+      filename: buildExportBaseName() + "_formal.pdf",
+      image: { type: "jpeg", quality: 0.95 },
+      html2canvas: {
+        scale: 2,
+        useCORS: true,
+        letterRendering: true,
+        logging: false,
+        backgroundColor: "#ffffff"
+      },
+      jsPDF: {
+        unit: "mm",
+        format: "a4",
+        orientation: "portrait"
+      },
+      pagebreak: { mode: ["avoid-all", "css", "legacy"] }
+    };
+
+    html2pdf()
+      .set(opt)
+      .from(element)
+      .save()
+      .then(function () {
+        showPdfStatus("就绪");
+        setStatusText("PDF 报告已导出", { protectMs: 4000 });
+      })
+      .catch(function (error) {
+        alert("PDF 生成失败：" + error.message);
+        showPdfStatus("就绪");
+      });
+  }
+
+  function exportFormalReportPdf() {
+    if (!ensureSidecarSavedForExport()) return;
+    if (reportPreviewModal && !reportPreviewModal.hidden) {
+      handleDownloadSidecarPdf();
+      return;
+    }
+
+    if (!window.html2pdf) {
+      alert("PDF 组件未加载，请刷新页面后重试。");
+      return;
+    }
+
+    showPdfStatus("正在生成 PDF…");
+    var iframe = document.createElement("iframe");
+    iframe.style.cssText = "position:fixed;left:-9999px;width:920px;height:1200px;border:0;";
+    iframe.srcdoc = lastSidecarHtml;
+    document.body.appendChild(iframe);
+
+    iframe.onload = function () {
+      var body = iframe.contentDocument && iframe.contentDocument.body;
+      if (!body) {
+        iframe.remove();
+        alert("PDF 生成失败：无法读取报告内容");
+        showPdfStatus("就绪");
+        return;
+      }
+
+      html2pdf()
+        .set({
+          margin: [10, 10, 10, 10],
+          filename: buildExportBaseName() + "_formal.pdf",
+          image: { type: "jpeg", quality: 0.95 },
+          html2canvas: { scale: 2, useCORS: true, letterRendering: true, logging: false, backgroundColor: "#ffffff" },
+          jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+          pagebreak: { mode: ["avoid-all", "css", "legacy"] }
+        })
+        .from(body)
+        .save()
+        .then(function () {
+          iframe.remove();
+          showPdfStatus("就绪");
+        })
+        .catch(function (error) {
+          iframe.remove();
+          alert("PDF 生成失败：" + error.message);
+          showPdfStatus("就绪");
+        });
+    };
   }
 
   function buildExportMarkdown() {
@@ -1662,8 +2707,6 @@
   }
 
   function buildExportDocument() {
-    if (!lastResponse) return null;
-
     var hasProposal = vizProposal && vizProposal.style.display !== "none";
     var hasAnswer = vizAnswer && vizAnswer.style.display !== "none" && vizAnswer.innerHTML.trim();
     var hasCharts = chartInstances.length > 0 || chartExports.length > 0;

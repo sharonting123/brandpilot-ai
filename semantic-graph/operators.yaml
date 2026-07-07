@@ -1,0 +1,143 @@
+# 分析算子语义图谱
+# 确定性计算层；LLM 不得手算这些数字
+
+version: "1.0"
+
+operators:
+  computePeriodCompare:
+    label: 同环比计算
+    layer: Metric Operators
+    inputs:
+      - name: current
+        type: metric_snapshot
+        fields: [period, value]
+      - name: previous
+        type: metric_snapshot
+        fields: [period, value]
+      - name: samePeriodLastYear
+        type: metric_snapshot
+        optional: true
+    outputs:
+      - mom
+      - momPct
+      - yoy
+      - yoyPct
+      - direction
+    formulas:
+      mom: (current - previous) / previous
+      yoy: (current - samePeriodLastYear) / samePeriodLastYear
+    scenarios: [period_compare]
+    implementation: api/_lib/operators/period-compare.js
+    warnings:
+      - code: ZERO_DENOMINATOR
+        when: previous.value == 0
+
+  computeContribution:
+    label: 贡献度 / 结构拆解
+    layer: Metric Operators
+    inputs:
+      - name: rows
+        type: breakdown_rows
+        fields: [period, dimension_key, value]
+      - name: dimension
+        type: enum
+        values: [city, business_area, poi, platform, keyword]
+      - name: metric
+        type: metric_id
+      - name: currentPeriod
+        type: period_key
+      - name: previousPeriod
+        type: period_key
+    outputs:
+      - contributors
+      - largestDrag
+      - largestGain
+    formulas:
+      delta: current_value - previous_value
+      mom: delta / previous_value
+    scenarios: [period_compare]
+    implementation: api/_lib/operators/contribution.js
+    drill_notes:
+      brand_scope: dimension = city
+      city_scope: dimension = business_area
+      business_area_scope: dimension = poi
+
+  computeFunnel:
+    label: 漏斗转化计算
+    layer: Metric Operators
+    inputs:
+      - name: context
+        type: supabase_context
+      - name: filters
+        type: time_filters
+    outputs:
+      - funnel
+      - bottleneck
+      - stageCount
+      - conversion_rates
+    formulas:
+      conversion_rate: current_stage / previous_stage
+      loss_rate: 1 - conversion_rate
+    scenarios: [funnel_diagnosis, annual_proposal]
+    implementation: api/_lib/metric-operators.js
+    source_tables:
+      - fact_search_keyword_monthly
+      - fact_poi_monthly
+      - fact_deal_campaign_monthly
+
+  queryMetric:
+    label: 单指标查询
+    layer: Data Query Engine
+    inputs: [metric, period, level, city]
+    level_values: [brand, city]
+    outputs: [value, period, citationRef]
+    tables:
+      brand: fact_brand_monthly
+      city: fact_city_brand_monthly
+
+  queryBreakdown:
+    label: 维度拆解查询
+    layer: Data Query Engine
+    inputs: [metric, dimension, periods, city, businessArea]
+    dimension_table_map:
+      city: fact_city_brand_monthly
+      business_area: fact_poi_monthly + dim_poi
+      poi: fact_poi_monthly + dim_poi
+    outputs: [breakdownRows]
+
+  queryTrend:
+    label: 趋势查询
+    layer: Data Query Engine
+    inputs: [metric, brandId]
+    table: fact_brand_monthly
+
+  routeTimeQuery:
+    label: 时间路由
+    layer: Data Query Engine
+    sub_steps:
+      - validateMetricGrain
+      - selectTableRoute
+      - buildTimeWhereClause
+    note: 时间语义解析在 Intent Router 完成
+
+  extractAnalysisSlots:
+    label: 意图槽位提取
+    layer: Intent Router
+    sub_steps:
+      - 识别场景
+      - 识别时间范围
+      - 识别目标粒度
+      - 识别指标/维度
+    implementation: api/_lib/intent-slots.js
+
+# 算子调用顺序约束
+pipelines:
+  period_compare_with_contribution:
+    - extractAnalysisSlots
+    - buildAnalysisPlan
+    - queryMetric
+    - computePeriodCompare
+    - queryBreakdown
+    - computeContribution
+    - composeAnswer
+    - runQualityGates

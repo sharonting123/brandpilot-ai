@@ -14,6 +14,12 @@ const {
 } = require("../brand-peer");
 const { getContext } = require("../agent-tools");
 const { emptyTokenUsage, mergeTokenUsage, extractUsageFromGenerateResult } = require("../token-usage");
+const {
+  prefetchNl2Sql,
+  buildNl2SqlContextBlock,
+  finalizeAnswerWithNl2Sql
+} = require("../nl2sql-pipeline");
+const { formatMonthLabel } = require("../period-utils");
 
 function getSystemPrompt(brandName, message, intentParams, focus) {
   const focusLine =
@@ -71,10 +77,10 @@ async function buildToolDefinitions(focus) {
   const { buildSharedTools } = require("../ai-tools-factory");
   const names =
     focus === "brand"
-      ? ["getBrandPeerBenchmark", "retrieveKnowledge", "runNl2Sql"]
+      ? ["getBrandPeerBenchmark", "retrieveKnowledge"]
       : focus === "platform"
-        ? ["getCompetitorBenchmark", "retrieveKnowledge", "runNl2Sql"]
-        : ["getCompetitorBenchmark", "getBrandPeerBenchmark", "retrieveKnowledge", "runNl2Sql"];
+        ? ["getCompetitorBenchmark", "retrieveKnowledge"]
+        : ["getCompetitorBenchmark", "getBrandPeerBenchmark", "retrieveKnowledge"];
   return buildSharedTools(names);
 }
 
@@ -146,12 +152,6 @@ function buildBrandPeerCharts(peerData) {
       ]
     }
   }];
-}
-
-function formatMonthLabel(month) {
-  const text = String(month || "");
-  const match = text.match(/^(\d{4})-(\d{2})/);
-  return match ? match[1] + "年" + Number(match[2]) + "月" : "当前周期";
 }
 
 function buildDeterministicAnswer(brandName, platforms, peerData, focus) {
@@ -226,14 +226,24 @@ function buildDeterministicAnswer(brandName, platforms, peerData, focus) {
 }
 
 async function execute(params) {
-  const { message, modelConfig, brandName = "海底捞", intentParams = {}, onProgress } = params;
+  const { message, modelConfig, brandName = "海底捞", intentParams = {}, onProgress, brandId = "haidilao" } = params;
   const startedAt = Date.now();
   const agentTrace = [];
+  const resolvedBrandId = intentParams.brandId || brandId || "haidilao";
   const focus = detectComparisonFocus(message, intentParams);
 
-  const loadedContext = await getContext("haidilao");
+  const loadedContext = await getContext(resolvedBrandId);
   const platforms = buildPlatformBenchmarks(loadedContext.competitorBenchmarks || []);
   const peerData = focus !== "platform" ? buildBrandPeerBenchmarks(loadedContext) : null;
+
+  const { nl } = await prefetchNl2Sql({
+    message,
+    brandId: resolvedBrandId,
+    modelConfig,
+    intentParams,
+    onProgress,
+    agentTrace
+  });
 
   const [{ generateText }, { createOpenAI }] = await Promise.all([
     import("ai"),
@@ -246,7 +256,7 @@ async function execute(params) {
   })(modelConfig.model);
 
   const toolsDefined = await buildToolDefinitions(focus);
-  const systemPrompt = getSystemPrompt(brandName, message, intentParams, focus);
+  const systemPrompt = getSystemPrompt(brandName, message, intentParams, focus) + buildNl2SqlContextBlock(nl);
 
   let answer = "";
   let tokenUsage = emptyTokenUsage();
@@ -281,7 +291,7 @@ async function execute(params) {
       }
     });
 
-    answer = result.text;
+    answer = finalizeAnswerWithNl2Sql(result.text, nl);
     tokenUsage = mergeTokenUsage(tokenUsage, extractUsageFromGenerateResult(result));
 
     if (result.steps) {
@@ -300,7 +310,6 @@ async function execute(params) {
 
     tracePush(agentTrace, onProgress, {
       name: "竞对分析Agent",
-      tool: "推理完成",
       summary: focus === "platform" ? "完成平台对比分析" : focus === "brand" ? "完成品牌竞品分析" : "完成平台与品牌竞品对比分析",
       durationMs: Date.now() - toolStart
     });

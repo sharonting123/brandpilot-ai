@@ -78,9 +78,9 @@ MODEL_TIMEOUT_MS=240000
 - `dim_brand`：品牌维表
 - `dim_poi`：门店/POI 维表
 - `dim_deal`：套餐/券维表
-- `fact_search_keyword_daily`：搜索词日粒度事实表
-- `fact_poi_daily`：POI 门店页日粒度事实表
-- `fact_deal_campaign_daily`：套餐/活动日粒度事实表
+- `fact_search_keyword_monthly`：搜索词月粒度事实表（`month` 为月末日期）
+- `fact_poi_monthly`：POI 门店页月粒度事实表
+- `fact_deal_campaign_monthly`：套餐/活动月粒度事实表
 - `fact_brand_monthly`：品牌月度经分表，承接 GTV 三因子、take rate、补贴率、广告渗透、UE 视角
 - `fact_city_brand_monthly`：城市月度经营分层，承接城市 GMV、ROI、核销和资源分配
 - `fact_competitor_benchmark_monthly`：竞对月度基准，承接美团到餐、抖音到店、私域会员的核销/补贴/内容差异

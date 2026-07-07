@@ -1,0 +1,103 @@
+# 维度语义图谱
+# 分析维度 + 下钻层级（地理图谱）
+
+version: "1.0"
+
+# ── 地理下钻图谱（核心） ──────────────────────────────────────
+# 品牌 → 城市 → 商圈 → 门店
+# 实现：api/_lib/drill-knowledge-graph.js
+
+drill_hierarchy:
+  id: geo_drill
+  label: 地理下钻
+  levels:
+    - id: brand
+      label: 品牌
+      column: brand_id
+      table: dim_brand
+      child: city
+
+    - id: city
+      label: 城市
+      column: city
+      table: fact_city_brand_monthly
+      child: business_area
+      values: [上海, 北京, 深圳, 成都, 杭州, 广州, 南京, 武汉, 重庆, 西安]
+
+    - id: business_area
+      label: 商圈
+      column: business_area
+      table: dim_poi
+      join_table: fact_poi_monthly
+      child: poi
+      note: 商圈名存于 dim_poi.business_area；GMV 拆解时按 POI 流量权重分摊城市 GMV
+
+    - id: poi
+      label: 门店
+      column: poi_id
+      display_column: poi_name
+      table: dim_poi
+      join_table: fact_poi_monthly
+      child: null
+
+  edges:
+    - { from: brand, to: city, relation: has_city }
+    - { from: city, to: business_area, relation: has_business_area }
+    - { from: business_area, to: poi, relation: has_poi }
+
+  breakdown_rules:
+    - scope: brand
+      question_pattern: "哪个城市拖累|分城市|各城市"
+      next_dimension: city
+    - scope: city
+      question_pattern: "哪个商圈|哪里拖累|哪家商场"
+      next_dimension: business_area
+      invalid_dimension: city
+      invalid_reason: 已锁定城市时不应再按城市拆解
+    - scope: business_area
+      question_pattern: "哪家门店|哪个店"
+      next_dimension: poi
+
+# ── 分析维度（非地理） ────────────────────────────────────────
+
+dimensions:
+  platform:
+    label: 平台/渠道
+    column: competitor
+    table: fact_competitor_benchmark_monthly
+    values: [美团到餐, 抖音到店, 私域会员]
+    aliases: [平台, 渠道, 竞对, 美团, 抖音]
+    note: 口语「美团/抖音」映射到 canonical 名；废弃短名已在 11_sync_competitor_canonical 清理
+
+  keyword:
+    label: 搜索词
+    column: search_word
+    table: fact_search_keyword_monthly
+    aliases: [关键词, 搜索词, 热搜]
+
+  campaign:
+    label: 活动/套餐
+    column: deal_id
+    display_column: deal_name
+    table: fact_deal_campaign_monthly
+    dim_table: dim_deal
+    aliases: [套餐, 活动, deal]
+
+  district:
+    label: 区县
+    column: district
+    table: dim_poi
+    note: 行政区分；分析贡献度优先用 business_area（商圈）
+
+  time:
+    label: 时间
+    column: month
+    format: month_end
+    note: 所有 month 字段为月末日期，如 2026-06-30
+    grains: [day, week, month, quarter, half_year, year, range]
+
+  brand:
+    label: 品牌
+    column: brand_id
+    table: dim_brand
+    default: haidilao

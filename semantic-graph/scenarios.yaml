@@ -1,0 +1,123 @@
+# 分析场景语义图谱
+# 对应 Intent Router workflow + Scenario Workflow
+
+version: "1.0"
+
+scenarios:
+  greeting:
+    label: 寒暄招呼
+    intent_signals: [你好, 在吗, 你是谁, 谢谢, 再见]
+    query_data: false
+    operators: []
+    description: 纯寒暄/身份咨询，不触发查数
+
+  data_query:
+    label: 数据问答
+    intent_signals: [多少, GMV, 核销率, ROI, 客单价, 曝光, 订单数]
+    query_data: true
+    default_metrics: [gmv, gtv, verified_orders, roi]
+    drill_levels: [brand, city, business_area, poi]
+    pipeline:
+      - Intent Router
+      - Data Query Engine
+      - Answer Composer
+    example_questions:
+      - 6月 GMV 是多少？
+      - 上海 6 月 ROI 多少？
+
+  period_compare:
+    label: 同环比分析
+    intent_signals: [环比, 同比, 比上月, 较去年同期, 趋势, 下降, 增长]
+    query_data: true
+    default_metrics: [gmv, gtv, roi]
+    operators: [computePeriodCompare, computeContribution]
+    pipeline:
+      - Intent Router
+      - Analysis Planner
+      - Data Query Engine
+      - Metric Operators
+      - Answer Composer
+      - Quality Gates
+    plan_template:
+      - { step: query, tool: queryMetric, targets: [current_period, previous_period] }
+      - { step: calculate, operator: computePeriodCompare }
+      - { step: query, tool: queryBreakdown, optional: true }
+      - { step: calculate, operator: computeContribution, optional: true }
+    examples:
+      - question: 6 月 GMV 环比，哪个城市拖累？
+        scope: brand
+        breakdown_dimension: city
+      - question: 6 月上海 GMV 环比，哪个商圈拖累？
+        scope: city
+        city: 上海
+        breakdown_dimension: business_area
+      - question: 6 月上海静安大悦城 GMV 环比，哪家门店拖累？
+        scope: business_area
+        city: 上海
+        business_area: 静安大悦城
+        breakdown_dimension: poi
+
+  funnel_diagnosis:
+    label: 链路诊断
+    intent_signals: [漏斗, 链路, 损耗, 断点, 转化链, 搜索到核销]
+    query_data: true
+    default_metrics: [funnel]
+    operators: [computeFunnel]
+    primary_tables:
+      - fact_search_keyword_monthly
+      - fact_poi_monthly
+      - fact_deal_campaign_monthly
+    pipeline:
+      - Intent Router
+      - Data Query Engine
+      - Metric Operators
+      - Answer Composer
+    funnel_stages:
+      - 搜索曝光
+      - 搜索点击
+      - POI 访问
+      - 套餐点击
+      - 支付订单
+      - 核销订单
+
+  competitor_benchmark:
+    label: 竞对对比
+    intent_signals: [竞对, 竞品, 美团, 抖音, 呷哺, 品牌对比]
+    query_data: true
+    default_metrics: [market_share, verification_rate, avg_order_value]
+    dimensions: [platform, city]
+    primary_table: fact_competitor_benchmark_monthly
+    pipeline:
+      - Intent Router
+      - Data Query Engine
+      - Answer Composer
+    example_questions:
+      - 6 月美团 vs 抖音核销率对比
+      - 海底捞和呷哺 GMV 对比
+
+  annual_proposal:
+    label: 品牌年度提案
+    intent_signals: [提案, 年度, 半年, 报告, 方案, 复盘, 全链路]
+    query_data: true
+    operators: [computeFunnel]
+    pipeline:
+      - Brief Agent
+      - Data Query Engine
+      - 多 Agent 分析链
+      - Proposal Composer
+
+# Intent Router 槽位输出结构
+intent_slots:
+  - scenario
+  - time_range
+  - target_grain
+  - metric
+  - dimension
+  - drill_scope
+
+# 场景 → Query Engine queryType 映射
+query_type_map:
+  funnel_diagnosis: funnel_conversion
+  period_compare: period_compare
+  competitor_benchmark: competitor_benchmark
+  data_query: data_query

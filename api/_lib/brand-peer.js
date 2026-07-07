@@ -1,17 +1,18 @@
 /**
- * 平台对比（美团 vs 抖音）与品牌竞品对比（海底捞 vs 呷哺呷哺）
+ * 平台对比（美团到餐 vs 抖音到店）与品牌竞品对比（海底捞 vs 呷哺呷哺）
  */
+
+const { DEPRECATED_COMPETITOR_NAMES } = require("./column-aliases");
 
 const PEER_MAP = {
   haidilao: { peerId: "xiabuxiabu", peerName: "呷哺呷哺", brandName: "海底捞" }
 };
 
-const PLATFORM_NAMES = new Set(["美团", "抖音", "美团到餐", "抖音到店"]);
+/** 竞对基准表 canonical 平台名（不含废弃短名 美团/抖音） */
+const PLATFORM_NAMES = new Set(["美团到餐", "抖音到店", "私域会员"]);
 
-function normalizePlatformName(name) {
-  if (name === "美团到餐") return "美团";
-  if (name === "抖音到店") return "抖音";
-  return name;
+function isCanonicalPlatformRow(row) {
+  return row && PLATFORM_NAMES.has(row.competitor) && !DEPRECATED_COMPETITOR_NAMES.has(row.competitor);
 }
 
 function pickMonthKey(rows, monthNum) {
@@ -46,9 +47,11 @@ function safeRatio(numerator, denominator) {
 function buildPlatformBenchmarks(competitorBenchmarks = [], monthKey) {
   const month = monthKey || pickMonthKey(competitorBenchmarks);
   return rowsForMonth(competitorBenchmarks, month)
-    .filter((row) => PLATFORM_NAMES.has(row.competitor))
+    .filter(isCanonicalPlatformRow)
+    .filter((row) => row.competitor === "美团到餐" || row.competitor === "抖音到店")
     .map((row) => ({
-      name: normalizePlatformName(row.competitor),
+      name: row.competitor,
+      shortName: row.competitor === "美团到餐" ? "美团" : row.competitor === "抖音到店" ? "抖音" : row.competitor,
       month: row.month,
       marketShare: row.market_share || 0,
       avgOrderValue: row.avg_order_value || 0,
@@ -56,8 +59,7 @@ function buildPlatformBenchmarks(competitorBenchmarks = [], monthKey) {
       subsidyRate: row.subsidy_rate || 0,
       adTakeRate: row.ad_take_rate || 0,
       contentShare: row.content_share || 0
-    }))
-    .filter((row) => row.name === "美团" || row.name === "抖音");
+    }));
 }
 
 function buildBrandPeerBenchmarks(ctx = {}, monthKey) {
@@ -149,7 +151,7 @@ function enrichCompetitorParams(message, params = {}) {
 
 module.exports = {
   PEER_MAP,
-  normalizePlatformName,
+  PLATFORM_NAMES,
   buildPlatformBenchmarks,
   buildBrandPeerBenchmarks,
   detectComparisonFocus,

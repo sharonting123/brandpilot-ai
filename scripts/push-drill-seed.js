@@ -121,12 +121,12 @@ async function main() {
     `brand_id=eq.haidilao&month=gte.${DATE_RANGE.from}&month=lte.${DATE_RANGE.to}`
   );
 
-  console.log("4/6 清理旧 POI 日事实 …");
+  console.log("4/6 清理旧 POI 月事实 …");
   await deleteRange(
     baseUrl,
     key,
-    "fact_poi_daily",
-    `date=gte.${DATE_RANGE.from}&date=lte.${DATE_RANGE.to}&poi_id=like.hdl-*`
+    "fact_poi_monthly",
+    `month=gte.${DATE_RANGE.from}&month=lte.${DATE_RANGE.to}&poi_id=like.hdl-*`
   );
 
   console.log("5/6 写入城市月报 + 品牌月报 …");
@@ -135,7 +135,7 @@ async function main() {
 
   console.log("6/6 写入 POI 月快照 …");
   const poiRows = fixture.dailyFacts.poiFacts.map((row) => ({
-    date: row.date,
+    month: row.month,
     poi_id: row.poi_id,
     exposure: row.exposure,
     visits: row.visits,
@@ -146,16 +146,16 @@ async function main() {
     phone_clicks: row.phone_clicks,
     avg_stay_seconds: row.avg_stay_seconds
   }));
-  await upsertBatch(baseUrl, key, "fact_poi_daily", poiRows, "date,poi_id");
+  await upsertBatch(baseUrl, key, "fact_poi_monthly", poiRows, "month,poi_id");
 
   console.log("\n校验行数:");
   const brandCount = await countRows(baseUrl, key, "fact_brand_monthly", "month&brand_id=eq.haidilao");
   const cityCount = await countRows(baseUrl, key, "fact_city_brand_monthly", "month&brand_id=eq.haidilao");
-  const poiCount = await countRows(baseUrl, key, "fact_poi_daily", "date&poi_id=like.hdl-*");
+  const poiCount = await countRows(baseUrl, key, "fact_poi_monthly", "month&poi_id=like.hdl-*");
   const dimPoiCount = await countRows(baseUrl, key, "dim_poi", "poi_id&brand_id=eq.haidilao");
   console.log("  fact_brand_monthly (haidilao):", brandCount, "(期望 30)");
   console.log("  fact_city_brand_monthly (haidilao):", cityCount, "(期望 300)");
-  console.log("  fact_poi_daily (hdl-*):", poiCount, "(期望 900)");
+  console.log("  fact_poi_monthly (hdl-*):", poiCount, "(期望 900)");
   console.log("  dim_poi (haidilao):", dimPoiCount, "(期望 ≥30)");
   console.log("完成。");
 }

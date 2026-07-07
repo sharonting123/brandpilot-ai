@@ -12,7 +12,43 @@
       .replace(/"/g, "&quot;");
   }
 
-  function renderMarkdown(text) {
+  function buildReferenceIndexFromList(refs) {
+    var map = Object.create(null);
+    (refs || []).forEach(function (ref) {
+      if (ref && ref.id) map[ref.id] = ref;
+    });
+    return map;
+  }
+
+  function renderMarkdown(text, options) {
+    options = options || {};
+    var html = renderMarkdownCore(text, options);
+    if (options.references && options.references.length) {
+      html = linkifyCitationHtml(html, buildReferenceIndexFromList(options.references));
+    }
+    return html;
+  }
+
+  function linkifyCitationHtml(html, refIndex) {
+    return String(html || "").replace(/\[([KDSAP]\d+)\]/g, function (_, id) {
+      var ref = refIndex[id];
+      var href = ref ? ref.href : "#ref-" + id;
+      var title = ref ? ref.title : id;
+      return (
+        '<a class="citation-ref" href="' +
+        escapeHtml(href) +
+        '" data-ref-id="' +
+        escapeHtml(id) +
+        '" title="' +
+        escapeHtml(title) +
+        '">[' +
+        escapeHtml(id) +
+        "]</a>"
+      );
+    });
+  }
+
+  function renderMarkdownCore(text) {
     if (!text) return "";
 
     var lines = String(text).replace(/\r\n/g, "\n").split("\n");
@@ -46,6 +82,9 @@
       var s = escapeHtml(line);
       s = s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
       s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
+      s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function (_, label, href) {
+        return '<a href="' + escapeHtml(href) + '" class="md-link">' + escapeHtml(label) + "</a>";
+      });
       return s;
     }
 

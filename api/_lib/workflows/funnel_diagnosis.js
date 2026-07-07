@@ -1,30 +1,33 @@
 /**
  * funnel_diagnosis 工作流：链路诊断
- * 查数 → 漏斗归因 → 找最大损耗点 → 给诊断结论
- * 轻量级，不生成完整提案。
+ * NL2SQL 取数 → 漏斗聚合 → LLM 归因诊断
  */
 
+const { TOOL_REGISTRY } = require("../agent-tools");
 const { buildChatMessages, ANSWER_SCOPE_RULE } = require("../workflow-utils");
 const { tracePush, reportProgress, buildStepStart } = require("../workflow-progress");
 const { emptyTokenUsage, mergeTokenUsage, extractUsageFromGenerateResult } = require("../token-usage");
+const { prefetchNl2Sql } = require("../nl2sql-pipeline");
+const { buildFunnelStageFormulas } = require("../calculation-format");
 
-function getSystemPrompt(brandName, params) {
+function getSystemPrompt(brandName, params, nl, funnelRaw) {
+  const periodLabel =
+    nl && nl.filters && nl.filters.year && nl.filters.monthNum
+      ? `${nl.filters.year}年${nl.filters.monthNum}月`
+      : params.period || "最新数据";
+
   return [
     "你是 BrandPilot AI 的链路诊断专家，正在为「" + brandName + "」诊断搜索到核销的转化链路。",
     "",
+    "【重要】系统已预先执行 NL2SQL 与漏斗聚合，请直接基于下方 JSON 数据分析，不要再次调用 runNl2Sql / computeFunnel。",
+    "",
     "你的任务：",
-    "1. 用 computeFunnel 工具计算7阶段转化漏斗",
-    "2. 找出最大损耗点（转化率最低的环节）",
+    "1. 阅读 NL2SQL 返回的 SQL 与各阶段行结果",
+    "2. 结合漏斗聚合结果，找出最大损耗点（转化率最低的环节）",
     "3. 分析造成损耗的可能原因",
     "4. 给出针对性的优化建议",
     "",
     "漏斗阶段：搜索曝光 → 搜索点击 → POI点击 → 套餐详情 → 下单提交 → 支付订单 → 核销订单",
-    "",
-    "分析要点：",
-    "- 每个阶段的转化率和绝对流失量",
-    "- 最大损耗点是在哪个环节",
-    "- 损耗原因可能是：页面承接不足、套餐吸引力不够、下单体验差、支付门槛高、到店动力弱",
-    "- 给出具体的优化方向",
     "",
     "回复结构清晰，包含：",
     "1. 【漏斗概览】各阶段的量和转化率",
@@ -32,34 +35,43 @@ function getSystemPrompt(brandName, params) {
     "3. 【损耗原因分析】2-3条可能原因",
     "4. 【优化建议】2-3条可执行的改善方向",
     "",
-    "禁止编造数据，只使用工具返回的真实数值。",
+    "禁止编造数据，只使用预查询结果中的真实数值。",
+    "数据结论必须在句末标注引用编号（如 [S1][D1]），对应 NL2SQL 的 citationRefs。",
     ANSWER_SCOPE_RULE,
-    "品牌固定为" + brandName + "，周期为" + (params.period || "最新数据") + "。"
+    "品牌固定为" + brandName + "，周期为" + periodLabel + "。",
+    "",
+    "## 预查询 NL2SQL 结果",
+    "```json",
+    JSON.stringify(nl || {}, null, 2),
+    "```",
+    "",
+    "## 预查询漏斗聚合",
+    "```json",
+    funnelRaw || "{}",
+    "```"
   ].join("\n");
 }
 
 async function buildToolDefinitions() {
   const { buildSharedTools } = require("../ai-tools-factory");
-  return buildSharedTools(["computeFunnel", "queryBrandData", "retrieveKnowledge", "runNl2Sql"]);
+  return buildSharedTools(["retrieveKnowledge", "queryBrandData"]);
 }
 
 function buildFunnelChart(funnelStr) {
   try {
-    const data = JSON.parse(funnelStr);
+    const data = typeof funnelStr === "string" ? JSON.parse(funnelStr) : funnelStr;
     const stages = data.funnel || [];
     return [{
       type: "funnel",
       title: "搜索到核销转化漏斗",
+      description: data.bottleneck ? data.bottleneck.label : "链路漏斗（各阶段转化率见漏斗连接标注）",
       data: {
         labels: stages.map((s) => s.stage),
         datasets: [{ label: "用户数", data: stages.map((s) => s.count) }]
-      }
-    }, {
-      type: "bar",
-      title: "各阶段转化率",
-      data: {
-        labels: stages.slice(1).map((s) => s.label),
-        datasets: [{ label: "转化率 (%)", data: stages.slice(1).map((s) => (s.rateFromPrevious || 0) * 100) }]
+      },
+      meta: {
+        bottleneck: data.bottleneck || null,
+        rates: stages.map((s) => s.rateFromPrevious)
       }
     }];
   } catch {
@@ -68,9 +80,49 @@ function buildFunnelChart(funnelStr) {
 }
 
 async function execute(params) {
-  const { message, modelConfig, brandName = "海底捞", intentParams = {}, onProgress } = params;
+  const { message, modelConfig, brandName = "海底捞", intentParams = {}, onProgress, brandId = "haidilao" } = params;
   const startedAt = Date.now();
   const agentTrace = [];
+  const resolvedBrandId = intentParams.brandId || brandId || "haidilao";
+
+  let funnelRaw = null;
+  let nl = null;
+  let answer = "";
+  let tokenUsage = emptyTokenUsage();
+
+  reportProgress(onProgress, buildStepStart("链路诊断", "执行 SQL 生成 Agent 与漏斗聚合…"));
+
+  ({ nl } = await prefetchNl2Sql({
+    message,
+    brandId: resolvedBrandId,
+    modelConfig,
+    intentParams,
+    onProgress,
+    agentTrace
+  }));
+
+  const funnelStart = Date.now();
+  funnelRaw = await TOOL_REGISTRY.computeFunnel.fn({
+    brandId: resolvedBrandId,
+    question: message,
+    filters: (nl && nl.filters) || {}
+  });
+
+  let funnelFormulas = [];
+  try {
+    const funnelData = typeof funnelRaw === "string" ? JSON.parse(funnelRaw) : funnelRaw;
+    funnelFormulas = funnelData.formulaLines || buildFunnelStageFormulas(funnelData);
+  } catch (error) {
+    funnelFormulas = [];
+  }
+
+  tracePush(agentTrace, onProgress, {
+    name: "漏斗聚合",
+    tool: "computeFunnel",
+    summary: funnelFormulas[0] || "完成七阶段漏斗计算",
+    formulas: funnelFormulas,
+    durationMs: Date.now() - funnelStart
+  });
 
   const [{ generateText }, { createOpenAI }] = await Promise.all([
     import("ai"),
@@ -83,13 +135,9 @@ async function execute(params) {
   })(modelConfig.model);
 
   const toolsDefined = await buildToolDefinitions();
-  const systemPrompt = getSystemPrompt(brandName, intentParams);
-
-  let funnelRaw = null;
-  let answer = "";
-  let tokenUsage = emptyTokenUsage();
+  const systemPrompt = getSystemPrompt(brandName, intentParams, nl, funnelRaw);
   const toolStart = Date.now();
-  reportProgress(onProgress, buildStepStart("链路诊断 Agent", "计算漏斗并生成诊断结论…"));
+  reportProgress(onProgress, buildStepStart("链路诊断 Agent", "基于 NL2SQL 结果生成诊断结论…"));
 
   try {
     const result = await generateText({
@@ -97,7 +145,7 @@ async function execute(params) {
       system: systemPrompt,
       messages: buildChatMessages(params.history, message),
       tools: toolsDefined,
-      maxSteps: 6,
+      maxSteps: 4,
       temperature: 0.3,
       maxOutputTokens: modelConfig.maxTokens,
       onStepFinish: (event) => {
@@ -119,9 +167,6 @@ async function execute(params) {
       for (const step of result.steps) {
         if (step.toolCalls) {
           for (const tc of step.toolCalls) {
-            if (tc.toolName === "computeFunnel" && tc.result) {
-              funnelRaw = tc.result;
-            }
             tracePush(agentTrace, onProgress, {
               name: "工具调用",
               tool: tc.toolName,
@@ -135,13 +180,16 @@ async function execute(params) {
 
     tracePush(agentTrace, onProgress, {
       name: "链路诊断Agent",
-      tool: "推理完成",
       summary: "完成漏斗分析和损耗诊断",
       durationMs: Date.now() - toolStart
     });
   } catch (error) {
-    // 调试态：LLM 失败不再降级到确定性分析，直接抛错暴露问题
-    throw new Error("链路诊断 Agent LLM 调用失败：" + error.message);
+    answer = "> 诊断结论生成失败：" + error.message + "。请查看下方分析过程中的查询数据与引用。";
+    tracePush(agentTrace, onProgress, {
+      name: "链路诊断Agent",
+      summary: error.message,
+      durationMs: Date.now() - toolStart
+    });
   }
 
   const charts = funnelRaw ? buildFunnelChart(funnelRaw) : [];
@@ -154,17 +202,6 @@ async function execute(params) {
     tokenUsage,
     totalDurationMs: Date.now() - startedAt
   };
-}
-
-function buildFallbackCharts() {
-  return [{
-    type: "funnel",
-    title: "搜索到核销转化漏斗",
-    data: {
-      labels: ["搜索曝光", "搜索点击", "POI点击", "套餐详情", "下单提交", "支付订单", "核销订单"],
-      datasets: [{ label: "用户数", data: [5120000, 486400, 205000, 94500, 33900, 21600, 18400] }]
-    }
-  }];
 }
 
 module.exports = { execute };

@@ -9,6 +9,12 @@ const { buildSharedTools } = require("../ai-tools-factory");
 const { buildChatMessages, ANSWER_SCOPE_RULE } = require("../workflow-utils");
 const { tracePush, reportProgress, buildStepStart } = require("../workflow-progress");
 const { emptyTokenUsage, mergeTokenUsage, extractUsageFromGenerateResult } = require("../token-usage");
+const { findNl2SqlPayloadFromSteps } = require("../nl2sql-format");
+const {
+  prefetchNl2Sql,
+  buildNl2SqlContextBlock,
+  finalizeAnswerWithNl2Sql
+} = require("../nl2sql-pipeline");
 
 function getSystemPrompt(brandName) {
   return [
@@ -16,7 +22,7 @@ function getSystemPrompt(brandName) {
     "",
     "你的任务：",
     "1. 理解用户问的是哪个维度的数据（GMV、核销率、曝光、订单、ROI、客单价等）",
-    "2. 优先调用 runNl2Sql 把自然语言转成只读 SQL 查询并取数",
+    "2. 系统已预先执行 SQL 生成 Agent 查数，请直接基于 NL2SQL 结果回答",
     "3. 若需要口径解释，调用 retrieveKnowledge 检索知识库",
     "4. 用简洁清晰的语言回答，附带具体数字，并可引用 SQL 结果",
     "",
@@ -41,7 +47,6 @@ function getSystemPrompt(brandName) {
 
 async function buildToolDefinitions() {
   return buildSharedTools([
-    "runNl2Sql",
     "retrieveKnowledge",
     "queryBrandData",
     "computeFunnel",
@@ -71,11 +76,13 @@ function buildTrendChart(monthlyRaw) {
 }
 
 async function execute(params) {
-  const { message, modelConfig, brandName = "海底捞", intentParams = {}, onProgress } = params;
+  const { message, modelConfig, brandName = "海底捞", intentParams = {}, onProgress, brandId = "haidilao" } = params;
   const startedAt = Date.now();
   const agentTrace = [];
+  const resolvedBrandId = intentParams.brandId || brandId || "haidilao";
 
   let monthlyRaw = null;
+  let nlPayload = null;
   let answer = "";
   let tokenUsage = emptyTokenUsage();
   const toolStart = Date.now();
@@ -99,10 +106,21 @@ async function execute(params) {
   const toolsDefined = await buildToolDefinitions();
   const systemPrompt = getSystemPrompt(brandName);
 
+  ({ nl: nlPayload } = await prefetchNl2Sql({
+    message,
+    brandId: resolvedBrandId,
+    modelConfig,
+    intentParams,
+    onProgress,
+    agentTrace
+  }));
+
+  const enrichedSystem = systemPrompt + buildNl2SqlContextBlock(nlPayload);
+
   try {
     const result = await generateText({
       model,
-      system: systemPrompt,
+      system: enrichedSystem,
       messages: buildChatMessages(params.history, message),
       tools: toolsDefined,
       maxSteps: 6,
@@ -123,27 +141,38 @@ async function execute(params) {
     answer = result.text;
     tokenUsage = mergeTokenUsage(tokenUsage, extractUsageFromGenerateResult(result));
 
+    const fromSteps = findNl2SqlPayloadFromSteps(result.steps);
+    if (fromSteps) nlPayload = fromSteps;
+
+    if (nlPayload && !nlPayload.error) {
+      answer = finalizeAnswerWithNl2Sql(answer, nlPayload);
+    }
+
     if (result.steps) {
+      const toolsUsed = new Set();
       for (const step of result.steps) {
         if (step.toolCalls) {
           for (const tc of step.toolCalls) {
             if (tc.toolName === "aggregateMonthly" && tc.result) {
               monthlyRaw = tc.result;
             }
-            tracePush(agentTrace, onProgress, {
-              name: "工具调用",
-              tool: tc.toolName,
-              summary: "call " + tc.toolName + " done",
-              durationMs: 0
-            });
+            if (tc.toolName) toolsUsed.add(tc.toolName);
           }
         }
+      }
+      if (toolsUsed.size) {
+        const toolList = [...toolsUsed];
+        tracePush(agentTrace, onProgress, {
+          name: "工具调用",
+          tool: toolList.join(" → "),
+          summary: "完成 " + toolList.join("、"),
+          durationMs: 0
+        });
       }
     }
 
     tracePush(agentTrace, onProgress, {
       name: "数据查询Agent",
-      tool: "推理完成",
       summary: "完成数据查询和回答",
       durationMs: Date.now() - toolStart
     });

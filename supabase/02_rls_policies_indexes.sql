@@ -1,9 +1,9 @@
 alter table public.dim_brand enable row level security;
 alter table public.dim_poi enable row level security;
 alter table public.dim_deal enable row level security;
-alter table public.fact_search_keyword_daily enable row level security;
-alter table public.fact_poi_daily enable row level security;
-alter table public.fact_deal_campaign_daily enable row level security;
+alter table public.fact_search_keyword_monthly enable row level security;
+alter table public.fact_poi_monthly enable row level security;
+alter table public.fact_deal_campaign_monthly enable row level security;
 alter table public.fact_brand_monthly enable row level security;
 alter table public.fact_city_brand_monthly enable row level security;
 alter table public.fact_competitor_benchmark_monthly enable row level security;
@@ -15,9 +15,9 @@ alter table public.brand_assets enable row level security;
 drop policy if exists "demo read dim brand" on public.dim_brand;
 drop policy if exists "demo read dim poi" on public.dim_poi;
 drop policy if exists "demo read dim deal" on public.dim_deal;
-drop policy if exists "demo read search keyword daily" on public.fact_search_keyword_daily;
-drop policy if exists "demo read poi daily" on public.fact_poi_daily;
-drop policy if exists "demo read deal campaign daily" on public.fact_deal_campaign_daily;
+drop policy if exists "demo read search keyword monthly" on public.fact_search_keyword_monthly;
+drop policy if exists "demo read poi monthly" on public.fact_poi_monthly;
+drop policy if exists "demo read deal campaign monthly" on public.fact_deal_campaign_monthly;
 drop policy if exists "demo read brand monthly" on public.fact_brand_monthly;
 drop policy if exists "demo read city brand monthly" on public.fact_city_brand_monthly;
 drop policy if exists "demo read competitor benchmark monthly" on public.fact_competitor_benchmark_monthly;
@@ -45,18 +45,18 @@ create policy "demo read dim deal"
   to anon
   using (true);
 
-create policy "demo read search keyword daily"
-  on public.fact_search_keyword_daily for select
+create policy "demo read search keyword monthly"
+  on public.fact_search_keyword_monthly for select
   to anon
   using (true);
 
-create policy "demo read poi daily"
-  on public.fact_poi_daily for select
+create policy "demo read poi monthly"
+  on public.fact_poi_monthly for select
   to anon
   using (true);
 
-create policy "demo read deal campaign daily"
-  on public.fact_deal_campaign_daily for select
+create policy "demo read deal campaign monthly"
+  on public.fact_deal_campaign_monthly for select
   to anon
   using (true);
 
@@ -170,9 +170,9 @@ grant select on
   public.dim_brand,
   public.dim_poi,
   public.dim_deal,
-  public.fact_search_keyword_daily,
-  public.fact_poi_daily,
-  public.fact_deal_campaign_daily,
+  public.fact_search_keyword_monthly,
+  public.fact_poi_monthly,
+  public.fact_deal_campaign_monthly,
   public.fact_brand_monthly,
   public.fact_city_brand_monthly,
   public.fact_competitor_benchmark_monthly,

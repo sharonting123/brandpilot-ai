@@ -7,12 +7,22 @@
   "use strict";
 
   var CITY_COLORS = {
-    normal: 0xffc300,
-    selected: 0xff6633,
-    poi: 0x8b5cf6,
-    line: 0x3b82f6,
-    map: 0xffc300
+    map: palette() ? palette().hexToThree(palette().SEMANTIC.map) : 0xffc300,
+    selected: palette() ? palette().hexToThree(palette().SEMANTIC.selected) : 0xff6633
   };
+
+  function palette() {
+    return global.BrandPilotColors || null;
+  }
+
+  function cityVisual(cityName, selected) {
+    var colors = palette();
+    var base = colors ? colors.cityColor(cityName) : "#FFC300";
+    var hex = selected ? (colors ? colors.brighten(base, 0.28) : "#FF6633") : base;
+    var three = colors ? colors.hexToThree(hex) : (selected ? 0xff6633 : 0xffc300);
+    var emissive = colors ? colors.hexToThree(colors.brighten(hex, selected ? 0.1 : -0.35)) : (selected ? 0x7c2d12 : 0x5f4700);
+    return { hex: hex, three: three, emissive: emissive };
+  }
 
   // ===== 手势识别状态 =====
   var gesture = {
@@ -293,12 +303,13 @@
       var selected = city.name === state.selectedCity;
       var height = 0.45 + Math.sqrt(Number(city.gmv || 0) / maxGmv) * 2.3;
       var radius = selected ? 0.14 : 0.11;
+      var visual = cityVisual(city.name, selected);
       var geometry = new THREE.CylinderGeometry(radius, radius * 0.86, height, 24);
       var material = new THREE.MeshStandardMaterial({
-        color: selected ? CITY_COLORS.selected : CITY_COLORS.normal,
+        color: visual.three,
         metalness: 0.55,
         roughness: 0.24,
-        emissive: selected ? 0x7c2d12 : 0x5f4700,
+        emissive: visual.emissive,
         emissiveIntensity: selected ? 0.55 : 0.22
       });
       var mesh = new THREE.Mesh(geometry, material);
@@ -319,7 +330,7 @@
       var ring = new THREE.Mesh(
         new THREE.TorusGeometry(selected ? 0.42 : 0.3, 0.012, 8, 56),
         new THREE.MeshBasicMaterial({
-          color: selected ? CITY_COLORS.selected : CITY_COLORS.line,
+          color: selected ? CITY_COLORS.selected : visual.three,
           transparent: true,
           opacity: selected ? 0.86 : 0.42
         })
@@ -339,11 +350,13 @@
       var pos = project(poi.coordinate);
       var selected = poi.id === state.selectedPoiId;
       var height = 0.14 + Math.min(0.52, Number(poi.metrics && poi.metrics.visits || 0) / 120000);
+      var cityTone = cityVisual(poi.city || state.selectedCity, selected);
+      var poiColor = palette() ? palette().hexToThree(palette().brighten(cityTone.hex, 0.18)) : (selected ? 0xff6633 : 0x8b5cf6);
       var mesh = new THREE.Mesh(
         new THREE.SphereGeometry(selected ? 0.09 : 0.065, 16, 12),
         new THREE.MeshStandardMaterial({
-          color: selected ? 0xff6633 : CITY_COLORS.poi,
-          emissive: selected ? 0xff6633 : 0x4c1d95,
+          color: selected ? CITY_COLORS.selected : poiColor,
+          emissive: selected ? CITY_COLORS.selected : cityTone.emissive,
           emissiveIntensity: selected ? 0.8 : 0.35
         })
       );

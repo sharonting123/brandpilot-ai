@@ -32,6 +32,10 @@ function shouldShowGtvTrendChart({ message, workflow, toolsUsed }) {
     return false;
   }
 
+  if (workflow === "period_compare") {
+    return false;
+  }
+
   if (workflow === "data_query") {
     return monthlyToolUsed && GTV_QUESTION_RE.test(text);
   }

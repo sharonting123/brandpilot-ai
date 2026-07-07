@@ -1,5 +1,5 @@
-insert into public.fact_search_keyword_daily (
-  date,
+insert into public.fact_search_keyword_monthly (
+  month,
   brand_id,
   search_word,
   source,
@@ -127,7 +127,7 @@ values
     29,
     14690.30
   )
-on conflict (date, brand_id, search_word, source) do update
+on conflict (month, brand_id, search_word, source) do update
 set
   query_id = excluded.query_id,
   global_id = excluded.global_id,
@@ -140,8 +140,8 @@ set
   verified_orders = excluded.verified_orders,
   gmv = excluded.gmv;
 
-insert into public.fact_poi_daily (
-  date,
+insert into public.fact_poi_monthly (
+  month,
   poi_id,
   exposure,
   visits,
@@ -164,7 +164,7 @@ values
   ('2026-06-30', 'hdl-cd-jinjiang-001', 214000, 36800, 8540, 3740, 1460, 892, 410, 98.0),
   ('2026-06-30', 'hdl-hz-binjiang-001', 178000, 30600, 7060, 3180, 1210, 738, 350, 95.0),
   (current_date, '1287671875', 18600, 2410, 436, 172, 83, 46, 18, 89.0)
-on conflict (date, poi_id) do update
+on conflict (month, poi_id) do update
 set
   exposure = excluded.exposure,
   visits = excluded.visits,
@@ -175,8 +175,8 @@ set
   phone_clicks = excluded.phone_clicks,
   avg_stay_seconds = excluded.avg_stay_seconds;
 
-insert into public.fact_deal_campaign_daily (
-  date,
+insert into public.fact_deal_campaign_monthly (
+  month,
   deal_id,
   campaign_id,
   source,
@@ -296,7 +296,7 @@ values
     1258.70,
     2
   )
-on conflict (date, deal_id, campaign_id, source) do update
+on conflict (month, deal_id, campaign_id, source) do update
 set
   impressions = excluded.impressions,
   detail_views = excluded.detail_views,

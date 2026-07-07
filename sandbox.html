@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="BrandPilot AI 经营沙盘 — 3D 中国地图与城市 GMV 下钻" />
+  <title>经营沙盘 — BrandPilot AI</title>
+  <link rel="stylesheet" href="assets/styles.css?v=sandbox-page" />
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+  <script src="https://raw.githack.com/AR-js-org/AR.js/master/three.js/build/ar-threex.js"></script>
+</head>
+<body class="sandbox-page">
+  <div class="sandbox-shell">
+    <header class="sandbox-topbar">
+      <div class="sandbox-topbar-brand">
+        <a href="/" class="sandbox-back-link" id="sandboxBackLink">← 返回对话</a>
+        <div>
+          <h1>真 AR 中国经营沙盘</h1>
+          <p id="arMeta">在对话中完成分析后，沙盘会同步城市 GMV、商圈与门店指标。</p>
+        </div>
+      </div>
+      <div class="ar-actions">
+        <button id="enterXrButton" class="ghost-button sm" type="button">进入 WebXR AR</button>
+        <button id="enterMarkerArButton" class="ghost-button sm" type="button">Marker AR</button>
+        <button id="resetArButton" class="ghost-button sm" type="button">重置沙盘</button>
+      </div>
+    </header>
+
+    <main class="sandbox-main">
+      <div class="sandbox-empty" id="sandboxEmpty">
+        <div class="empty-icon">🗺️</div>
+        <h2>暂无沙盘数据</h2>
+        <p>请先在对话页发起一次经营分析，系统会自动生成 3D 沙盘场景。</p>
+        <a href="/" class="primary-button">去对话页提问</a>
+      </div>
+
+      <section class="ar-live-panel sandbox-stage-panel" id="sandboxStagePanel" hidden>
+        <div class="ar-stage ar-stage--sandbox ar-stage--fullscreen" id="arStage"></div>
+        <div class="ar-legend">
+          <span><i class="dot green"></i>中国轮廓</span>
+          <span><i class="dot blue"></i>城市 GMV 柱（按城市配色）</span>
+          <span><i class="dot amber"></i>选中高亮</span>
+          <span><i class="dot purple"></i>门店点（继承城市色）</span>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="assets/color-registry.js?v=entity-colors" defer></script>
+  <script src="assets/auth.js?v=session-restore" defer></script>
+  <script src="assets/ar-sandbox.js?v=entity-colors" defer></script>
+  <script src="assets/sandbox-page.js?v=session-restore" defer></script>
+</body>
+</html>

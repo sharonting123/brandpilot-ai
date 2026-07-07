@@ -1,14 +1,18 @@
 /**
  * 门店/商圈坐标（演示数据与真实地标对齐）
+ * canonical POI ID 与 semantic-graph / 09_drill_granular_seed 一致
  */
 
 const POI_COORDINATES = {
   "1287671875": { lng: 116.821, lat: 39.947, label: "燕郊示例店" },
-  "hdl-sh-jingan-001": { lng: 121.4584, lat: 31.2478, label: "静安大悦城" },
-  "hdl-bj-chaoyang-001": { lng: 116.4872, lat: 39.8945, label: "朝阳合生汇" },
-  "hdl-sz-nanshan-001": { lng: 113.9569, lat: 22.5412, label: "南山万象天地" },
-  "hdl-cd-jinjiang-001": { lng: 104.0815, lat: 30.6572, label: "春熙路" },
-  "hdl-hz-binjiang-001": { lng: 120.2118, lat: 30.2084, label: "滨江龙湖" },
+  "hdl-上海-静安大悦城-01": { lng: 121.4584, lat: 31.2478, label: "静安大悦城" },
+  "hdl-上海-静安大悦城-02": { lng: 121.4584, lat: 31.2478, label: "静安大悦城" },
+  "hdl-上海-陆家嘴-01": { lng: 121.4998, lat: 31.2397, label: "陆家嘴" },
+  "hdl-北京-朝阳合生汇-01": { lng: 116.4872, lat: 39.8945, label: "朝阳合生汇" },
+  "hdl-北京-朝阳合生汇-02": { lng: 116.4872, lat: 39.8945, label: "朝阳合生汇" },
+  "hdl-深圳-万象天地-01": { lng: 113.9569, lat: 22.5412, label: "万象天地" },
+  "hdl-成都-春熙路-01": { lng: 104.0815, lat: 30.6572, label: "春熙路" },
+  "hdl-杭州-滨江龙湖-01": { lng: 120.2118, lat: 30.2084, label: "滨江龙湖" },
   "xb-sh-jingan-001": { lng: 121.4584, lat: 31.2478, label: "静安大悦城" },
   "xb-bj-chaoyang-001": { lng: 116.4872, lat: 39.8945, label: "朝阳合生汇" },
   "xb-sz-nanshan-001": { lng: 113.9569, lat: 22.5412, label: "万象天地" },

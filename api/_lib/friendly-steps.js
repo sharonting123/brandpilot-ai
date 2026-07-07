@@ -4,6 +4,10 @@
 
 const STEP_NAMES = {
   "意图识别路由": "意图识别中",
+  "识别场景": "识别分析场景",
+  "识别时间范围": "理解你说的时间",
+  "识别目标粒度": "判断按日/周/月哪种粒度",
+  "识别指标 / 维度": "识别指标和拆解维度",
   "经营数据": "加载经营数据",
   "场景数据": "加载经营数据",
   "事件持久化": "记下这次分析",
@@ -24,7 +28,24 @@ const STEP_NAMES = {
   "链路诊断": "看转化漏斗",
   "竞对对比": "比一比各平台",
   "数据问答": "查具体数字",
-  NL2SQL: "自然语言查数"
+  "寒暄 Agent": "跟你打个招呼",
+  "寒暄招呼": "跟你打个招呼",
+  NL2SQL: "自然语言查数",
+  "Data Query Engine": "统一查数",
+  "时间语义解析": "理解你说的时间",
+  "目标粒度判断": "判断按日/周/月哪种粒度",
+  "指标粒度校验": "核对指标是否支持该粒度",
+  "选表路由": "选择对应的底表",
+  "Analysis Planner": "拆解分析步骤",
+  "Metric Operators": "确定性计算",
+  "Metric Operators": "确定性双指标计算",
+  "环比/同比计算": "当期与上期指标对比",
+  "贡献度拆解": "结构变化贡献计算",
+  "漏斗聚合": "漏斗阶段转化率计算",
+  "Answer Composer": "整理结论",
+  "Quality Gates": "结果质检",
+  SQL生成Agent: "生成查询语句",
+  "SQL生成 Agent": "生成查询语句"
 };
 
 const TOOL_NAMES = {
@@ -47,7 +68,8 @@ const TOOL_NAMES = {
   stream: "stream",
   "LLM 语义识别": "LLM intent",
   "关键词快路由": "keyword_fast",
-  "关键词兜底": "keyword_fallback",
+  "关键词回退": "keyword_fallback",
+  "关键词校正": "keyword_override",
   "关键词规则": "keyword_rule",
   "推理完成": "inference_done",
   error: "error"

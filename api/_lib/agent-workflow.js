@@ -1,4 +1,15 @@
 const { requestJsonModel } = require("./model-client");
+const { enrichWorkflowWithSidecarReport, getSidecarConfig } = require("./sidecar-client");
+
+async function runDeterministicAgents(state) {
+  await runAgent(state, agentDefinitions.brief, briefAgent);
+  await runAgent(state, agentDefinitions.data, dataQueryAgent);
+  await runAgent(state, agentDefinitions.attribution, attributionAgent);
+  await runAgent(state, agentDefinitions.analysis, businessAnalysisAgent);
+  await runAgent(state, agentDefinitions.strategy, strategyAgent);
+  await runAgent(state, agentDefinitions.quality, qualityAgent);
+  return state;
+}
 
 async function runHaidilaoWorkflow({ request, modelConfig, requestId, supabaseContext }) {
   const state = {
@@ -9,15 +20,23 @@ async function runHaidilaoWorkflow({ request, modelConfig, requestId, supabaseCo
     trace: []
   };
 
-  await runAgent(state, agentDefinitions.brief, briefAgent);
-  await runAgent(state, agentDefinitions.data, dataQueryAgent);
-  await runAgent(state, agentDefinitions.attribution, attributionAgent);
-  await runAgent(state, agentDefinitions.analysis, businessAnalysisAgent);
-  await runAgent(state, agentDefinitions.strategy, strategyAgent);
-  await runAgent(state, agentDefinitions.quality, qualityAgent);
+  await runDeterministicAgents(state);
   await runAgent(state, agentDefinitions.composer, (currentState) => proposalComposerAgent(currentState, modelConfig));
 
-  return buildApiResult(state, modelConfig);
+  const result = buildApiResult(state, modelConfig);
+  const sidecarConfig = getSidecarConfig(process.env);
+  if (sidecarConfig.enabled) {
+    try {
+      result.sidecar = await enrichWorkflowWithSidecarReport(state, process.env);
+    } catch (error) {
+      result.sidecar = {
+        ok: false,
+        error: error.message
+      };
+    }
+  }
+
+  return result;
 }
 
 const agentDefinitions = {
@@ -137,9 +156,9 @@ function dataQueryAgent(state) {
       assets: context.assets
     },
     evidence: [
-      "fact_search_keyword_daily",
-      "fact_poi_daily",
-      "fact_deal_campaign_daily",
+      "fact_search_keyword_monthly",
+      "fact_poi_monthly",
+      "fact_deal_campaign_monthly",
       "fact_brand_monthly",
       "fact_city_brand_monthly",
       "fact_competitor_benchmark_monthly",
@@ -254,8 +273,8 @@ function businessAnalysisAgent(state) {
       "fact_brand_monthly.ad_merchant_penetration",
       "fact_city_brand_monthly.roi",
       "fact_competitor_benchmark_monthly.verification_rate",
-      "fact_search_keyword_daily.paid_orders",
-      "fact_deal_campaign_daily.coupon_reduce_amount"
+      "fact_search_keyword_monthly.paid_orders",
+      "fact_deal_campaign_monthly.coupon_reduce_amount"
     ]
   };
 }
@@ -711,5 +730,6 @@ function unique(items) {
 
 module.exports = {
   agentDefinitions,
+  runDeterministicAgents,
   runHaidilaoWorkflow
 };

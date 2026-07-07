@@ -6,6 +6,12 @@
 
 const { loadSupabaseContext } = require("./supabase-context");
 const { getSupabaseConfig } = require("./env");
+const {
+  registerDataTable,
+  registerSqlQuery,
+  getCitationRegistry
+} = require("./citation-registry");
+const { buildTableSql } = require("./table-sql-catalog");
 
 // 全局上下文缓存（请求级别，每个 HTTP 请求创建一个新实例）
 let _contextCache = null;
@@ -33,6 +39,22 @@ function resetContextCache() {
 async function queryBrandData(params) {
   const brandId = params.brandId || "haidilao";
   const context = await getContext(brandId);
+  const tables = [
+    "fact_brand_monthly",
+    "fact_city_brand_monthly",
+    "fact_search_keyword_monthly",
+    "fact_poi_monthly",
+    "fact_deal_campaign_monthly",
+    "fact_competitor_benchmark_monthly"
+  ];
+  const { buildTableSql } = require("./table-sql-catalog");
+  tables.forEach((table) =>
+    registerDataTable(table, undefined, {
+      brandId,
+      sql: buildTableSql(table, brandId),
+      dataMode: context.dataMode
+    })
+  );
 
   return JSON.stringify({
     brandProfile: context.brandProfile,
@@ -50,7 +72,8 @@ async function queryBrandData(params) {
     },
     dataMode: context.dataMode,
     warnings: context.warnings,
-    errors: context.errors
+    errors: context.errors,
+    citationRefs: getCitationRegistry().filter((item) => item.type === "data").map((item) => item.id)
   });
 }
 
@@ -60,79 +83,61 @@ async function queryBrandData(params) {
 async function computeFunnel(params) {
   const brandId = params.brandId || "haidilao";
   const context = await getContext(brandId);
-  const searchFacts = context.dailyFacts ? context.dailyFacts.searchFacts || [] : [];
-  const poiFacts = context.dailyFacts ? context.dailyFacts.poiFacts || [] : [];
-  const campaignFacts = context.dailyFacts ? context.dailyFacts.campaignFacts || [] : [];
+  const { extractFilters } = require("./nl2sql");
+  const { buildFunnelMetrics, buildFunnelSql } = require("./funnel-metrics");
+  const { buildFunnelStageFormulas } = require("./calculation-format");
 
-  // 聚合数据
-  const searchAgg = sumFields(searchFacts, [
-    "impressions", "clicks", "poi_clicks", "deal_clicks",
-    "order_submits", "paid_orders", "verified_orders", "gmv"
-  ]);
-  const poiAgg = sumFields(poiFacts, [
-    "exposure", "visits", "search_visits", "deal_clicks",
-    "favorite_count", "navigate_clicks", "phone_clicks"
-  ]);
-  const campaignAgg = sumFields(campaignFacts, [
-    "impressions", "detail_views", "buy_clicks", "order_submits",
-    "paid_orders", "verified_orders", "pay_gmv",
-    "coupon_reduce_amount", "refunds"
-  ]);
+  const filters =
+    params.filters ||
+    extractFilters(params.question || params.query || "") ||
+    (params.period ? extractFilters(String(params.period)) : {});
 
-  // 合并数据源
-  const impressions = searchAgg.impressions || 0;
-  const clicks = searchAgg.clicks || 0;
-  const poiClicks = searchAgg.poi_clicks || poiAgg.search_visits || 0;
-  const dealClicks = searchAgg.deal_clicks || campaignAgg.detail_views || 0;
-  const orderSubmits = searchAgg.order_submits || campaignAgg.order_submits || 0;
-  const paidOrders = searchAgg.paid_orders || campaignAgg.paid_orders || 0;
-  const verifiedOrders = searchAgg.verified_orders || campaignAgg.verified_orders || 0;
-  const gmv = searchAgg.gmv || campaignAgg.pay_gmv || 0;
-  const subsidy = campaignAgg.coupon_reduce_amount || 0;
-  const refunds = campaignAgg.refunds || 0;
+  const funnelSql = buildFunnelSql(brandId, filters);
+  registerDataTable("fact_search_keyword_monthly", "搜索曝光/点击/下单/核销", {
+    brandId,
+    filters,
+    sql: funnelSql,
+    dataMode: context.dataMode
+  });
+  registerDataTable("fact_poi_monthly", "POI 访问与套餐点击", {
+    brandId,
+    filters,
+    sql: buildTableSql("fact_poi_monthly", brandId, filters),
+    dataMode: context.dataMode
+  });
+  registerDataTable("fact_deal_campaign_monthly", "套餐活动下单/支付/核销", {
+    brandId,
+    filters,
+    sql: buildTableSql("fact_deal_campaign_monthly", brandId, filters),
+    dataMode: context.dataMode
+  });
 
-  // 计算7阶段漏斗
-  const funnel = [
-    { stage: "搜索曝光", count: impressions, rateFromPrevious: null, label: "起点" },
-    { stage: "搜索点击", count: clicks, rateFromPrevious: safeRatio(clicks, impressions), label: "CTR" },
-    { stage: "POI 点击", count: poiClicks, rateFromPrevious: safeRatio(poiClicks, clicks), label: "搜索→POI" },
-    { stage: "套餐详情", count: dealClicks, rateFromPrevious: safeRatio(dealClicks, poiClicks), label: "POI→套餐" },
-    { stage: "下单提交", count: orderSubmits, rateFromPrevious: safeRatio(orderSubmits, dealClicks), label: "套餐→下单" },
-    { stage: "支付订单", count: paidOrders, rateFromPrevious: safeRatio(paidOrders, orderSubmits), label: "下单→支付" },
-    { stage: "核销订单", count: verifiedOrders, rateFromPrevious: safeRatio(verifiedOrders, paidOrders), label: "支付→核销" }
-  ];
-
-  // 找出最大损耗点
-  let maxLeakage = { from: funnel[0].stage, to: funnel[1].stage, rate: funnel[1].rateFromPrevious || 0 };
-  for (let i = 1; i < funnel.length; i++) {
-    const rate = funnel[i].rateFromPrevious;
-    if (rate !== null && rate < maxLeakage.rate) {
-      maxLeakage = { from: funnel[i - 1].stage, to: funnel[i].stage, rate };
-    }
-  }
+  const metrics = buildFunnelMetrics(context, filters);
+  const funnel = metrics.funnel;
+  const formulaLines = buildFunnelStageFormulas(metrics);
+  const { registerCalculation } = require("./citation-registry");
+  const calcRef = registerCalculation("漏斗转化计算", formulaLines.join("\n"), {
+    formula: "conversion_rate = current_stage / previous_stage",
+    formulaLines,
+    operator: "computeFunnel",
+    result: {
+      bottleneck: metrics.bottleneck,
+      stageCount: funnel.length
+    },
+    filters
+  });
 
   return JSON.stringify({
     funnel,
-    summary: {
-      totalImpressions: impressions,
-      totalPaidOrders: paidOrders,
-      totalVerifiedOrders: verifiedOrders,
-      totalGMV: gmv,
-      overallConversionRate: safeRatio(verifiedOrders, impressions),
-      searchCTR: safeRatio(clicks, impressions),
-      poiToDealRate: safeRatio(dealClicks, poiClicks),
-      submitToPaidRate: safeRatio(paidOrders, orderSubmits),
-      paidToVerifiedRate: safeRatio(verifiedOrders, paidOrders),
-      avgOrderValue: paidOrders > 0 ? gmv / paidOrders : 0,
-      subsidyRate: safeRatio(subsidy, gmv),
-      refundRate: safeRatio(refunds, paidOrders)
-    },
-    bottleneck: {
-      from: maxLeakage.from,
-      to: maxLeakage.to,
-      conversionRate: maxLeakage.rate,
-      label: "最大损耗在：" + maxLeakage.from + " -> " + maxLeakage.to + "，转化率仅 " + fmtPercent(maxLeakage.rate)
-    }
+    summary: metrics.summary,
+    bottleneck: metrics.bottleneck,
+    filters,
+    formulaLines,
+    calculationRef: calcRef.id,
+    citationRefs: [
+      calcRef.id,
+      ...getCitationRegistry().filter((item) => item.type === "data").map((item) => item.id)
+    ]
   });
 }
 
@@ -142,6 +147,17 @@ async function computeFunnel(params) {
 async function aggregateMonthly(params) {
   const brandId = params.brandId || "haidilao";
   const context = await getContext(brandId);
+  const { buildTableSql } = require("./table-sql-catalog");
+  registerDataTable("fact_brand_monthly", "品牌月度 GTV/活跃用户/take rate", {
+    brandId,
+    sql: buildTableSql("fact_brand_monthly", brandId),
+    dataMode: context.dataMode
+  });
+  registerDataTable("fact_city_brand_monthly", "城市月度 GMV/ROI", {
+    brandId,
+    sql: buildTableSql("fact_city_brand_monthly", brandId),
+    dataMode: context.dataMode
+  });
   const monthlyFacts = context.monthlyFacts || [];
   const cityMonthlyFacts = context.cityMonthlyFacts || [];
 
@@ -193,7 +209,8 @@ async function aggregateMonthly(params) {
       roi: c.roi,
       verifiedRate: safeRatio(c.verified_orders, c.paid_orders)
     })),
-    dataMode: context.dataMode
+    dataMode: context.dataMode,
+    citationRefs: getCitationRegistry().filter((item) => item.type === "data").map((item) => item.id)
   });
 }
 
@@ -333,7 +350,7 @@ const TOOL_REGISTRY = {
   },
   runNl2Sql: {
     name: "runNl2Sql",
-    description: "把自然语言问题转成只读 SQL 查询计划并返回行结果。适合「6月GMV多少」「上海ROI」这类精确问数。",
+    description: "SQL 生成 Agent：把自然语言问题识别查询类型、生成只读 SQL 并返回行结果。适合 GMV/ROI/漏斗/竞对等各类问数。",
     fn: runNl2Sql
   },
   retrieveKnowledge: {

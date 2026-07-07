@@ -1,4 +1,5 @@
 const { getRuntimeConfig } = require("./_lib/env");
+const { getSidecarConfig, probeSidecarHealth } = require("./_lib/sidecar-client");
 const { isAuthConfigured } = require("./_lib/auth");
 const { getAdminConfig } = require("./_lib/chat-store");
 const { assertMethod, handleError, sendJson } = require("./_lib/http");
@@ -13,10 +14,25 @@ function buildMapConfig() {
   };
 }
 
-module.exports = function handler(req, res) {
+module.exports = async function handler(req, res) {
   try {
     assertMethod(req, ["GET"]);
     const config = getRuntimeConfig();
+    const sidecarConfig = getSidecarConfig(process.env);
+    let sidecarHealth = null;
+    if (sidecarConfig.enabled) {
+      try {
+        sidecarHealth = await probeSidecarHealth(sidecarConfig);
+      } catch (_error) {
+        sidecarHealth = null;
+      }
+    }
+    let chatStorageMode = "unknown";
+    try {
+      chatStorageMode = getAdminConfig().mode;
+    } catch (_error) {
+      chatStorageMode = config.supabase.configured ? "supabase" : "unconfigured";
+    }
     const exposeSupabase = config.supabase.configured && config.supabase.browserEnabled;
 
     return sendJson(
@@ -37,8 +53,10 @@ module.exports = function handler(req, res) {
         ragEmbeddingModel: config.rag.embeddingModel,
         ragRerankModel: config.rag.rerankModel,
         authConfigured: isAuthConfigured(),
-        chatStorageMode: getAdminConfig().mode,
+        chatStorageMode,
         nodeEnv: config.nodeEnv,
+        sidecarEnabled: sidecarConfig.enabled,
+        sidecarReadyForReport: Boolean(sidecarHealth && sidecarHealth.readyForReport),
         map: buildMapConfig()
       },
       "s-maxage=60, stale-while-revalidate=300"

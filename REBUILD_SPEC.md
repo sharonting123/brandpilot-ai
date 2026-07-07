@@ -25,7 +25,7 @@
 ## 数据层（已就绪，复用现有 supabase-context.js 的查询逻辑）
 Supabase 底表（当前只有 haidilao 品牌数据）：
 - dim_brand, dim_poi, dim_deal
-- fact_search_keyword_daily, fact_poi_daily, fact_deal_campaign_daily
+- fact_search_keyword_monthly, fact_poi_monthly, fact_deal_campaign_monthly（月表，`month` 字段为月末日期）
 - fact_brand_monthly, fact_city_brand_monthly, fact_competitor_benchmark_monthly
 - fact_meituan_funnel_events (view: vw_meituan_funnel_demo)
 - brand_assets

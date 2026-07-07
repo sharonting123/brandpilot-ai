@@ -1,0 +1,187 @@
+# 表关联语义图谱（唯一事实源）
+# 粒度 / 基数 / fanout / 估算口径供 QueryPlan 校验
+
+version: "1.0"
+
+joins:
+  - id: poi_fact_to_dim
+    label: 门店事实 → 门店维表
+    from: fact_poi_monthly
+    to: dim_poi
+    type: inner
+    on:
+      - { left: poi_id, right: poi_id }
+    left_grain: [month, poi_id]
+    right_grain: [poi_id]
+    cardinality: many_to_one
+    fanout:
+      level: none
+      multiplier: 1
+    estimation:
+      row_multiplier: 1
+      method: preserve_left_rows
+      note: 每个 POI 月事实对应唯一维表行，JOIN 不扩行
+    use_cases:
+      - 按城市/商圈/门店名过滤 POI 指标
+      - 商圈/门店级 GMV 贡献度拆解
+    example_sql: |
+      SELECT f.month, p.city, p.business_area, p.poi_name, SUM(f.visits) AS visits
+      FROM fact_poi_monthly f
+      JOIN dim_poi p ON f.poi_id = p.poi_id
+      WHERE p.brand_id = 'haidilao' AND p.city = '上海'
+      GROUP BY f.month, p.city, p.business_area, p.poi_name
+
+  - id: deal_fact_to_dim
+    label: 套餐事实 → 套餐维表
+    from: fact_deal_campaign_monthly
+    to: dim_deal
+    type: inner
+    on:
+      - { left: deal_id, right: deal_id }
+    left_grain: [month, deal_id, campaign_id]
+    right_grain: [deal_id]
+    cardinality: many_to_one
+    fanout:
+      level: low
+      multiplier: 1
+    estimation:
+      row_multiplier: 1
+      method: preserve_left_rows
+      note: 同一 deal_id 可能有多 campaign 行，维表 1:1 deal
+    use_cases:
+      - 按套餐名/门店查活动 GMV
+
+  - id: deal_dim_to_poi
+    label: 套餐维表 → 门店维表
+    from: dim_deal
+    to: dim_poi
+    type: left
+    on:
+      - { left: poi_id, right: poi_id }
+    left_grain: [deal_id]
+    right_grain: [poi_id]
+    cardinality: many_to_one
+    fanout:
+      level: none
+      multiplier: 1
+    estimation:
+      row_multiplier: 1
+      method: preserve_left_rows
+    use_cases:
+      - 套餐归属门店、城市
+
+  - id: poi_dim_to_brand
+    label: 门店维表 → 品牌维表
+    from: dim_poi
+    to: dim_brand
+    type: inner
+    on:
+      - { left: brand_id, right: brand_id }
+    left_grain: [poi_id]
+    right_grain: [brand_id]
+    cardinality: many_to_one
+    fanout:
+      level: none
+      multiplier: 1
+    estimation:
+      row_multiplier: 1
+      method: preserve_left_rows
+
+  - id: city_fact_to_brand
+    label: 城市事实 → 品牌维表
+    from: fact_city_brand_monthly
+    to: dim_brand
+    type: inner
+    on:
+      - { left: brand_id, right: brand_id }
+    left_grain: [month, brand_id, city]
+    right_grain: [brand_id]
+    cardinality: many_to_one
+    fanout:
+      level: none
+      multiplier: 1
+    estimation:
+      row_multiplier: 1
+      method: preserve_left_rows
+
+  - id: brand_fact_to_brand
+    label: 品牌事实 → 品牌维表
+    from: fact_brand_monthly
+    to: dim_brand
+    type: inner
+    on:
+      - { left: brand_id, right: brand_id }
+    left_grain: [month, brand_id]
+    right_grain: [brand_id]
+    cardinality: many_to_one
+    fanout:
+      level: none
+      multiplier: 1
+    estimation:
+      row_multiplier: 1
+      method: preserve_left_rows
+
+# 多表漏斗路径（无显式 FK，按 month + brand 对齐聚合）
+funnel_paths:
+  - id: search_to_poi_to_deal
+    label: 搜索 → POI → 套餐 漏斗
+    storage_grain: month
+    cardinality: per_stage
+    fanout:
+      level: high
+      multiplier: 3
+    estimation:
+      method: align_by_month
+      expected_rows: "months_in_range * stage_count"
+    steps:
+      - table: fact_search_keyword_monthly
+        stages: [impressions, clicks, paid_orders, verified_orders]
+      - table: fact_poi_monthly
+        stages: [exposure, visits, deal_clicks]
+        join: poi_fact_to_dim
+      - table: fact_deal_campaign_monthly
+        stages: [paid_orders, verified_orders, pay_gmv]
+        join: deal_fact_to_dim
+    time_align: month
+
+# 下钻 JOIN 路径（贡献度拆解）
+drill_join_paths:
+  - drill_level: city
+    table: fact_city_brand_monthly
+    group_by: [city]
+    filter: [brand_id, month]
+    cardinality: many
+    fanout:
+      level: none
+      multiplier: 1
+    estimation:
+      method: direct_sum
+      expected_rows: "cities_in_scope"
+
+  - drill_level: business_area
+    tables: [fact_poi_monthly, dim_poi]
+    join: poi_fact_to_dim
+    group_by: [city, business_area]
+    filter: [brand_id, city, month]
+    cardinality: many
+    fanout:
+      level: low
+      multiplier: 1
+    estimation:
+      method: weighted_allocation
+      formula: 按 POI visits 权重分摊 fact_city_brand_monthly.gmv
+      expected_rows: "business_areas_in_city"
+
+  - drill_level: poi
+    tables: [fact_poi_monthly, dim_poi]
+    join: poi_fact_to_dim
+    group_by: [city, business_area, poi_name]
+    filter: [brand_id, city, business_area, month]
+    cardinality: many
+    fanout:
+      level: low
+      multiplier: 1
+    estimation:
+      method: weighted_allocation
+      formula: 按 POI visits 权重分摊城市 GMV
+      expected_rows: "pois_in_scope"

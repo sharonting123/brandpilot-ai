@@ -78,12 +78,12 @@
           return currentUser;
         }
         currentUser = null;
-        setToken(null);
+        if (getToken()) setToken(null);
         return null;
       })
-      .catch(function () {
+      .catch(function (err) {
         currentUser = null;
-        setToken(null);
+        if (err && err.status === 401) setToken(null);
         return null;
       });
   }

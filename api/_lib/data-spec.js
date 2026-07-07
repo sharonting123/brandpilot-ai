@@ -129,6 +129,8 @@ function metricsForWorkflow(workflow, message) {
     if (!keys.length) keys.push("gmv", "verifiedRate");
   } else if (workflow === "funnel_diagnosis") {
     keys.push("funnel", "verifiedRate", "visits", "dealClickRate");
+  } else if (workflow === "period_compare") {
+    keys.push("gmv", "gtv", "mom", "yoy");
   } else if (workflow === "competitor_benchmark") {
     keys.push("marketShare", "verifiedRate", "avgOrderValue", "gmv");
   } else if (workflow === "annual_proposal") {

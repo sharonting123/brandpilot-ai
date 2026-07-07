@@ -10,6 +10,14 @@ const RERANK_PATH = "/services/rerank/text-rerank/text-rerank";
 
 const embeddingCache = new Map();
 
+function isEmbeddingCompatibleBaseUrl(baseUrl) {
+  const url = String(baseUrl || "").toLowerCase();
+  if (!url) return false;
+  // LongCat 仅提供 chat/completions，无 embeddings 端点
+  if (url.includes("longcat.chat")) return false;
+  return true;
+}
+
 function getRagEmbedConfig(env = process.env) {
   const dashscopeKey = env.DASHSCOPE_API_KEY || env.BAILIAN_API_KEY || "";
   const modelApiKey = env.MODEL_API_KEY || env.OPENAI_API_KEY || "";
@@ -23,7 +31,9 @@ function getRagEmbedConfig(env = process.env) {
   else if (provider === "openai" && modelApiKey && modelBaseUrl) embeddingProvider = "openai";
   else if (provider === "auto") {
     if (dashscopeKey) embeddingProvider = "dashscope";
-    else if (modelApiKey && modelBaseUrl) embeddingProvider = "openai";
+    else if (modelApiKey && modelBaseUrl && isEmbeddingCompatibleBaseUrl(modelBaseUrl)) {
+      embeddingProvider = "openai";
+    }
   }
 
   const embeddingEnabled = env.RAG_EMBEDDING_ENABLED !== "false" && embeddingProvider !== "none";

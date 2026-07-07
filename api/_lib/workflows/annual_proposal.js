@@ -11,6 +11,13 @@ const { tracePush, reportProgress, buildStepStart } = require("../workflow-progr
 const { buildChatMessages, ANSWER_SCOPE_RULE } = require("../workflow-utils");
 const { getAgentMaxTokens, getStructuredMaxTokens } = require("../token-budget");
 const { emptyTokenUsage, mergeTokenUsage, extractUsageFromGenerateResult } = require("../token-usage");
+const { forceFunnelChartPolicy } = require("../chart-normalize");
+const { getCitationRegistry } = require("../citation-registry");
+const {
+  prefetchNl2Sql,
+  buildNl2SqlContextBlock,
+  finalizeAnswerWithNl2Sql
+} = require("../nl2sql-pipeline");
 
 /**
  * 获取年度提案工作流的 system prompt
@@ -21,8 +28,8 @@ function getSystemPrompt(brandName, params) {
     "",
     "你的工作任务：",
     "1. 使用工具查询品牌数据、漏斗、月度经分和竞对基准",
-    "2. 用 retrieveKnowledge 检索经营分析框架和品牌知识资产，回答引用 citations",
-    "3. 对精确数字问题可用 runNl2Sql 生成只读 SQL 查询计划",
+    "2. 系统已预先执行 SQL 生成 Agent，请优先引用预查询 NL2SQL 结果（格式 [S1]/[D1]）",
+    "3. 用 retrieveKnowledge 检索经营分析框架和品牌知识资产，回答引用 citations（格式 [K1]）",
     "4. 基于数据做深入的经营分析，识别主矛盾、机会区和风险点",
     "5. 给出可执行的策略建议和下半年推进时间线",
     "6. 最终生成一份结构化提案，包含：指标卡、关键洞察、推荐动作、时间线、资产清单",
@@ -35,7 +42,8 @@ function getSystemPrompt(brandName, params) {
     "",
     "约束：",
     "- 只使用工具返回的真实数据，不编造外部事实",
-    "- 结论必须落到可验证的指标和可执行的动作",
+    "- 结论必须落到可验证的指标和可执行的动作，并在文本末尾标注引用编号",
+    "- 链路/漏斗相关图表必须使用 type=funnel，禁止用柱状图替代漏斗图",
     "- 如果数据模式为 empty 或 unavailable（无可用数据），需在提案中标注",
     "- 在最终回复中用中文明了的语言呈现提案",
     ANSWER_SCOPE_RULE,
@@ -78,22 +86,30 @@ async function generateStructuredProposal(agentAnswer, modelConfig, brandName, p
     apiKey: modelConfig.apiKey
   })(modelConfig.model);
 
+  const CitedText = z.object({
+    text: z.string(),
+    refs: z.array(z.string()).describe("引用编号，如 K1、D2、S1、A3")
+  });
+
   const ProposalSchema = z.object({
     title: z.string().describe("提案标题"),
     opportunityScore: z.number().min(0).max(100).describe("机会评分 0-100"),
     summary: z.string().describe("经营摘要，一段话概括"),
+    summaryRefs: z.array(z.string()).optional().describe("摘要引用编号"),
     metrics: z.array(z.object({
       label: z.string(),
       value: z.string(),
-      delta: z.string().optional()
+      delta: z.string().optional(),
+      refs: z.array(z.string()).optional()
     })).describe("4-5个关键指标卡"),
-    insights: z.array(z.string()).describe("3-5条深度洞察"),
-    actions: z.array(z.string()).describe("4-6条可执行策略"),
+    insights: z.array(CitedText).describe("3-5条深度洞察，每条带 refs"),
+    actions: z.array(CitedText).describe("4-6条可执行策略，每条带 refs"),
     timeline: z.array(z.object({
       title: z.string(),
-      body: z.string()
+      body: z.string(),
+      refs: z.array(z.string()).optional()
     })).describe("3个阶段的推进计划"),
-    risks: z.array(z.string()).describe("风险提示"),
+    risks: z.array(CitedText).describe("风险提示，每条带 refs"),
     assets: z.array(z.object({
       title: z.string(),
       body: z.string()
@@ -102,12 +118,14 @@ async function generateStructuredProposal(agentAnswer, modelConfig, brandName, p
       type: z.enum(["funnel", "bar", "line", "comparison"]),
       title: z.string(),
       data: z.any()
-    })).describe("可视化图表数据")
+    })).describe("可视化图表；漏斗/链路必须用 funnel")
   });
 
   const system = [
     "你从 agent 的对话中提取结构化提案内容。品牌：「" + brandName + "」，周期：「" + (params.period || "2026 H1") + "」。",
-    "按 schema 填充所有字段，用中文。charts 数组构造 Chart.js 可用的图表数据。"
+    "按 schema 填充所有字段，用中文。",
+    "insights/actions/risks 每条必须包含 refs 数组（引用编号 K/D/S/A）。",
+    "charts 中漏斗/链路类图表 type 必须为 funnel，不要用 bar 表示漏斗。"
   ].join("\n");
 
   const result = await generateObject({
@@ -128,11 +146,13 @@ async function generateStructuredProposal(agentAnswer, modelConfig, brandName, p
  * 执行年度提案工作流
  */
 async function execute(params) {
-  const { message, modelConfig, brandName = "海底捞", intentParams = {}, onProgress } = params;
+  const { message, modelConfig, brandName = "海底捞", intentParams = {}, onProgress, brandId = "haidilao" } = params;
   const startedAt = Date.now();
   const agentTrace = [];
+  const resolvedBrandId = intentParams.brandId || brandId || "haidilao";
 
   let agentAnswer = "";
+  let nlPayload = null;
   let toolCallsMade = [];
   let tokenUsage = emptyTokenUsage();
   const toolStart = Date.now();
@@ -154,7 +174,16 @@ async function execute(params) {
   })(modelConfig.model);
 
   const toolsDefined = await buildToolDefinitions();
-  const systemPrompt = getSystemPrompt(brandName, intentParams);
+  const { nl } = await prefetchNl2Sql({
+    message,
+    brandId: resolvedBrandId,
+    modelConfig,
+    intentParams,
+    onProgress,
+    agentTrace
+  });
+  nlPayload = nl;
+  const systemPrompt = getSystemPrompt(brandName, intentParams) + buildNl2SqlContextBlock(nl);
 
   try {
     const result = await generateText({
@@ -230,15 +259,18 @@ async function execute(params) {
   // 构建图表：调试态不再用 buildFallbackCharts 兜底，无结构化图表则返回空
   let charts = [];
   if (structuredProposal && structuredProposal.charts && structuredProposal.charts.length) {
-    charts = structuredProposal.charts;
+    charts = forceFunnelChartPolicy(structuredProposal.charts);
   }
+
+  const references = getCitationRegistry();
 
   return {
     workflow: "annual_proposal",
-    answer: agentAnswer,
+    answer: finalizeAnswerWithNl2Sql(agentAnswer, nlPayload),
     agentTrace,
     charts,
     proposal: structuredProposal,
+    references,
     tokenUsage,
     totalDurationMs: Date.now() - startedAt
   };
