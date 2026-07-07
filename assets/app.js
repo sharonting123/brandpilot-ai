@@ -193,6 +193,7 @@
     if (reportPreviewSave) reportPreviewSave.addEventListener("click", handleSaveSidecarReport);
     bindReportExportMenu();
     bindDocumentUpload();
+    refreshUploadControls();
     bindExampleButtons();
     bindCitationNavigation(vizProposal);
     bindCitationNavigation(vizDossier);
@@ -551,7 +552,10 @@
   }
 
   function showDocUploadPanel(fileNames) {
-    if (!docUploadPanel) return;
+    if (!docUploadPanel) {
+      setStatusText("正在上传文档…", { clearProtect: true });
+      return;
+    }
     docUploadPanel.hidden = false;
     docUploadPanel.classList.remove("is-done", "is-error");
     docUploadPanel.classList.add("is-busy");
@@ -683,13 +687,38 @@
     if (!hasDocs) chatInput.placeholder = defaultChatPlaceholder;
   }
 
+  function refreshUploadControls() {
+    var attachmentCount = window.BrandPilotDocuments
+      ? window.BrandPilotDocuments.getAttachments().length
+      : 0;
+    var maxFiles = window.BrandPilotDocuments ? window.BrandPilotDocuments.maxFiles : 3;
+    var remaining = Math.max(0, maxFiles - attachmentCount);
+    var atMax = remaining <= 0;
+    var blocked = docUploadBusy || isProcessing;
+
+    if (documentUploadButton) {
+      documentUploadButton.classList.toggle("is-uploading", docUploadBusy);
+      documentUploadButton.classList.toggle("is-at-limit", atMax && !blocked);
+      documentUploadButton.classList.toggle("is-disabled", blocked);
+      documentUploadButton.disabled = blocked;
+      documentUploadButton.setAttribute("aria-busy", docUploadBusy ? "true" : "false");
+      if (atMax && !blocked) {
+        documentUploadButton.title =
+          "已达 " + maxFiles + " 个文档上限，移除后可继续上传";
+      } else if (isProcessing) {
+        documentUploadButton.title = "分析进行中，完成后可继续上传";
+      } else if (docUploadBusy) {
+        documentUploadButton.title = "文档解析中…";
+      } else {
+        documentUploadButton.title =
+          "上传策略性文档或图片（还可添加 " + remaining + " 个，最多 " + maxFiles + " 个）";
+      }
+    }
+  }
+
   function setDocumentUploadBusy(busy) {
     docUploadBusy = Boolean(busy);
-    if (!documentUploadButton) return;
-    documentUploadButton.classList.toggle("is-uploading", docUploadBusy);
-    documentUploadButton.classList.toggle("is-disabled", docUploadBusy || isProcessing);
-    documentUploadButton.disabled = docUploadBusy || isProcessing;
-    documentUploadButton.setAttribute("aria-busy", docUploadBusy ? "true" : "false");
+    refreshUploadControls();
   }
 
   function bindReportExportMenu() {
@@ -775,14 +804,34 @@
       badge.hidden = true;
       badge.setAttribute("aria-hidden", "true");
     }
+    refreshUploadControls();
   }
 
   function bindDocumentUpload() {
     if (!documentUploadButton || !documentUploadInput) return;
 
     documentUploadButton.addEventListener("click", function () {
-      if (docUploadBusy || isProcessing) {
-        setStatusText("请等待当前分析完成后再上传", { protectMs: 3000 });
+      if (docUploadBusy) {
+        setStatusText("文档解析中，请稍候", { protectMs: 3000 });
+        return;
+      }
+      if (isProcessing) {
+        setStatusText("分析进行中，请等待完成后再上传", { protectMs: 3000 });
+        return;
+      }
+      var count =
+        window.BrandPilotDocuments && window.BrandPilotDocuments.getAttachments
+          ? window.BrandPilotDocuments.getAttachments().length
+          : 0;
+      var maxFiles =
+        window.BrandPilotDocuments && window.BrandPilotDocuments.maxFiles
+          ? window.BrandPilotDocuments.maxFiles
+          : 3;
+      if (count >= maxFiles) {
+        setStatusText(
+          "已达 " + maxFiles + " 个文档上限，请先移除已有文档",
+          { protectMs: 4000 }
+        );
         return;
       }
       documentUploadInput.click();
@@ -829,6 +878,7 @@
         })
         .finally(function () {
           setDocumentUploadBusy(false);
+          refreshUploadControls();
         });
     });
 
@@ -841,6 +891,7 @@
         updateUploadBadge();
         resetChatInputPlaceholder();
         syncDocumentUploadStatus();
+        refreshUploadControls();
       });
     }
   }
@@ -947,7 +998,8 @@
       .finally(function () {
         isProcessing = false;
         sendButton.disabled = false;
-        statusText.textContent = "就绪";
+        refreshUploadControls();
+        if (!isStatusProtected()) setStatusText("就绪");
       });
   }
 

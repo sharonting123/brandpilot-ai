@@ -1276,8 +1276,11 @@ button, select, textarea {
 
 /* ===== 输入区 ===== */
 .chat-composer {
+  flex-shrink: 0;
   border-top: 1px solid var(--line);
   background: var(--surface);
+  max-height: 55vh;
+  overflow-y: auto;
 }
 
 .doc-upload-policy-hint {
@@ -1663,6 +1666,11 @@ button, select, textarea {
 .doc-upload-button.is-disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.doc-upload-button.is-at-limit:not(.is-disabled) {
+  opacity: 0.85;
+  border-color: #fdba74;
 }
 
 .doc-upload-icon {
