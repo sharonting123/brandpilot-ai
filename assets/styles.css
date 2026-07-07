@@ -1275,12 +1275,51 @@ button, select, textarea {
 }
 
 /* ===== 输入区 ===== */
+.chat-composer {
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.doc-upload-policy-hint {
+  margin: 0;
+  padding: 10px 20px 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.doc-upload-policy-hint strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.doc-upload-status {
+  margin: 0;
+  padding: 8px 20px 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.doc-upload-status.is-pending {
+  color: #92400e;
+}
+
+.doc-upload-status.is-done {
+  color: #135200;
+  font-weight: 600;
+}
+
+.doc-upload-status.is-error {
+  color: var(--red);
+  font-weight: 600;
+}
+
 .chat-input-area {
   display: flex;
   align-items: flex-end;
   gap: 8px;
   padding: 12px 20px;
-  border-top: 1px solid var(--line);
   background: var(--surface);
   position: relative;
 }
@@ -1423,6 +1462,8 @@ button, select, textarea {
   transition: all var(--transition);
   position: relative;
   overflow: hidden;
+  padding: 0;
+  font: inherit;
 }
 
 .doc-upload-button.is-disabled {

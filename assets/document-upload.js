@@ -235,10 +235,6 @@
       })
       .join("、");
     var hint =
-      '<p class="doc-attachments-hint doc-attachments-hint--policy">' +
-      POLICY_HINT +
-      "</p>";
-    hint +=
       opts.justCompleted
         ? '<p class="doc-attachments-hint doc-attachments-hint--done">✅ 上传完成：' +
           names +

@@ -41,6 +41,7 @@
   var reportPreviewMeta = document.getElementById("reportPreviewMeta");
   var documentUploadButton = document.getElementById("documentUploadButton");
   var documentUploadInput = document.getElementById("documentUploadInput");
+  var docUploadStatus = document.getElementById("docUploadStatus");
   var chatAttachments = document.getElementById("chatAttachments");
   var vizProcess = document.getElementById("vizProcess");
   var vizResultsHeader = document.getElementById("vizResultsHeader");
@@ -478,12 +479,30 @@
     var items = window.BrandPilotDocuments.getAttachments();
     if (!items.length) {
       setStatusText("就绪", { clearProtect: true });
+      setDocUploadStatusLine("", { hidden: true });
       return;
     }
     var summary = window.BrandPilotDocuments.formatUploadStatusSummary(items);
     if (summary) {
       setStatusText(summary, { protectMs: (options && options.protectMs) || 600000 });
+      setDocUploadStatusLine(summary.replace(/^✅\s*/, ""), { done: true });
     }
+  }
+
+  function setDocUploadStatusLine(text, options) {
+    if (!docUploadStatus) return;
+    var opts = options || {};
+    if (opts.hidden || !text) {
+      docUploadStatus.hidden = true;
+      docUploadStatus.textContent = "";
+      docUploadStatus.classList.remove("is-pending", "is-done", "is-error");
+      return;
+    }
+    docUploadStatus.hidden = false;
+    docUploadStatus.textContent = text;
+    docUploadStatus.classList.toggle("is-pending", Boolean(opts.pending));
+    docUploadStatus.classList.toggle("is-done", Boolean(opts.done));
+    docUploadStatus.classList.toggle("is-error", Boolean(opts.error));
   }
 
   function isStatusProtected() {
@@ -522,6 +541,7 @@
     if (!documentUploadButton) return;
     documentUploadButton.classList.toggle("is-uploading", docUploadBusy);
     documentUploadButton.classList.toggle("is-disabled", docUploadBusy || isProcessing);
+    documentUploadButton.disabled = docUploadBusy || isProcessing;
     documentUploadButton.setAttribute("aria-busy", docUploadBusy ? "true" : "false");
   }
 
@@ -613,11 +633,12 @@
   function bindDocumentUpload() {
     if (!documentUploadButton || !documentUploadInput) return;
 
-    documentUploadInput.addEventListener("click", function (event) {
+    documentUploadButton.addEventListener("click", function () {
       if (docUploadBusy || isProcessing) {
-        event.preventDefault();
         setStatusText("请等待当前分析完成后再上传", { protectMs: 3000 });
+        return;
       }
+      documentUploadInput.click();
     });
 
     documentUploadInput.addEventListener("change", function () {
@@ -630,10 +651,11 @@
       }
       statusProtectedUntil = 0;
       setDocumentUploadBusy(true);
-      setStatusText(
-        window.BrandPilotDocuments.hasPendingImages(files) ? "OCR 识别中…" : "解析文档中…",
-        { clearProtect: true }
-      );
+      var progressText = window.BrandPilotDocuments.hasPendingImages(files)
+        ? "OCR 识别中…"
+        : "解析文档中…";
+      setStatusText(progressText, { clearProtect: true });
+      setDocUploadStatusLine(progressText, { pending: true });
       window.BrandPilotDocuments.addFiles(files)
         .then(function (added) {
           window.BrandPilotDocuments.renderChips(chatAttachments, {
@@ -656,6 +678,7 @@
         .catch(function (error) {
           alert(error.message || "文档解析失败");
           setStatusText("文档解析失败", { protectMs: 4000 });
+          setDocUploadStatusLine("文档解析失败", { error: true });
         })
         .finally(function () {
           setDocumentUploadBusy(false);
@@ -718,6 +741,7 @@
       window.BrandPilotDocuments.renderChips(chatAttachments);
       updateUploadBadge();
       resetChatInputPlaceholder();
+      setDocUploadStatusLine("", { hidden: true });
     }
 
     conversationHistory.push({ role: "user", content: message });
