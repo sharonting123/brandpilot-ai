@@ -6,8 +6,6 @@
 const { monthKeyToEndDate, monthMatches } = require("./period-utils");
 const { buildTimeWhereClause } = require("./time-router");
 const { SOURCE_SEARCH, SOURCE_RECOMMEND } = require("./traffic-split");
-const { registerDataTable, registerCalculation } = require("./citation-registry");
-const { buildTableSql } = require("./table-sql-catalog");
 const { buildFunnelStageFormulas } = require("./calculation-format");
 
 function safeRatio(numerator, denominator) {
@@ -215,6 +213,8 @@ function buildTrafficComparisonFormulas(comparison) {
 }
 
 function registerTrafficPathComparison(context, filters = {}, brandId = "haidilao") {
+  const { registerDataTable, registerCalculation } = require("./citation-registry");
+  const { buildTableSql } = require("./table-sql-catalog");
   const comparison = buildTrafficPathComparison(context, filters);
   const dataMode = context.dataMode || "empty";
 
