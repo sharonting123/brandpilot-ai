@@ -33,6 +33,7 @@ const {
 const { runQualityGates } = require("./quality-gates");
 const WORKFLOW_REGISTRY = {
   greeting: () => require("./workflows/greeting"),
+  document_qa: () => require("./workflows/document_qa"),
   annual_proposal: () => require("./workflows/annual_proposal"),
   funnel_diagnosis: () => require("./workflows/funnel_diagnosis"),
   competitor_benchmark: () => require("./workflows/competitor_benchmark"),
@@ -41,7 +42,7 @@ const WORKFLOW_REGISTRY = {
 };
 
 function isLightweightWorkflow(workflow) {
-  return workflow === "greeting";
+  return workflow === "greeting" || workflow === "document_qa";
 }
 
 function workflowStartSummary(workflow) {
@@ -113,7 +114,7 @@ async function runChatRequest(ctx) {
 
   const intentId = progress.start("意图识别路由", "意图识别中…");
   const intentStart = Date.now();
-  const intent = await recognizeIntent(effectiveMessage, modelConfig);
+  const intent = await recognizeIntent(message, modelConfig, { attachments });
   const intentTrace = {
     name: "意图识别路由",
     tool: recognitionModeLabel(intent.recognitionMode),
@@ -367,7 +368,7 @@ async function runChatRequest(ctx) {
     references,
     calculations: workflowResult.calculations || [],
     dataMode,
-    requireReferences: !["data_query", "greeting"].includes(intent.workflow)
+    requireReferences: !["data_query", "greeting", "document_qa"].includes(intent.workflow)
   });
   if (quality.issues.length) {
     warnings.push(...quality.issues.map((item) => item.message));

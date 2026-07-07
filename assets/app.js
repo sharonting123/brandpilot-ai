@@ -1071,8 +1071,9 @@
       body.appendChild(specBlock);
     }
 
-    // 数据模式提醒
-    if (data.dataMode === "empty" || data.dataMode === "unavailable") {
+    // 数据模式提醒（仅经营分析类工作流）
+    var dataWorkflows = ["data_query", "period_compare", "funnel_diagnosis", "competitor_benchmark", "annual_proposal"];
+    if ((data.dataMode === "empty" || data.dataMode === "unavailable") && dataWorkflows.indexOf(data.workflow) >= 0) {
       var notice = document.createElement("div");
       notice.className = "data-notice";
       notice.textContent = "⚠️ 当前无可用经营数据，请检查 Supabase 配置与种子数据。";

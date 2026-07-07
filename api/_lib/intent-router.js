@@ -9,6 +9,7 @@ const { extractUsageFromGenerateResult } = require("./token-usage");
 const { enrichCompetitorParams } = require("./brand-peer");
 const { workflowRequiresNl2Sql } = require("./nl2sql-pipeline");
 const { detectGreetingIntent } = require("./greeting-intent");
+const { detectDocumentQaIntent } = require("./document-intent");
 const { extractAnalysisSlots, mergeSlotsIntoIntentParams } = require("./intent-slots");
 const { detectCityFromText } = require("./drill-knowledge-graph");
 
@@ -52,9 +53,10 @@ const KEYWORD_RULES = [
 ];
 
 const INTENT_JSON_INSTRUCTION = [
-  "你是 BrandPilot AI 的意图识别路由。分析用户输入，将其分类到以下 6 个工作流之一：",
+  "你是 BrandPilot AI 的意图识别路由。分析用户输入，将其分类到以下 7 个工作流之一：",
   "",
   "0. greeting（寒暄/身份咨询）：纯打招呼（你好、在吗）、问你是谁/能做什么/有什么能力、谢谢/再见。不包含任何经营数据或分析请求。",
+  "0b. document_qa（文档解析）：用户已上传文档，问文档主要内容/总结/解读，且不涉及 GMV/核销等经营查数。",
   "1. annual_proposal（品牌年度提案）：用户要完整提案/报告/年度复盘/方案规划。",
   "2. funnel_diagnosis（链路诊断）：用户问搜索到核销的转化漏斗、损耗点、断点。",
   "3. competitor_benchmark（竞对对比）：用户要对比平台（美团 vs 抖音）或品牌竞品（海底捞 vs 呷哺呷哺）。",
@@ -63,16 +65,17 @@ const INTENT_JSON_INSTRUCTION = [
   "",
   "消歧规则：",
   "- 只有寒暄或身份问题、没有数据/分析诉求时，必须选 greeting。",
+  "- 用户问上传文档的内容/摘要，且没有经营查数诉求时，选 document_qa。",
   "- 「你好，6月GMV多少」含数据问题 → data_query，不是 greeting。",
   "- 同时出现「环比/同比」和「下降/转化」时，优先 period_compare（除非明确问漏斗/链路）。",
   "- 出现美团/抖音/呷哺/竞对时，优先 competitor_benchmark。",
   "- 出现提案/年度/报告时，优先 annual_proposal。",
   "",
-  "涉及数据分析的工作流进入后都会先走 Data Query Engine 查数，再生成结论。greeting 不查数。",
+  "涉及数据分析的工作流进入后都会先走 Data Query Engine 查数，再生成结论。greeting 与 document_qa 不查数。",
   "当前只支持海底捞（brandId=haidilao）。从用户消息中提取 period、city、metric、competitors 等参数。",
   "",
   "只输出一个 JSON 对象，不要 Markdown，不要解释：",
-  '{"workflow":"greeting|annual_proposal|funnel_diagnosis|competitor_benchmark|period_compare|data_query","brandId":"haidilao","params":{},"confidence":0.0,"reasoning":"..."}'
+  '{"workflow":"greeting|document_qa|annual_proposal|funnel_diagnosis|competitor_benchmark|period_compare|data_query","brandId":"haidilao","params":{},"confidence":0.0,"reasoning":"..."}'
 ].join("\n");
 
 function isStrictDebug() {
@@ -367,7 +370,7 @@ function buildConfidenceMeta(intent) {
 }
 
 function enrichIntentWithAnalysisSlots(intent, message) {
-  if (!intent || intent.workflow === "greeting") return intent;
+  if (!intent || intent.workflow === "greeting" || intent.workflow === "document_qa") return intent;
 
   const slots = extractAnalysisSlots(message, {
     workflow: intent.workflow,
@@ -406,41 +409,59 @@ function buildGreetingResult(detection) {
   };
 }
 
+function buildDocumentQaResult(detection) {
+  return {
+    workflow: "document_qa",
+    brandId: "haidilao",
+    params: {},
+    confidence: detection.confidence,
+    reasoning: detection.reasoning || "识别为文档解析请求。"
+  };
+}
+
 /**
  * 意图识别主函数
  */
-async function recognizeIntent(message, modelConfig) {
-  const greetingDetection = detectGreetingIntent(message);
+async function recognizeIntent(message, modelConfig, options = {}) {
+  const attachments = options.attachments || [];
+  const routingMessage = String(message || "").trim();
+
+  const greetingDetection = detectGreetingIntent(routingMessage);
   if (greetingDetection) {
-    return finalizeIntent(buildGreetingResult(greetingDetection), "keyword_fast", message);
+    return finalizeIntent(buildGreetingResult(greetingDetection), "keyword_fast", routingMessage);
   }
 
-  const keywordResult = recognizeIntentWithKeywords(message);
+  const documentDetection = detectDocumentQaIntent(routingMessage, attachments);
+  if (documentDetection) {
+    return finalizeIntent(buildDocumentQaResult(documentDetection), "keyword_fast", routingMessage);
+  }
+
+  const keywordResult = recognizeIntentWithKeywords(routingMessage);
   const canFastPath =
     keywordResult.keywordMeta &&
     keywordResult.keywordMeta.eligibleFastPath &&
     keywordResult.confidence >= FAST_PATH_THRESHOLD;
 
   if (canFastPath) {
-    return finalizeIntent(keywordResult, "keyword_fast", message);
+    return finalizeIntent(keywordResult, "keyword_fast", routingMessage);
   }
 
   if (!modelConfig || !modelConfig.configured) {
     if (isStrictDebug()) {
       throw new Error("意图识别失败：模型未配置（MODEL_API_KEY 缺失）。INTENT_STRICT_DEBUG=true 已关闭关键词降级。");
     }
-    return finalizeIntent(keywordResult, "keyword_fallback", message);
+    return finalizeIntent(keywordResult, "keyword_fallback", routingMessage);
   }
 
   try {
-    const llmResult = await recognizeIntentWithLLM(message, modelConfig);
+    const llmResult = await recognizeIntentWithLLM(routingMessage, modelConfig);
     const enriched =
       llmResult.workflow === "competitor_benchmark"
-        ? { ...llmResult, params: enrichCompetitorParams(message, llmResult.params) }
+        ? { ...llmResult, params: enrichCompetitorParams(routingMessage, llmResult.params) }
         : llmResult;
     const validated = crossValidateIntent(enriched, keywordResult);
     const mode = validated.recognitionMode || "llm";
-    return finalizeIntent(validated, mode, message);
+    return finalizeIntent(validated, mode, routingMessage);
   } catch (error) {
     if (isStrictDebug()) {
       throw new Error("意图识别 LLM 调用失败：" + error.message);
@@ -451,7 +472,7 @@ async function recognizeIntent(message, modelConfig) {
         reasoning: "LLM 不可用，回退关键词匹配：" + keywordResult.reasoning
       },
       "keyword_fallback",
-      message
+      routingMessage
     );
   }
 }
@@ -470,6 +491,7 @@ function recognitionModeLabel(mode) {
 function workflowLabel(workflow) {
   const labels = {
     greeting: "寒暄招呼",
+    document_qa: "文档解析",
     annual_proposal: "品牌年度提案",
     funnel_diagnosis: "链路诊断",
     competitor_benchmark: "竞对对比",

@@ -11,6 +11,13 @@ scenarios:
     operators: []
     description: 纯寒暄/身份咨询，不触发查数
 
+  document_qa:
+    label: 文档解析
+    intent_signals: [文档, 文件, 主要内容, 总结, 摘要, 上传, 附件]
+    query_data: false
+    operators: []
+    description: 结合用户上传文档回答，不查 Supabase 经营库
+
   data_query:
     label: 数据问答
     intent_signals: [多少, GMV, 核销率, ROI, 客单价, 曝光, 订单数]
