@@ -1065,17 +1065,62 @@ button, select, textarea {
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.55);
 }
 
-.message-restore-hint {
+.message-restore-badge {
+  display: inline-flex;
+  align-items: center;
   margin-top: 8px;
-  font-size: 11px;
-  color: var(--ink-3);
-  opacity: 0;
-  transition: opacity 0.15s ease;
+  padding: 5px 12px;
+  border: 1px solid #93c5fd;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
 }
 
-.message-restorable:hover .message-restore-hint,
-.message-restorable.is-active-result .message-restore-hint {
-  opacity: 1;
+.message.user .message-restore-badge {
+  align-self: flex-end;
+}
+
+.message-restore-badge:hover {
+  background: #dbeafe;
+  border-color: #3b82f6;
+}
+
+.message-restorable.is-active-result .message-restore-badge {
+  background: #dbeafe;
+  border-color: #2563eb;
+  color: #1e3a8a;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.18);
+}
+
+.welcome-section-label {
+  margin: 14px 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.welcome-features,
+.welcome-tips {
+  margin: 0 0 10px;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.welcome-features li,
+.welcome-tips li {
+  margin: 4px 0;
+}
+
+.chat-hint {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--ink-2);
 }
 
 .message.error .message-content {

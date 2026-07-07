@@ -477,6 +477,37 @@
     });
   }
 
+  function buildWelcomeMessageInnerHtml() {
+    return (
+      "<p>你好！我是 <strong>" +
+      escapeHtml(assistantName()) +
+      "</strong>，你的专属品牌经营顾问。<strong>不限于下方示例</strong>——只要是品牌经营相关的问题，都可以直接问我。</p>" +
+      '<p class="welcome-section-label">我能帮你做这些事</p>' +
+      '<ul class="welcome-features">' +
+      "<li><strong>数据问答</strong> — 用大白话查 GMV、核销率、客单价等指标</li>" +
+      "<li><strong>同环比分析</strong> — 对比不同月份/季度的涨跌与变化</li>" +
+      "<li><strong>链路诊断</strong> — 搜索→浏览→下单→核销，定位转化损耗环节</li>" +
+      "<li><strong>竞对对比</strong> — 美团 vs 抖音、海底捞 vs 竞品品牌</li>" +
+      "<li><strong>经营提案</strong> — 自动生成带图表的结构化复盘/规划报告</li>" +
+      "<li><strong>多轮追问</strong> — 在同一对话里连续深挖，左侧自动保存历史</li>" +
+      "</ul>" +
+      '<p class="welcome-section-label">使用小贴士</p>' +
+      '<ul class="welcome-tips">' +
+      "<li>尽量写清 <strong>品牌</strong> 和 <strong>统计周期</strong>（如「海底捞 2026年6月」）</li>" +
+      "<li>右侧会展示结构化报告与 Chart.js 图表，支持 HTML / PDF / Word 导出</li>" +
+      "<li>登录后对话会保存到左侧「历史对话」；同一会话里问过多个问题后，点击任意一轮对话旁的 <strong>↗ 恢复右侧报告</strong> 即可切换查看该次结果</li>" +
+      "</ul>" +
+      '<p class="chat-hint">也可以从下面示例快速体验：</p>' +
+      '<div class="example-prompts">' +
+      '<button class="example-btn" data-prompt="海底捞2026年6月从搜索到核销的转化链路哪里损耗最大？">🔍 6月搜索流量链路诊断</button>' +
+      '<button class="example-btn" data-prompt="海底捞2026年6月在美团和抖音的表现对比一下">📊 6月竞对平台对比</button>' +
+      '<button class="example-btn" data-prompt="海底捞和呷哺呷哺2026年6月经营表现对比一下">🏷️ 品牌竞品对比</button>' +
+      '<button class="example-btn" data-prompt="海底捞2026年6月的GMV和核销率是多少？">📈 6月数据查询</button>' +
+      '<button class="example-btn" data-prompt="帮海底捞做一份2026年上半年的经营分析">📋 2026上半年经营分析</button>' +
+      "</div>"
+    );
+  }
+
   function resetChatToWelcome(showWelcome) {
     if (!chatMessages) return;
     if (showWelcome === false) {
@@ -487,15 +518,9 @@
       '<div class="message assistant">' +
       createAssistantAvatar().outerHTML +
       '<div class="message-body">' +
-      '<div class="message-content"><p>你好！我是 <strong>' + escapeHtml(assistantName()) + '</strong>，你的专属品牌经营顾问。登录后对话会自动保存到左侧「历史对话」。</p>' +
-      '<p class="chat-hint">先输入问题并发送；右侧会展示<strong>分析报告</strong>，支持 HTML / PDF 导出。</p>' +
-      '<div class="example-prompts">' +
-      '<button class="example-btn" data-prompt="海底捞2026年6月从搜索到核销的转化链路哪里损耗最大？">🔍 6月搜索流量链路诊断</button>' +
-      '<button class="example-btn" data-prompt="海底捞2026年6月在美团和抖音的表现对比一下">📊 6月竞对平台对比</button>' +
-      '<button class="example-btn" data-prompt="海底捞和呷哺呷哺2026年6月经营表现对比一下">🏷️ 品牌竞品对比</button>' +
-      '<button class="example-btn" data-prompt="海底捞2026年6月的GMV和核销率是多少？">📈 6月数据查询</button>' +
-      '<button class="example-btn" data-prompt="帮海底捞做一份2026年上半年的经营分析">📋 2026上半年经营分析</button>' +
-      "</div></div></div></div>";
+      '<div class="message-content">' +
+      buildWelcomeMessageInnerHtml() +
+      "</div></div></div>";
     bindExampleButtons();
   }
 
@@ -584,6 +609,24 @@
     revealResultExperience(messageResponseSnapshots[index]);
   }
 
+  function appendRestoreBadge(messageEl) {
+    if (!messageEl) return;
+    var body = messageEl.querySelector(".message-body");
+    if (!body || body.querySelector(".message-restore-badge")) return;
+
+    var badge = document.createElement("button");
+    badge.type = "button";
+    badge.className = "message-restore-badge";
+    badge.textContent = "↗ 恢复右侧报告";
+    badge.setAttribute("aria-label", "在右侧恢复此轮分析报告");
+    badge.addEventListener("click", function (event) {
+      event.stopPropagation();
+      var index = parseInt(messageEl.getAttribute("data-snapshot-index"), 10);
+      if (!isNaN(index)) restoreResponseSnapshot(index);
+    });
+    body.appendChild(badge);
+  }
+
   function registerRestorableExchange(assistantEl, data, options) {
     options = options || {};
     var snapshot = buildResponseSnapshot(data);
@@ -594,12 +637,14 @@
 
     assistantEl.classList.add("message-restorable");
     assistantEl.setAttribute("data-snapshot-index", String(index));
-    assistantEl.setAttribute("title", "点击查看右侧分析结果");
+    assistantEl.setAttribute("title", "点击此轮对话，在右侧恢复分析报告");
+    appendRestoreBadge(assistantEl);
 
     if (pendingUserMessageEl) {
       pendingUserMessageEl.classList.add("message-restorable");
       pendingUserMessageEl.setAttribute("data-snapshot-index", String(index));
-      pendingUserMessageEl.setAttribute("title", "点击查看右侧分析结果");
+      pendingUserMessageEl.setAttribute("title", "点击此轮对话，在右侧恢复分析报告");
+      appendRestoreBadge(pendingUserMessageEl);
       pendingUserMessageEl = null;
     }
 
@@ -615,13 +660,13 @@
     if (!chatMessages) return;
     chatMessages.addEventListener("click", function (event) {
       if (isProcessing) return;
-      if (event.target.closest("a, button, .example-btn, .agent-trace")) return;
+      if (event.target.closest("a, button, .example-btn, .agent-trace, .message-restore-badge")) return;
 
       var messageEl = event.target.closest(".message-restorable");
       if (!messageEl || !chatMessages.contains(messageEl)) return;
 
       var index = parseInt(messageEl.getAttribute("data-snapshot-index"), 10);
-      if (isNaN(index) || index === activeSnapshotIndex) return;
+      if (isNaN(index)) return;
 
       restoreResponseSnapshot(index);
     });
@@ -1509,13 +1554,6 @@
       (persist.persisted ? "分析已保存" : "分析暂存本地") +
       "</span>";
     body.appendChild(capability);
-
-    if (isRestorableResponse(data)) {
-      var hint = document.createElement("div");
-      hint.className = "message-restore-hint";
-      hint.textContent = "点击查看右侧完整报告";
-      body.appendChild(hint);
-    }
 
     div.appendChild(avatar);
     div.appendChild(body);
