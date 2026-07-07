@@ -87,6 +87,9 @@
   var currentSessionId = null;
   var SESSION_STORAGE_KEY = "bp_current_session_id";
   var AR_SCENE_STORAGE_KEY = "brandpilot_ar_scene";
+  var messageResponseSnapshots = [];
+  var activeSnapshotIndex = -1;
+  var pendingUserMessageEl = null;
 
   function assistant() {
     return window.BrandPilotAssistant || null;
@@ -288,6 +291,7 @@
     bindCitationNavigation(vizProposal);
     bindCitationNavigation(vizDossier);
     bindCitationNavigation(vizAnswer);
+    bindMessageRestoreClicks();
     chatInput.addEventListener("input", autoResizeInput);
 
     if (window.BrandPilotAuth) {
@@ -422,6 +426,7 @@
       if (!skipReset) {
         conversationHistory = [];
         lastResponse = null;
+        resetMessageRestoreState();
         resetChatToWelcome();
         destroyCharts();
         vizEmpty.style.display = "flex";
@@ -445,6 +450,7 @@
     persistCurrentSessionId(sessionId);
     conversationHistory = [];
     lastResponse = null;
+    resetMessageRestoreState();
     resetChatToWelcome(false);
     return window.BrandPilotAuth.loadMessages(sessionId).then(function (data) {
       var messages = data.messages || [];
@@ -454,36 +460,15 @@
           conversationHistory.push({ role: "user", content: msg.content });
         } else if (msg.role === "assistant") {
           if (msg.metadata && msg.metadata.workflow) {
-            addAgentMessage({
-              workflow: msg.metadata.workflow,
-              workflowLabel: msg.metadata.workflowLabel,
-              intent: msg.metadata.intent,
-              tokenUsage: msg.metadata.tokenUsage,
-              agentTrace: [],
-              answer: msg.content,
-              proposal: msg.metadata.proposal,
-              dataSpec: msg.metadata.dataSpec,
-              dataMode: "supabase",
-              persistence: { persisted: true }
-            }, 0);
-            lastResponse = {
-              answer: msg.content,
-              proposal: msg.metadata.proposal,
-              charts: msg.metadata.charts,
-              dataSpec: msg.metadata.dataSpec,
-              workflow: msg.metadata.workflow,
-              workflowLabel: msg.metadata.workflowLabel,
-              capabilities: msg.metadata.capabilities
-            };
+            addAgentMessage(buildAgentMessageFromStored(msg), 0, { skipRestoreHighlight: true });
           } else {
             addMessage("assistant", msg.content);
           }
           conversationHistory.push({ role: "assistant", content: msg.content });
         }
       });
-      if (lastResponse) {
-        setResultPanelsEnabled(true);
-        renderVisualization(lastResponse);
+      if (messageResponseSnapshots.length) {
+        restoreResponseSnapshot(messageResponseSnapshots.length - 1);
       } else {
         setResultPanelsEnabled(false);
       }
@@ -532,6 +517,114 @@
     if (appContainer) {
       appContainer.classList.toggle("app-container--chat-only", !resultPanelsEnabled);
     }
+  }
+
+  function resetMessageRestoreState() {
+    messageResponseSnapshots = [];
+    activeSnapshotIndex = -1;
+    pendingUserMessageEl = null;
+  }
+
+  function buildResponseSnapshot(data) {
+    if (!data) return null;
+    return {
+      answer: data.answer || "",
+      proposal: data.proposal || null,
+      charts: data.charts ? JSON.parse(JSON.stringify(data.charts)) : [],
+      dataSpec: data.dataSpec || null,
+      references: data.references || (data.proposal && data.proposal.references) || [],
+      dossier: data.dossier || null,
+      workflow: data.workflow || "",
+      workflowLabel: data.workflowLabel || "",
+      scene: data.scene || null,
+      capabilities: data.capabilities || null
+    };
+  }
+
+  function buildAgentMessageFromStored(msg) {
+    var meta = msg.metadata || {};
+    return {
+      workflow: meta.workflow,
+      workflowLabel: meta.workflowLabel,
+      intent: meta.intent,
+      tokenUsage: meta.tokenUsage,
+      agentTrace: [],
+      answer: msg.content,
+      proposal: meta.proposal,
+      charts: meta.charts,
+      references: meta.references,
+      dossier: meta.dossier,
+      dataSpec: meta.dataSpec,
+      capabilities: meta.capabilities,
+      dataMode: "supabase",
+      persistence: { persisted: true }
+    };
+  }
+
+  function isRestorableResponse(data) {
+    if (!data || data.workflow === "greeting") return false;
+    return Boolean(data.proposal || data.answer || (data.charts && data.charts.length));
+  }
+
+  function highlightActiveSnapshot(index) {
+    if (!chatMessages) return;
+    chatMessages.querySelectorAll(".message-restorable.is-active-result").forEach(function (node) {
+      node.classList.remove("is-active-result");
+    });
+    if (index < 0) return;
+    chatMessages.querySelectorAll('.message-restorable[data-snapshot-index="' + index + '"]').forEach(function (node) {
+      node.classList.add("is-active-result");
+    });
+  }
+
+  function restoreResponseSnapshot(index) {
+    if (index < 0 || index >= messageResponseSnapshots.length) return;
+    activeSnapshotIndex = index;
+    highlightActiveSnapshot(index);
+    revealResultExperience(messageResponseSnapshots[index]);
+  }
+
+  function registerRestorableExchange(assistantEl, data, options) {
+    options = options || {};
+    var snapshot = buildResponseSnapshot(data);
+    if (!snapshot) return -1;
+
+    var index = messageResponseSnapshots.length;
+    messageResponseSnapshots.push(snapshot);
+
+    assistantEl.classList.add("message-restorable");
+    assistantEl.setAttribute("data-snapshot-index", String(index));
+    assistantEl.setAttribute("title", "点击查看右侧分析结果");
+
+    if (pendingUserMessageEl) {
+      pendingUserMessageEl.classList.add("message-restorable");
+      pendingUserMessageEl.setAttribute("data-snapshot-index", String(index));
+      pendingUserMessageEl.setAttribute("title", "点击查看右侧分析结果");
+      pendingUserMessageEl = null;
+    }
+
+    if (!options.skipRestoreHighlight) {
+      activeSnapshotIndex = index;
+      highlightActiveSnapshot(index);
+    }
+
+    return index;
+  }
+
+  function bindMessageRestoreClicks() {
+    if (!chatMessages) return;
+    chatMessages.addEventListener("click", function (event) {
+      if (isProcessing) return;
+      if (event.target.closest("a, button, .example-btn, .agent-trace")) return;
+
+      var messageEl = event.target.closest(".message-restorable");
+      if (!messageEl || !chatMessages.contains(messageEl)) return;
+
+      var index = parseInt(messageEl.getAttribute("data-snapshot-index"), 10);
+      if (isNaN(index) || index === activeSnapshotIndex) return;
+
+      restoreResponseSnapshot(index);
+    });
   }
 
   function revealResultExperience(data) {
@@ -1290,6 +1383,7 @@
     div.appendChild(avatar);
     div.appendChild(body);
     chatMessages.appendChild(div);
+    pendingUserMessageEl = div;
     scrollToBottom();
   }
 
@@ -1298,6 +1392,8 @@
       addUserMessage(text, []);
       return;
     }
+
+    pendingUserMessageEl = null;
 
     var div = document.createElement("div");
     div.className = "message " + role;
@@ -1320,7 +1416,8 @@
     scrollToBottom();
   }
 
-  function addAgentMessage(data, latencyMs) {
+  function addAgentMessage(data, latencyMs, options) {
+    options = options || {};
     var div = document.createElement("div");
     div.className = "message assistant";
 
@@ -1413,13 +1510,28 @@
       "</span>";
     body.appendChild(capability);
 
+    if (isRestorableResponse(data)) {
+      var hint = document.createElement("div");
+      hint.className = "message-restore-hint";
+      hint.textContent = "点击查看右侧完整报告";
+      body.appendChild(hint);
+    }
+
     div.appendChild(avatar);
     div.appendChild(body);
     chatMessages.appendChild(div);
+
+    if (isRestorableResponse(data)) {
+      registerRestorableExchange(div, data, options);
+    } else {
+      pendingUserMessageEl = null;
+    }
+
     scrollToBottom();
   }
 
   function addErrorMessage(errorText) {
+    pendingUserMessageEl = null;
     var div = document.createElement("div");
     div.className = "message assistant error";
 

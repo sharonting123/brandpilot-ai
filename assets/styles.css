@@ -1045,6 +1045,39 @@ button, select, textarea {
   color: var(--on-primary);
 }
 
+.message-restorable {
+  cursor: pointer;
+}
+
+.message-restorable .message-content {
+  transition: box-shadow 0.15s ease;
+}
+
+.message-restorable:hover .message-content {
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.28);
+}
+
+.message.user.message-restorable.is-active-result .message-content {
+  box-shadow: 0 0 0 2px rgba(255, 209, 0, 0.95), 0 0 0 4px rgba(59, 130, 246, 0.35);
+}
+
+.message.assistant.message-restorable.is-active-result .message-content {
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.55);
+}
+
+.message-restore-hint {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--ink-3);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.message-restorable:hover .message-restore-hint,
+.message-restorable.is-active-result .message-restore-hint {
+  opacity: 1;
+}
+
 .message.error .message-content {
   background: var(--red-soft);
   color: var(--red);
