@@ -1521,6 +1521,10 @@ button, select, textarea {
   position: relative;
 }
 
+body.doc-upload-disabled .doc-upload-ui {
+  display: none !important;
+}
+
 .chat-attachments {
   display: flex;
   flex-wrap: wrap;

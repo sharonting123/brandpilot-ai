@@ -8,7 +8,7 @@
   <meta http-equiv="Expires" content="0" />
   <meta name="description" content="BrandPilot AI: 连锁餐饮品牌经营分析 Agent 编排系统，含 NL2SQL / RAG" />
   <title>BrandPilot AI — 悦悦 · 品牌经营顾问</title>
-  <link rel="stylesheet" href="assets/styles.css?v=upload-v5" />
+  <link rel="stylesheet" href="assets/styles.css?v=upload-v6-off" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
 </head>
@@ -19,7 +19,7 @@
         <span class="brand-icon">BP</span>
         <div>
           <h1 class="chat-title">BrandPilot AI</h1>
-          <p class="chat-subtitle">经营分析 · 文档解析</p>
+          <p class="chat-subtitle">经营分析</p>
         </div>
       </div>
       <div class="topbar-status">
@@ -73,7 +73,6 @@
                 <ul>
                   <li><strong>智能查数</strong> — 用大白话问经营数据</li>
                   <li><strong>经营手册</strong> — 结合品牌框架给建议</li>
-                  <li><strong>文档解析</strong> — 上传 txt / md / html / docx / pdf 等，结合文档分析</li>
                 </ul>
                 <p>支持<strong>多轮追问</strong>与<strong>HTML 报告导出</strong>。演示数据均标注<strong>统计周期</strong>与<strong>数据口径</strong>，可从示例开始：</p>
                 <div class="example-prompts">
@@ -89,10 +88,10 @@
         </div>
 
         <div class="chat-composer">
-          <p class="doc-upload-policy-hint" id="docUploadPolicyHint">
+          <p class="doc-upload-policy-hint doc-upload-ui" id="docUploadPolicyHint" hidden>
             💡 目前仅支持上传<strong>策略性文档</strong>（方案、报告、制度说明等）；经营<strong>数字类</strong>问题请直接提问，系统从 Supabase 底表查询。
           </p>
-          <div class="doc-upload-panel" id="docUploadPanel" hidden aria-live="polite" aria-label="文档上传进度">
+          <div class="doc-upload-panel doc-upload-ui" id="docUploadPanel" hidden aria-live="polite" aria-label="文档上传进度">
             <div class="doc-upload-panel-head">
               <span class="doc-upload-panel-title" id="docUploadPanelTitle">文档上传</span>
               <span class="doc-upload-panel-summary" id="docUploadPanelSummary"></span>
@@ -105,12 +104,13 @@
             </ol>
             <ul class="doc-upload-file-list" id="docUploadFileList"></ul>
           </div>
-          <div class="chat-attachments" id="chatAttachments" hidden aria-label="已上传文档"></div>
+          <div class="chat-attachments doc-upload-ui" id="chatAttachments" hidden aria-label="已上传文档"></div>
           <div class="chat-input-area">
             <button
               type="button"
               id="documentUploadButton"
-              class="doc-upload-button"
+              class="doc-upload-button doc-upload-ui"
+              hidden
               title="上传策略性文档或图片"
               aria-label="上传策略性文档或图片"
             >
@@ -120,7 +120,8 @@
             <input
               type="file"
               id="documentUploadInput"
-              class="file-input-offscreen"
+              class="file-input-offscreen doc-upload-ui"
+              hidden
               multiple
               accept=".txt,.md,.markdown,.html,.htm,.csv,.json,.docx,.pdf,.jpg,.jpeg,.png,.webp,.gif,.bmp"
               tabindex="-1"
@@ -129,7 +130,7 @@
           <textarea
             id="chatInput"
             class="chat-input"
-            placeholder="输入你的问题，并尽量写明统计周期；也可先点 📎 上传文档再提问"
+            placeholder="输入你的问题，并尽量写明统计周期（如 2026年6月）"
             rows="2"
           ></textarea>
           <button id="sendButton" class="send-button" title="发送 (Enter)">
@@ -247,7 +248,6 @@
   <script src="assets/assistant.js" defer></script>
   <script src="assets/markdown.js?v=citation-c" defer></script>
   <script src="assets/auth.js?v=username-fix" defer></script>
-  <script src="assets/document-upload.js?v=upload-v5" defer></script>
-  <script src="assets/app.js?v=upload-v5" defer></script>
+  <script src="assets/app.js?v=upload-v6-off" defer></script>
 </body>
 </html>

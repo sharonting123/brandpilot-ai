@@ -60,7 +60,10 @@
   var newSessionButton = document.getElementById("newSessionButton");
   var appContainer = document.getElementById("appContainer");
   var defaultChatPlaceholder =
-    "输入你的问题，并尽量写明统计周期；也可先点 📎 上传文档再提问";
+    "输入你的问题，并尽量写明统计周期（如 2026年6月）";
+
+  /** 文档上传/解析 UI 暂关（后端能力保留，恢复时改 true 并重新加载 document-upload.js） */
+  var DOCUMENT_UPLOAD_UI_ENABLED = false;
 
   // ===== 状态 =====
   var isProcessing = false;
@@ -179,8 +182,23 @@
     return html;
   }
 
+  function hideDocumentUploadUi() {
+    document.body.classList.add("doc-upload-disabled");
+    [
+      "docUploadPolicyHint",
+      "docUploadPanel",
+      "chatAttachments",
+      "documentUploadButton",
+      "documentUploadInput"
+    ].forEach(function (id) {
+      var node = document.getElementById(id);
+      if (node) node.hidden = true;
+    });
+  }
+
   // ===== 初始化 =====
   function init() {
+    if (!DOCUMENT_UPLOAD_UI_ENABLED) hideDocumentUploadUi();
     checkConnection();
     bindAuth();
     sendButton.addEventListener("click", handleSend);
@@ -192,8 +210,10 @@
     if (reportPreviewBackdrop) reportPreviewBackdrop.addEventListener("click", closeReportPreview);
     if (reportPreviewSave) reportPreviewSave.addEventListener("click", handleSaveSidecarReport);
     bindReportExportMenu();
-    bindDocumentUpload();
-    refreshUploadControls();
+    if (DOCUMENT_UPLOAD_UI_ENABLED) {
+      bindDocumentUpload();
+      refreshUploadControls();
+    }
     bindExampleButtons();
     bindCitationNavigation(vizProposal);
     bindCitationNavigation(vizDossier);
@@ -808,7 +828,7 @@
   }
 
   function bindDocumentUpload() {
-    if (!documentUploadButton || !documentUploadInput) return;
+    if (!DOCUMENT_UPLOAD_UI_ENABLED || !documentUploadButton || !documentUploadInput) return;
 
     documentUploadButton.addEventListener("click", function () {
       if (docUploadBusy) {
