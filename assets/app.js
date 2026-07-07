@@ -232,11 +232,7 @@
     var parentId = step.parentId || (stepId === "local_start" ? null : "local_start");
     if (parentId && progressStepsMap[parentId]) {
       attachProgressChild(parentId, stepId);
-      if (
-        progressStepsMap[parentId].status === "running" &&
-        parentId !== "local_start" &&
-        stepId !== parentId
-      ) {
+      if (progressStepsMap[parentId].status === "running" && stepId !== parentId) {
         progressStepsMap[parentId].status = "done";
       }
     } else if (stepId !== "local_start") {

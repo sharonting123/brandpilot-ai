@@ -234,6 +234,17 @@ async function runChatRequest(ctx) {
 
       if (step.phase === "start") {
         finishOpenWorkflowSub();
+        emitFriendlyStep(emit, {
+          id: workflowId,
+          status: "done",
+          parentId: "local_start",
+          level: 1,
+          group: "workflow",
+          workflow: intent.workflow,
+          name: workflowLabel(intent.workflow),
+          tool: "workflow",
+          summary: step.summary || workflowStartSummary(intent.workflow)
+        });
         workflowSubSeq += 1;
         openWorkflowSubId = workflowId + "_sub_" + workflowSubSeq;
         emitFriendlyStart(emit, openWorkflowSubId, step.name, step.summary, {
