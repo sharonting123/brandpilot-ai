@@ -877,6 +877,14 @@ button, select, textarea {
   gap: 4px;
 }
 
+.progress-steps--nested {
+  margin-top: 4px;
+  margin-left: 14px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+  gap: 3px;
+}
+
 .progress-step {
   display: flex;
   align-items: flex-start;
@@ -884,6 +892,17 @@ button, select, textarea {
   font-size: 11px;
   line-height: 1.45;
   color: var(--ink-2);
+  flex-wrap: wrap;
+}
+
+.progress-step > .progress-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.progress-step > .progress-steps--nested {
+  flex: 1 1 100%;
+  width: 100%;
 }
 
 .progress-step.active {
@@ -893,6 +912,46 @@ button, select, textarea {
 
 .progress-step.done {
   color: var(--ink-2);
+}
+
+.progress-step.status-done.done .progress-dot {
+  background: #3f9f50;
+}
+
+.progress-step.status-warn .progress-dot {
+  background: var(--amber);
+}
+
+.progress-step.status-error .progress-dot {
+  background: #dc2626;
+}
+
+.step-status-label {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.step-status-label--warn {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.step-status-label--error {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.trace-route-reason {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--purple);
+  opacity: 0.9;
 }
 
 .progress-step .progress-text strong {
@@ -935,7 +994,7 @@ button, select, textarea {
   width: 6px;
   height: 6px;
   margin-top: 5px;
-  background: var(--mt-yellow-hover);
+  background: #3f9f50;
   border: none;
   box-shadow: none;
   animation: none;
@@ -1159,6 +1218,44 @@ button, select, textarea {
   border-radius: var(--radius-sm);
   background: var(--purple-soft);
   font-size: 12px;
+}
+
+.trace-tree {
+  display: grid;
+  gap: 10px;
+}
+
+.trace-group {
+  padding: 6px 0;
+}
+
+.trace-group-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--purple);
+  margin-bottom: 4px;
+}
+
+.trace-group.status-warn .trace-group-title {
+  color: var(--amber);
+}
+
+.trace-group.status-error .trace-group-title {
+  color: #dc2626;
+}
+
+.quality-notice {
+  margin-bottom: 8px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--amber-soft);
+  color: var(--amber);
+  font-size: 12px;
+}
+
+.quality-notice.is-error {
+  background: #fee2e2;
+  color: #dc2626;
 }
 
 .trace-item {

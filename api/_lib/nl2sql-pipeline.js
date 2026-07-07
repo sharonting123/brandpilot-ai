@@ -45,7 +45,8 @@ async function prefetchNl2Sql(params = {}) {
         name: TIME_ROUTE_STEP_NAMES[step.stage] || step.label,
         tool: step.stage,
         summary: step.summary,
-        durationMs: 0
+        durationMs: 0,
+        group: "query"
       });
     });
   }
@@ -60,7 +61,8 @@ async function prefetchNl2Sql(params = {}) {
       nl.generationMode === "agent"
         ? "Agent 生成 SQL：" + (nl.agentReasoning || nl.explanation || "完成")
         : nl.explanation || nl.message || "模板查数完成",
-    durationMs: Date.now() - nlStart
+    durationMs: Date.now() - nlStart,
+    group: "query"
   });
 
   if (nl.queryPlanRef) {
@@ -72,7 +74,8 @@ async function prefetchNl2Sql(params = {}) {
         (nl.queryPlan && nl.queryPlan.estimation
           ? ` · 预估 ${nl.queryPlan.estimation.expectedRowCount} 行`
           : ""),
-      durationMs: 0
+      durationMs: 0,
+      group: "query"
     });
   }
 

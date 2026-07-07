@@ -7,7 +7,7 @@
 const { TOOL_REGISTRY } = require("../agent-tools");
 const { buildSharedTools } = require("../ai-tools-factory");
 const { shouldShowGtvTrendChart } = require("../chart-policy");
-const { tracePush, reportProgress, buildStepStart } = require("../workflow-progress");
+const { tracePush, reportProgress, buildStepStart, buildStepUpdate } = require("../workflow-progress");
 const { buildChatMessages, ANSWER_SCOPE_RULE } = require("../workflow-utils");
 const { getAgentMaxTokens } = require("../token-budget");
 const { emptyTokenUsage, mergeTokenUsage, extractUsageFromGenerateResult } = require("../token-usage");
@@ -20,6 +20,7 @@ const {
   buildProposalStructuredPrompt
 } = require("../proposal-schema");
 const { buildReviewPlanPeriods, buildProposalTitle } = require("../proposal-title");
+const { finalizeProposalMetrics } = require("../proposal-metrics");
 const {
   prefetchNl2Sql,
   buildNl2SqlContextBlock,
@@ -85,15 +86,22 @@ async function buildToolDefinitions() {
 /**
  * 用 generateObject 产出结构化提案（在 agent 推理完成后）
  */
-async function generateStructuredProposal(agentAnswer, _modelConfig, brandName, params) {
+async function generateStructuredProposal(agentAnswer, _modelConfig, brandName, params, context = {}) {
   const { z } = await import("zod");
   const structuredConfig = getStructuredModelConfig();
   if (!structuredConfig.configured) {
     throw new Error("结构化模型未配置（需 LONGCAT_API_KEY 或 MODEL_STRUCTURED_API_KEY）");
   }
 
-  const ProposalSchema = buildProposalSchema(z, brandName, params, agentAnswer);
-  const system = buildProposalStructuredPrompt(brandName, params);
+  const references = getCitationRegistry();
+  const schemaContext = {
+    nlPayload: context.nlPayload,
+    references,
+    params,
+    message: params._message || ""
+  };
+  const ProposalSchema = buildProposalSchema(z, brandName, params, agentAnswer, schemaContext);
+  const system = buildProposalStructuredPrompt(brandName, params, schemaContext);
 
   const result = await generateStructuredObject({
     schema: ProposalSchema,
@@ -154,6 +162,8 @@ async function execute(params) {
   const proposalParams = { ...intentParams, _message: message };
   const systemPrompt = getSystemPrompt(brandName, proposalParams) + buildNl2SqlContextBlock(nl);
 
+  reportProgress(onProgress, buildStepStart("推理Agent", "正在整合查数结果与知识，撰写分析结论…"));
+
   try {
     const result = await generateText({
       model,
@@ -166,12 +176,10 @@ async function execute(params) {
       onStepFinish: (event) => {
         const tools = (event.toolCalls || []).map((tc) => tc.toolName).filter(Boolean);
         if (!tools.length) return;
-        reportProgress(onProgress, {
-          name: "工具调用",
-          tool: tools.join(" → "),
-          summary: "完成 " + tools.join("、"),
-          durationMs: 0
-        });
+        reportProgress(
+          onProgress,
+          buildStepUpdate("推理Agent", "已完成 " + tools.join("、") + "，继续写结论…", tools.join(" → "))
+        );
       }
     });
 
@@ -192,7 +200,8 @@ async function execute(params) {
       name: "推理Agent",
       tool: toolCallsMade.map((t) => t.toolName).join(" → "),
       summary: "调用了 " + toolCallsMade.length + " 个工具完成推理",
-      durationMs: Date.now() - toolStart
+      durationMs: Date.now() - toolStart,
+      group: "analysis"
     });
   } catch (error) {
     // 调试态：LLM 失败不再降级到确定性分析，直接抛错暴露问题
@@ -204,12 +213,14 @@ async function execute(params) {
   if (modelConfig.configured) {
     try {
       const genStart = Date.now();
+      reportProgress(onProgress, buildStepStart("提案结构化Agent", "正在把分析整理成提案卡片…"));
       const promptText = String(agentAnswer || "");
       const structuredResult = await generateStructuredProposal(
         promptText,
         modelConfig,
         brandName,
-        proposalParams
+        proposalParams,
+        { nlPayload, references: getCitationRegistry() }
       );
       structuredProposal = structuredResult.object;
       tokenUsage = mergeTokenUsage(tokenUsage, structuredResult.tokenUsage);
@@ -229,16 +240,18 @@ async function execute(params) {
             : structuredResult.mode === "json_object"
               ? "LongCat json_object 模式提取结构化提案"
               : "成功提取结构化提案",
-        durationMs: Date.now() - genStart
+        durationMs: Date.now() - genStart,
+        group: "package"
       });
     } catch (error) {
       tracePush(agentTrace, onProgress, {
         name: "提案结构化Agent",
         tool: "fallback",
         summary: "结构化提取失败，使用兜底提案：" + error.message,
-        durationMs: 0
+        durationMs: 0,
+        group: "package"
       });
-      structuredProposal = buildFallbackProposal(brandName, proposalParams);
+      structuredProposal = buildFallbackProposal(brandName, proposalParams, nlPayload);
     }
   }
 
@@ -283,19 +296,20 @@ function buildFallbackAnswer(brandName, params, brandData, funnelData, monthlyDa
   ].join("\n");
 }
 
-function buildFallbackProposal(brandName, params = {}) {
+function buildFallbackProposal(brandName, params = {}, nlPayload = null) {
   const message = params._message || "";
   const periods = buildReviewPlanPeriods(params, message);
-  return {
+  const base = {
     title: buildProposalTitle(brandName, params, message),
     opportunityScore: 82,
-    summary: brandName + "半年度提案核心聚焦搜索到核销的经营链路：优化POI到套餐的承接效率，提升广告变现率，按城市ROI分层投放资源。",
-    metrics: [
-      { label: "H1 GTV", value: "约1.1亿", delta: "月环比增长" },
-      { label: "搜索曝光", value: "512万+", delta: "品牌心智" },
-      { label: "核销率", value: "85.3%", delta: "领先行业" },
-      { label: "综合变现率", value: "5.57%", delta: "广告渗透22.8%" }
-    ],
+    summary:
+      brandName +
+      " " +
+      periods.reviewLabel +
+      " 复盘显示搜索到核销链路仍有优化空间；面向 " +
+      periods.planLabel +
+      "，建议提升套餐承接效率与广告变现率。",
+    metrics: [],
     insights: [
       "GTV增长主因是活跃用户规模扩大（从18.5万增至25.6万），而非单纯降价。",
       "POI到套餐详情承接率是关键优化点，适合用门店页套餐组和聚餐场景权益提升。",
@@ -326,6 +340,11 @@ function buildFallbackProposal(brandName, params = {}) {
       { title: "下半年动作清单", body: "按四类行动拆解责任人与指标。" }
     ]
   };
+  return finalizeProposalMetrics(base, {
+    nlPayload,
+    references: getCitationRegistry(),
+    params
+  });
 }
 
 function buildFallbackCharts(brandName, includeGtvTrend) {

@@ -31,6 +31,7 @@ const {
   sanitizeTechTerms
 } = require("./friendly-steps");
 const { runQualityGates } = require("./quality-gates");
+const { inferStepStatus } = require("./step-status");
 const WORKFLOW_REGISTRY = {
   greeting: () => require("./workflows/greeting"),
   document_qa: () => require("./workflows/document_qa"),
@@ -56,31 +57,51 @@ function getDisplayReferences(brandId = "haidilao") {
 
 function emitFriendlyStep(emit, payload) {
   if (!emit) return;
+  const status =
+    payload.status === "running"
+      ? "running"
+      : inferStepStatus(payload);
   emit("step", {
     ...payload,
+    status,
     name: friendlyStepName(payload.name),
     tool: payload.tool ? friendlyTool(payload.tool) : undefined,
     summary: friendlyStepSummary(payload)
   });
 }
 
-function emitFriendlyStart(emit, id, name, summary) {
+function emitFriendlyStart(emit, id, name, summary, meta) {
   if (!emit) return;
+  const options = meta || {};
   emit("step_start", {
     id,
     name: friendlyStepName(name),
-    summary: friendlyStepSummary({ name, summary })
+    summary: friendlyStepSummary({ name, summary }),
+    parentId: options.parentId || null,
+    level: options.level != null ? options.level : options.parentId ? 2 : 1,
+    group: options.group || null,
+    workflow: options.workflow || null,
+    routeReason: options.routeReason || null
   });
+}
+
+function inferWorkflowStepGroup(name) {
+  const value = String(name || "");
+  if (/指标粒度|选表|Data Query|QueryPlan|SQL|NL2SQL|时间语义|目标粒度|统一查数/.test(value)) {
+    return "query";
+  }
+  if (/结构化|提案卡片/.test(value)) return "package";
+  return "analysis";
 }
 
 function createProgressEmitter(emit) {
   let counter = 0;
   return {
-    start(name, summary) {
+    start(name, summary, meta) {
       if (!emit) return null;
       counter += 1;
-      const id = "step_" + counter;
-      emitFriendlyStart(emit, id, name, summary || `正在${friendlyStepName(name)}…`);
+      const id = (meta && meta.id) || "step_" + counter;
+      emitFriendlyStart(emit, id, name, summary || `正在${friendlyStepName(name)}…`, meta || {});
       return id;
     },
     done(step) {
@@ -112,12 +133,19 @@ async function runChatRequest(ctx) {
   const progress = createProgressEmitter(emit);
   const effectiveMessage = composeMessageWithAttachments(message, attachments);
 
-  const intentId = progress.start("意图识别路由", "意图识别中…");
+  const intentId = progress.start("意图识别路由", "意图识别中…", {
+    parentId: "local_start",
+    level: 1,
+    group: "intent"
+  });
   const intentStart = Date.now();
   const intent = await recognizeIntent(message, modelConfig, { attachments });
   const intentTrace = {
     name: "意图识别路由",
     tool: recognitionModeLabel(intent.recognitionMode),
+    group: "intent",
+    workflow: intent.workflow,
+    routeReason: intent.reasoning,
     summary: sanitizeTechTerms(
       "识别为「" +
       workflowLabel(intent.workflow) +
@@ -130,12 +158,24 @@ async function runChatRequest(ctx) {
     durationMs: Date.now() - intentStart
   };
   if (emit) {
-    emitFriendlyStep(emit, { id: intentId, status: "done", ...intentTrace });
+    emitFriendlyStep(emit, {
+      id: intentId,
+      status: "done",
+      parentId: "local_start",
+      level: 1,
+      group: "intent",
+      workflow: intent.workflow,
+      routeReason: intent.reasoning,
+      ...intentTrace
+    });
     if (intent.analysisSlots && Array.isArray(intent.analysisSlots.steps)) {
       intent.analysisSlots.steps.forEach((step, index) => {
         emitFriendlyStep(emit, {
           id: intentId + "_slot_" + (index + 1),
           status: "done",
+          parentId: intentId,
+          level: 2,
+          group: "planning",
           name: step.label,
           tool: step.stage,
           summary: step.summary,
@@ -156,7 +196,13 @@ async function runChatRequest(ctx) {
   const workflowModule = workflowLoader();
   const workflowId = progress.start(
     workflowLabel(intent.workflow),
-    workflowStartSummary(intent.workflow)
+    workflowStartSummary(intent.workflow),
+    {
+      parentId: "local_start",
+      level: 1,
+      group: "workflow",
+      workflow: intent.workflow
+    }
   );
 
   let workflowSubSeq = 0;
@@ -166,7 +212,9 @@ async function runChatRequest(ctx) {
     if (!emit || !openWorkflowSubId) return;
     emitFriendlyStep(emit, {
       id: openWorkflowSubId,
-      status: "done",
+      status: inferStepStatus(step || {}),
+      parentId: workflowId,
+      level: 2,
       ...(step || {})
     });
     openWorkflowSubId = null;
@@ -188,22 +236,44 @@ async function runChatRequest(ctx) {
         finishOpenWorkflowSub();
         workflowSubSeq += 1;
         openWorkflowSubId = workflowId + "_sub_" + workflowSubSeq;
-        emitFriendlyStart(emit, openWorkflowSubId, step.name, step.summary);
+        emitFriendlyStart(emit, openWorkflowSubId, step.name, step.summary, {
+          parentId: workflowId,
+          level: 2,
+          group: step.group || "analysis"
+        });
+        return;
+      }
+
+      if (step.phase === "update") {
+        if (!openWorkflowSubId) return;
+        emitFriendlyStep(emit, {
+          id: openWorkflowSubId,
+          status: "running",
+          parentId: workflowId,
+          level: 2,
+          group: step.group || "analysis",
+          name: step.name,
+          tool: step.tool,
+          summary: step.summary
+        });
         return;
       }
 
       finishOpenWorkflowSub();
       workflowSubSeq += 1;
       const subId = workflowId + "_sub_" + workflowSubSeq;
-      emitFriendlyStart(
-        emit,
-        subId,
-        step.name,
-        step.summary || friendlyStepSummary(step)
-      );
+      const subGroup = step.group || inferWorkflowStepGroup(step.name);
+      emitFriendlyStart(emit, subId, step.name, step.summary || friendlyStepSummary(step), {
+        parentId: workflowId,
+        level: 2,
+        group: subGroup
+      });
       emitFriendlyStep(emit, {
         id: subId,
-        status: "done",
+        status: inferStepStatus(step),
+        parentId: workflowId,
+        level: 2,
+        group: subGroup,
         name: step.name,
         tool: step.tool,
         summary: step.summary,
@@ -218,6 +288,10 @@ async function runChatRequest(ctx) {
     emitFriendlyStep(emit, {
       id: workflowId,
       status: "done",
+      parentId: "local_start",
+      level: 1,
+      group: "workflow",
+      workflow: intent.workflow,
       name: workflowLabel(intent.workflow),
       tool: "workflow",
       summary: "工作流执行完成",
@@ -230,10 +304,29 @@ async function runChatRequest(ctx) {
   let dataSpec = null;
   let context = null;
   let drillMetrics = null;
-  let agentTrace = [intentTrace, ...(workflowResult.agentTrace || [])];
+  let agentTrace = [
+    { ...intentTrace, group: "intent", status: inferStepStatus(intentTrace) }
+  ];
+  if (intent.analysisSlots && Array.isArray(intent.analysisSlots.steps)) {
+    intent.analysisSlots.steps.forEach((step) => {
+      agentTrace.push({
+        name: step.label,
+        tool: step.stage,
+        summary: step.summary,
+        durationMs: 0,
+        group: "planning",
+        status: "done"
+      });
+    });
+  }
+  agentTrace.push(...(workflowResult.agentTrace || []));
 
   if (!isLightweightWorkflow(intent.workflow)) {
-    const contextId = progress.start("经营数据", "加载品牌经营数据…");
+    const contextId = progress.start("经营数据", "加载品牌经营数据…", {
+      parentId: "local_start",
+      level: 1,
+      group: "post"
+    });
     const contextStart = Date.now();
     context = await getContext(brandId);
     dataMode = context.dataMode || "empty";
@@ -263,7 +356,14 @@ async function runChatRequest(ctx) {
     };
     agentTrace.push(contextTrace);
     if (emit) {
-      emitFriendlyStep(emit, { id: contextId, status: "done", ...contextTrace });
+      emitFriendlyStep(emit, {
+        id: contextId,
+        status: inferStepStatus(contextTrace),
+        parentId: "local_start",
+        level: 1,
+        group: "post",
+        ...contextTrace
+      });
     }
   } else {
     warnings = workflowResult.warnings || [];
@@ -278,7 +378,11 @@ async function runChatRequest(ctx) {
   };
 
   if (!isLightweightWorkflow(intent.workflow)) {
-    const persistId = progress.start("事件持久化", "把这次分析记下来…");
+    const persistId = progress.start("事件持久化", "把这次分析记下来…", {
+      parentId: "local_start",
+      level: 1,
+      group: "post"
+    });
     const persistStart = Date.now();
     try {
       persistResult = await persistWorkflowRun({
@@ -323,7 +427,14 @@ async function runChatRequest(ctx) {
     };
     agentTrace.push(persistTrace);
     if (emit) {
-      emitFriendlyStep(emit, { id: persistId, status: "done", ...persistTrace });
+      emitFriendlyStep(emit, {
+        id: persistId,
+        status: inferStepStatus(persistTrace),
+        parentId: "local_start",
+        level: 1,
+        group: "post",
+        ...persistTrace
+      });
     }
 
     if (persistResult.warning) warnings.push(persistResult.warning);
@@ -344,11 +455,18 @@ async function runChatRequest(ctx) {
     workflowResult.answer ||
     (isLightweightWorkflow(intent.workflow) ? "你好！" : "分析完成，请查看右侧面板。");
   if (emit) {
-    const answerId = progress.start("生成回答", "正在把结论写成你能直接看的文字…");
+    const answerId = progress.start("生成回答", "正在把结论写成你能直接看的文字…", {
+      parentId: "local_start",
+      level: 1,
+      group: "post"
+    });
     await streamTextChunks(answer, emit, { chunkSize: 28, delayMs: 10 });
     emitFriendlyStep(emit, {
       id: answerId,
       status: "done",
+      parentId: "local_start",
+      level: 1,
+      group: "post",
       name: "生成回答",
       tool: "stream",
       summary: "回答已生成",
@@ -432,7 +550,11 @@ async function runChatRequest(ctx) {
   };
 
   if (authUser && sessionId) {
-    const saveId = progress.start("保存对话", "放进左侧历史记录…");
+    const saveId = progress.start("保存对话", "放进左侧历史记录…", {
+      parentId: "local_start",
+      level: 1,
+      group: "post"
+    });
     try {
       await appendMessages(sessionId, authUser.id, [
         { role: "user", content: message },
@@ -460,6 +582,9 @@ async function runChatRequest(ctx) {
         emitFriendlyStep(emit, {
           id: saveId,
           status: "done",
+          parentId: "local_start",
+          level: 1,
+          group: "post",
           name: "保存对话",
           tool: "supabase",
           summary: "对话已保存",
@@ -472,7 +597,10 @@ async function runChatRequest(ctx) {
       if (emit) {
         emitFriendlyStep(emit, {
           id: saveId,
-          status: "done",
+          status: "error",
+          parentId: "local_start",
+          level: 1,
+          group: "post",
           name: "保存对话",
           tool: "error",
           summary: saveError.message,

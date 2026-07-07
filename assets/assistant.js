@@ -32,7 +32,15 @@
     "竞对对比": "比一比各平台",
     "数据问答": "查具体数字",
     "寒暄招呼": "跟你打个招呼",
-    NL2SQL: "自然语言查数"
+    NL2SQL: "自然语言查数",
+    "Data Query Engine": "统一查数",
+    "指标粒度校验": "核对指标是否支持该粒度",
+    "选表路由": "选择对应的底表",
+    QueryPlan: "QueryPlan",
+    "识别场景": "识别分析场景",
+    "识别时间范围": "理解你说的时间",
+    "识别目标粒度": "判断按日/周/月哪种粒度",
+    "识别指标 / 维度": "识别指标和拆解维度"
   };
 
   var TOOL_NAMES = {
@@ -166,6 +174,7 @@
     if (/完成漏斗/.test(summary)) return "漏斗看完了，损耗点也找出来了";
     if (/完成竞对/.test(summary)) return "各平台对比完了";
     if (/成功提取结构化/.test(summary)) return "提案卡片整理好了";
+    if (/结构化提取失败|兜底提案/.test(summary)) return "提案卡片整理降级，已用查数结果补全";
     if (/拉取品牌数据/.test(summary)) return "先看品牌情况，再写一版提案";
     if (/NL2SQL|数据检索/.test(summary)) return "用大白话帮你把数查出来";
     if (/计算漏斗/.test(summary)) return "算漏斗，找哪里在漏客";
@@ -180,6 +189,174 @@
     if (!isFinite(value) || value <= 0) return "";
     if (value < 1000) return "不到 1 秒";
     return "约 " + (value / 1000).toFixed(1) + " 秒";
+  }
+
+  function inferStepStatus(step) {
+    step = step || {};
+    var explicit = String(step.status || "").toLowerCase();
+    if (explicit === "running" || explicit === "done" || explicit === "warn" || explicit === "error") {
+      return explicit;
+    }
+    var tool = String(step.tool || "").toLowerCase();
+    var summary = String(step.summary || "");
+    if (tool === "error") return "error";
+    if (tool === "fallback" || tool === "nl2sql_fallback" || tool === "skipped" || tool === "failed") {
+      return "warn";
+    }
+    if (/失败|降级|兜底|fallback|未配置|无可用|暂存本地|对话保存失败|结构化提取失败/.test(summary)) {
+      return "warn";
+    }
+    if (/当前无可用经营数据/.test(summary)) return "warn";
+    return "done";
+  }
+
+  function classifyTraceGroup(step) {
+    var group = step && step.group;
+    if (group) return group;
+    var name = String((step && step.name) || "");
+    if (name === "意图识别路由") return "intent";
+    if (/识别场景|识别时间|识别目标粒度|识别指标/.test(name)) return "planning";
+    if (/指标粒度|选表|Data Query|QueryPlan|SQL|NL2SQL|时间语义|目标粒度|统一查数/.test(name)) {
+      return "query";
+    }
+    if (/结构化|提案卡片/.test(name)) return "package";
+    if (/经营数据|事件持久化|保存对话|生成回答/.test(name)) return "post";
+    return "analysis";
+  }
+
+  function inferWorkflowGroupName(traces) {
+    for (var i = 0; i < (traces || []).length; i++) {
+      var step = traces[i];
+      if (step.group === "workflow" || step.tool === "workflow" || step.tool === "分析") {
+        return friendlyStepName(step.name) || "分析任务";
+      }
+    }
+    return "分析任务";
+  }
+
+  function buildTraceTree(traces) {
+    if (!traces || !traces.length) return [];
+
+    var groups = [
+      { id: "intent", name: "听懂你的问题", children: [] },
+      { id: "workflow", name: inferWorkflowGroupName(traces), children: [] },
+      { id: "post", name: "收尾", children: [] }
+    ];
+    var groupMap = {
+      intent: groups[0],
+      planning: groups[0],
+      query: groups[1],
+      analysis: groups[1],
+      package: groups[1],
+      workflow: groups[1],
+      post: groups[2]
+    };
+
+    traces.forEach(function (step) {
+      var bucket = groupMap[classifyTraceGroup(step)] || groups[1];
+      bucket.children.push(step);
+    });
+
+    return groups.filter(function (group) {
+      return group.children.length > 0;
+    });
+  }
+
+  function renderProgressStepHtml(step, options) {
+    options = options || {};
+    var escapeHtml = options.escapeHtml || function (value) {
+      return String(value || "");
+    };
+    var status = inferStepStatus(step);
+    var stepName = friendlyStepName(step.name);
+    var stepSummary = friendlyStepSummary(step);
+    var duration = step.durationMs && status !== "running"
+      ? '<span class="trace-duration">' + escapeHtml(friendlyDuration(step.durationMs)) + "</span>"
+      : "";
+    var summary = stepSummary
+      ? '<span class="trace-summary">' + escapeHtml(stepSummary) + "</span>"
+      : "";
+    var statusLabel = "";
+    if (status === "warn") {
+      statusLabel = '<span class="step-status-label step-status-label--warn">降级</span>';
+    }
+    if (status === "error") {
+      statusLabel = '<span class="step-status-label step-status-label--error">失败</span>';
+    }
+    var routeHtml = "";
+    if (step.routeReason) {
+      routeHtml =
+        '<span class="trace-route-reason">' +
+        escapeHtml(shortenText(sanitizeTechTerms(step.routeReason), 72)) +
+        "</span>";
+    }
+
+    var html =
+      '<li class="progress-step status-' + status +
+      (status === "running" ? " running active" : "") +
+      (status === "done" ? " done" : "") +
+      '" data-step-id="' + escapeHtml(step.id || "") + '">' +
+      '<span class="progress-dot"></span>' +
+      '<span class="progress-text">' +
+      "<strong>" + escapeHtml(stepName) + "</strong> " +
+      statusLabel + duration + summary + routeHtml +
+      "</span>";
+
+    if (step.children && step.children.length) {
+      html += '<ul class="progress-steps progress-steps--nested">';
+      step.children.forEach(function (child) {
+        html += renderProgressStepHtml(child, options);
+      });
+      html += "</ul>";
+    }
+
+    html += "</li>";
+    return html;
+  }
+
+  function renderTraceTreeHtml(traces, options) {
+    options = options || {};
+    var escapeHtml = options.escapeHtml || function (value) {
+      return String(value || "");
+    };
+    var compact = options.compact;
+    var tree = buildTraceTree(traces);
+    if (!tree.length) return "";
+
+    var html = compact ? "" : '<div class="trace-tree">';
+    tree.forEach(function (group) {
+      var groupStatus = "done";
+      group.children.forEach(function (child) {
+        var childStatus = inferStepStatus(child);
+        if (childStatus === "error") groupStatus = "error";
+        else if (childStatus === "warn" && groupStatus !== "error") groupStatus = "warn";
+      });
+
+      if (compact) {
+        html += renderProgressStepHtml({
+          id: group.id,
+          name: group.name,
+          status: groupStatus,
+          children: group.children.map(function (child) {
+            return Object.assign({}, child, { status: inferStepStatus(child) });
+          })
+        }, { escapeHtml: escapeHtml });
+      } else {
+        html +=
+          '<section class="trace-group status-' + groupStatus + '">' +
+          '<div class="trace-group-title">' + escapeHtml(group.name) + "</div>" +
+          '<ul class="progress-steps progress-steps--nested">';
+        group.children.forEach(function (child) {
+          html += renderProgressStepHtml(
+            Object.assign({}, child, { status: inferStepStatus(child) }),
+            { escapeHtml: escapeHtml }
+          );
+        });
+        html += "</ul></section>";
+      }
+    });
+    if (!compact) html += "</div>";
+    return html;
   }
 
   function createAvatarElement(options) {
@@ -208,6 +385,10 @@
     friendlyModeLabel: friendlyModeLabel,
     labelTool: labelTool,
     friendlyDuration: friendlyDuration,
+    inferStepStatus: inferStepStatus,
+    buildTraceTree: buildTraceTree,
+    renderProgressStepHtml: renderProgressStepHtml,
+    renderTraceTreeHtml: renderTraceTreeHtml,
     sanitizeTechTerms: sanitizeTechTerms
   };
 })(window);

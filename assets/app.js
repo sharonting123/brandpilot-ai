@@ -82,6 +82,7 @@
   var conversationHistory = [];
   var progressMessageEl = null;
   var progressRunningStepId = null;
+  var progressStepsMap = {};
   var streamAnswerText = "";
   var currentSessionId = null;
   var SESSION_STORAGE_KEY = "bp_current_session_id";
@@ -138,48 +139,114 @@
     return parts.join(" · ");
   }
 
-  function renderTraceStepsHtml(traces, options) {
-    if (!traces || !traces.length) return "";
-    var compact = options && options.compact;
-    var html = "";
-    traces.forEach(function (t, index) {
-      var isLast = index === traces.length - 1;
-      var stepName = friendlyStepName(t.name);
-      var stepSummary = friendlyStepSummary(t);
-      var duration = t.durationMs
-        ? '<span class="trace-duration">' + escapeHtml(friendlyDuration(t.durationMs)) + "</span>"
-        : "";
-      var summary = stepSummary
-        ? '<span class="trace-summary">' + escapeHtml(stepSummary) + "</span>"
-        : "";
-      var formulas = t.formulas || [];
-      var formulaHtml = "";
-      if (formulas.length && !compact) {
-        formulaHtml = '<ul class="trace-formulas">';
-        formulas.forEach(function (line) {
-          formulaHtml += "<li><code>" + escapeHtml(line) + "</code></li>";
-        });
-        formulaHtml += "</ul>";
-      }
+  function inferStepStatus(step) {
+    var a = assistant();
+    return a && a.inferStepStatus ? a.inferStepStatus(step) : "done";
+  }
 
-      if (compact) {
-        html +=
-          '<li class="progress-step done' + (isLast ? " active" : "") + '">' +
-          '<span class="progress-dot"></span>' +
-          '<span class="progress-text">' +
-          '<strong>' + escapeHtml(stepName) + "</strong> " +
-          duration +
-          (summary ? "<br>" + summary : "") +
-          "</span></li>";
-      } else {
-        html +=
-          '<div class="trace-item">' +
-          '<span class="trace-name">' + escapeHtml(stepName) + "</span> " +
-          duration + summary + formulaHtml +
-          "</div>";
-      }
+  function renderTraceStepsHtml(traces, options) {
+    var a = assistant();
+    if (a && a.renderTraceTreeHtml) {
+      return a.renderTraceTreeHtml(traces, {
+        compact: options && options.compact,
+        escapeHtml: escapeHtml
+      });
+    }
+    if (!traces || !traces.length) return "";
+    var html = "";
+    traces.forEach(function (t) {
+      html +=
+        '<div class="trace-item">' +
+        '<span class="trace-name">' + escapeHtml(friendlyStepName(t.name)) + "</span>" +
+        "</div>";
     });
     return html;
+  }
+
+  function resetProgressSteps() {
+    progressStepsMap = {
+      local_start: {
+        id: "local_start",
+        name: "听懂你的问题",
+        summary: "这就开始处理…",
+        status: "running",
+        level: 0,
+        children: []
+      }
+    };
+  }
+
+  function attachProgressChild(parentId, childId) {
+    var parent = progressStepsMap[parentId];
+    var child = progressStepsMap[childId];
+    if (!parent || !child || parentId === childId) return;
+    if (!Array.isArray(parent.children)) parent.children = [];
+    if (parent.children.indexOf(childId) < 0) parent.children.push(childId);
+  }
+
+  function buildProgressTreeNode(stepId) {
+    var step = progressStepsMap[stepId];
+    if (!step) return null;
+    var node = {
+      id: step.id,
+      name: step.name,
+      summary: step.summary,
+      tool: step.tool,
+      durationMs: step.durationMs,
+      status: step.status,
+      level: step.level,
+      group: step.group,
+      workflow: step.workflow,
+      routeReason: step.routeReason
+    };
+    if (step.children && step.children.length) {
+      node.children = step.children.map(buildProgressTreeNode).filter(Boolean);
+    }
+    return node;
+  }
+
+  function renderProgressTreeDom() {
+    if (!progressMessageEl) return;
+    var stepsEl = progressMessageEl.querySelector(".progress-steps");
+    if (!stepsEl) return;
+    var a = assistant();
+    var root = buildProgressTreeNode("local_start");
+    if (a && a.renderProgressStepHtml && root) {
+      stepsEl.innerHTML = a.renderProgressStepHtml(root, { escapeHtml: escapeHtml });
+    }
+    scrollToBottom();
+  }
+
+  function upsertProgressStep(stepId, step) {
+    if (!progressMessageEl) return;
+    if (!stepId) stepId = "run_" + Date.now();
+    if (stepId !== "local_start" && progressStepsMap.local_start) {
+      progressStepsMap.local_start.status = "done";
+    }
+
+    var existing = progressStepsMap[stepId] || { id: stepId, children: [] };
+    Object.assign(existing, step, { id: stepId });
+    if (!Array.isArray(existing.children)) existing.children = [];
+    progressStepsMap[stepId] = existing;
+
+    var parentId = step.parentId || (stepId === "local_start" ? null : "local_start");
+    if (parentId && progressStepsMap[parentId]) {
+      attachProgressChild(parentId, stepId);
+    } else if (stepId !== "local_start") {
+      attachProgressChild("local_start", stepId);
+    }
+
+    if (step.status === "running" || step.status === "active") {
+      progressRunningStepId = stepId;
+    } else if (
+      step.status === "done" ||
+      step.status === "warn" ||
+      step.status === "error"
+    ) {
+      if (progressRunningStepId === stepId) progressRunningStepId = null;
+    }
+
+    renderProgressTreeDom();
   }
 
   function hideDocumentUploadUi() {
@@ -433,7 +500,7 @@
       createAssistantAvatar().outerHTML +
       '<div class="message-body">' +
       '<div class="message-content"><p>你好！我是 <strong>' + escapeHtml(assistantName()) + '</strong>，你的专属品牌经营顾问。登录后对话会自动保存到左侧「历史对话」。</p>' +
-      '<p class="chat-hint">先输入问题并发送，或点击 📎 上传文档；右侧会展示<strong>分析报告</strong>，支持 HTML / PDF 导出。</p>' +
+      '<p class="chat-hint">先输入问题并发送；右侧会展示<strong>分析报告</strong>，支持 HTML / PDF 导出。</p>' +
       '<div class="example-prompts">' +
       '<button class="example-btn" data-prompt="海底捞2026年6月从搜索到核销的转化链路哪里损耗最大？">🔍 6月搜索流量链路诊断</button>' +
       '<button class="example-btn" data-prompt="海底捞2026年6月在美团和抖音的表现对比一下">📊 6月竞对平台对比</button>' +
@@ -1092,90 +1159,37 @@
       upsertProgressStep(data.id, {
         name: data.name,
         summary: data.summary,
+        parentId: data.parentId,
+        level: data.level,
+        group: data.group,
+        workflow: data.workflow,
+        routeReason: data.routeReason,
         status: "running"
       });
       return;
     }
     if (eventName === "step") {
+      var status = data.status || "done";
+      if (status !== "running" && status !== "done" && status !== "warn" && status !== "error") {
+        status = inferStepStatus(data);
+      }
       upsertProgressStep(data.id || ("run_" + Date.now()), {
         name: data.name,
         tool: data.tool,
         summary: data.summary,
         durationMs: data.durationMs,
-        status: data.status === "done" ? "done" : "running"
+        parentId: data.parentId,
+        level: data.level,
+        group: data.group,
+        workflow: data.workflow,
+        routeReason: data.routeReason,
+        status: status
       });
       return;
     }
     if (eventName === "answer_delta" && data.text) {
       appendStreamAnswer(data.text);
     }
-  }
-
-  function markProgressStepDone(stepId) {
-    if (!progressMessageEl || !stepId) return;
-    var li = progressMessageEl.querySelector('[data-step-id="' + stepId + '"]');
-    if (!li) return;
-    li.classList.remove("active", "running");
-    li.classList.add("done");
-  }
-
-  function dismissLocalStartStep() {
-    if (!progressMessageEl) return;
-    var local = progressMessageEl.querySelector('[data-step-id="local_start"]');
-    if (!local) return;
-    local.classList.remove("running", "active");
-    local.classList.add("done");
-    if (progressRunningStepId === "local_start") progressRunningStepId = null;
-  }
-
-  function upsertProgressStep(stepId, step) {
-    if (!progressMessageEl) return;
-    var stepsEl = progressMessageEl.querySelector(".progress-steps");
-    if (!stepsEl) return;
-
-    if (!stepId) stepId = "run_" + Date.now();
-    if (stepId !== "local_start") dismissLocalStartStep();
-
-    var isRunning = step.status === "running" || step.status === "active";
-    var isDone = step.status === "done";
-
-    if (isRunning) {
-      if (progressRunningStepId && progressRunningStepId !== stepId) {
-        markProgressStepDone(progressRunningStepId);
-      }
-      progressRunningStepId = stepId;
-    } else if (isDone && progressRunningStepId === stepId) {
-      progressRunningStepId = null;
-    }
-
-    var li = stepsEl.querySelector('[data-step-id="' + stepId + '"]');
-    if (!li) {
-      li = document.createElement("li");
-      li.className = "progress-step";
-      li.setAttribute("data-step-id", stepId);
-      stepsEl.appendChild(li);
-    }
-
-    li.classList.toggle("running", isRunning);
-    li.classList.toggle("active", isRunning);
-    li.classList.toggle("done", isDone);
-
-    var stepName = friendlyStepName(step.name);
-    var stepSummary = friendlyStepSummary(step);
-    var duration = step.durationMs && isDone
-      ? '<span class="trace-duration">' + escapeHtml(friendlyDuration(step.durationMs)) + "</span> "
-      : "";
-    var summary = stepSummary
-      ? '<span class="trace-summary">' + escapeHtml(stepSummary) + "</span>"
-      : "";
-
-    li.innerHTML =
-      '<span class="progress-dot"></span>' +
-      '<span class="progress-text">' +
-      "<strong>" + escapeHtml(stepName) + "</strong> " +
-      duration + summary +
-      "</span>";
-    scrollToBottom();
   }
 
   function appendStreamAnswer(text) {
@@ -1192,6 +1206,7 @@
     removeProgressMessage();
     streamAnswerText = "";
     progressRunningStepId = "local_start";
+    resetProgressSteps();
 
     var div = document.createElement("div");
     div.className = "message assistant progress streaming";
@@ -1219,6 +1234,7 @@
     div.appendChild(body);
     chatMessages.appendChild(div);
     progressMessageEl = div;
+    renderProgressTreeDom();
     scrollToBottom();
   }
 
@@ -1237,6 +1253,7 @@
     }
     progressMessageEl = null;
     progressRunningStepId = null;
+    progressStepsMap = {};
     streamAnswerText = "";
   }
 
@@ -1338,6 +1355,17 @@
       notice.className = "data-notice";
       notice.textContent = "⚠️ 当前无可用经营数据，请检查 Supabase 配置与种子数据。";
       body.appendChild(notice);
+    }
+
+    if (data.quality && Array.isArray(data.quality.issues) && data.quality.issues.length) {
+      var qualityNotice = document.createElement("div");
+      qualityNotice.className = "quality-notice" + (data.quality.passed === false ? " is-error" : "");
+      qualityNotice.innerHTML = data.quality.issues
+        .map(function (issue) {
+          return "<div>" + escapeHtml(issue.message || issue.code || "质量告警") + "</div>";
+        })
+        .join("");
+      body.appendChild(qualityNotice);
     }
 
     // 完整回答（不截断）— 结果优先展示

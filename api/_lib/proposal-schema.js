@@ -3,6 +3,10 @@
  */
 
 const { buildReviewPlanPeriods, buildProposalTitle, normalizeProposalTitle } = require("./proposal-title");
+const {
+  finalizeProposalMetrics,
+  collectDataQueryRefs
+} = require("./proposal-metrics");
 
 function clampScore(value, fallback = 82) {
   const number = Number(value);
@@ -119,10 +123,11 @@ function extractSummaryFromAnswer(agentAnswer) {
   return text.trim().slice(0, 500);
 }
 
-function coerceProposalRaw(raw, brandName, params = {}, agentAnswer = "") {
-  const message = params._message || "";
+function coerceProposalRaw(raw, brandName, params = {}, agentAnswer = "", context = {}) {
+  const message = params._message || context.message || "";
   const periods = buildReviewPlanPeriods(params, message);
   const defaultTitle = buildProposalTitle(brandName, params, message);
+  const dataQueryRefs = collectDataQueryRefs(context.references || []);
   const root = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
   const nested =
     root.proposal && typeof root.proposal === "object" && !Array.isArray(root.proposal)
@@ -136,7 +141,16 @@ function coerceProposalRaw(raw, brandName, params = {}, agentAnswer = "") {
   const source = { ...root, ...nested, ...(extra || {}) };
 
   const metrics = pickArray(source, ["metrics", "metricCards", "keyMetrics"])
-    .map(toMetric)
+    .map((item) => {
+      const normalized = toMetric(item);
+      if (!normalized || !dataQueryRefs.length) return normalized;
+      if (!normalized.refs || !normalized.refs.length) {
+        normalized.refs = dataQueryRefs.slice(0, 2);
+      }
+      normalized.refs = normalized.refs.filter((id) => /^[SD]\d+$/i.test(String(id)));
+      if (!normalized.refs.length) normalized.refs = dataQueryRefs.slice(0, 2);
+      return normalized;
+    })
     .filter(Boolean);
   const insights = pickArray(source, ["insights", "keyInsights", "findings"])
     .map(toCitedText)
@@ -165,7 +179,7 @@ function coerceProposalRaw(raw, brandName, params = {}, agentAnswer = "") {
     opportunityScore: clampScore(source.opportunityScore ?? source.score ?? source.opportunity),
     summary,
     summaryRefs: Array.isArray(source.summaryRefs) ? source.summaryRefs.map(String) : [],
-    metrics: metrics.length ? metrics : [{ label: "经营机会", value: "待结合数据补充", delta: "" }],
+    metrics,
     insights: insights.length ? insights : [{ text: summary || "请结合上方分析查看关键洞察。", refs: [] }],
     actions: actions.length ? actions : [{ text: "结合分析结果制定可执行策略。", refs: [] }],
     timeline: timeline.length
@@ -181,27 +195,32 @@ function coerceProposalRaw(raw, brandName, params = {}, agentAnswer = "") {
   };
 }
 
-function buildProposalSchema(z, brandName, params, agentAnswer) {
+function buildProposalSchema(z, brandName, params, agentAnswer, context = {}) {
   const CitedText = z.object({
     text: z.string(),
     refs: z.array(z.string()).default([])
   });
 
+  const MetricCard = z.object({
+    label: z.string().min(1),
+    value: z.string().min(1),
+    delta: z.string().optional(),
+    refs: z.array(z.string()).min(1)
+  });
+
   return z.preprocess(
-    (val) => coerceProposalRaw(val, brandName, params, agentAnswer),
+    (val) =>
+      finalizeProposalMetrics(coerceProposalRaw(val, brandName, params, agentAnswer, context), {
+        nlPayload: context.nlPayload,
+        references: context.references,
+        params
+      }),
     z.object({
       title: z.string(),
       opportunityScore: z.number().min(0).max(100),
       summary: z.string(),
       summaryRefs: z.array(z.string()).optional(),
-      metrics: z.array(
-        z.object({
-          label: z.string(),
-          value: z.string(),
-          delta: z.string().optional(),
-          refs: z.array(z.string()).optional()
-        })
-      ),
+      metrics: z.array(MetricCard).min(1),
       insights: z.array(CitedText),
       actions: z.array(CitedText),
       timeline: z.array(
@@ -233,7 +252,10 @@ const PROPOSAL_JSON_EXAMPLE = {
   title: "海底捞 2026 H1 复盘・H2 经营提案",
   opportunityScore: 82,
   summary: "一段话经营摘要",
-  metrics: [{ label: "H1 GTV", value: "1.1亿", delta: "环比+8%" }],
+  metrics: [
+    { label: "H1 GTV", value: "1.1亿", delta: "环比+8%", refs: ["S1"] },
+    { label: "核销率", value: "85.3%", delta: "支付→核销", refs: ["S1", "D1"] }
+  ],
   insights: [{ text: "洞察内容", refs: ["S1", "K1"] }],
   actions: [{ text: "动作内容", refs: ["D1"] }],
   timeline: [{ title: "Q3 承接", body: "推进门店页套餐组实验" }],
@@ -242,10 +264,12 @@ const PROPOSAL_JSON_EXAMPLE = {
   charts: [{ type: "funnel", title: "搜索到核销漏斗", data: { labels: [], datasets: [] } }]
 };
 
-function buildProposalStructuredPrompt(brandName, params) {
+function buildProposalStructuredPrompt(brandName, params, context = {}) {
   const message = params._message || "";
   const periods = buildReviewPlanPeriods(params, message);
   const titleExample = buildProposalTitle(brandName, params, message);
+  const dataRefs = collectDataQueryRefs(context.references || []);
+  const refHint = dataRefs.length ? dataRefs.join("、") : "S1、D1";
   return [
     "你从 agent 的分析文本中提取结构化提案 JSON。",
     "品牌：「" + brandName + "」，复盘周期：「" + periods.reviewPeriod + "」，规划周期：「" + periods.planPeriod + "」。",
@@ -256,13 +280,13 @@ function buildProposalStructuredPrompt(brandName, params) {
     "title, opportunityScore, summary, metrics, insights, actions, timeline, risks, assets, charts",
     "",
     "格式要求：",
+    "- metrics 每项必须含 label、value、refs(至少1个，只能用 " + refHint + ")",
     "- insights/actions/risks 必须是对象数组，每项含 text(string) 和 refs(string[])",
-    "- metrics 每项含 label, value，可选 delta",
     "- timeline/assets 每项含 title, body",
     "- 不要输出 Markdown，只输出 JSON",
     "",
     "示例：",
-    JSON.stringify(PROPOSAL_JSON_EXAMPLE, null, 2)
+    JSON.stringify({ ...PROPOSAL_JSON_EXAMPLE, title: titleExample }, null, 2)
   ].join("\n");
 }
 

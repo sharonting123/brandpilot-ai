@@ -3,6 +3,7 @@
  */
 
 const { getCitationRegistry, registerAgentStep } = require("./citation-registry");
+const { collectDataQueryRefs } = require("./proposal-metrics");
 
 const AGENT_ROLE_MAP = {
   "意图识别": "识别用户问题类型并路由到对应工作流",
@@ -201,8 +202,29 @@ function enrichProposalWithReferences(proposal, references) {
   if (!proposal || typeof proposal !== "object") return proposal;
   const refs = references || getCitationRegistry();
   const defaultRefs = refs.slice(0, 3).map((item) => item.id);
+  const dataQueryRefs = collectDataQueryRefs(refs);
 
-  function enrichList(items, fallbackPrefix) {
+  function enrichMetrics(items) {
+    if (!Array.isArray(items)) return items;
+    return items.map((item, index) => {
+      if (typeof item === "string") {
+        const bind = dataQueryRefs[index % dataQueryRefs.length] || dataQueryRefs[0];
+        return { label: item.slice(0, 24), value: item, refs: bind ? [bind] : [] };
+      }
+      let itemRefs = Array.isArray(item.refs)
+        ? item.refs.map(String).filter((id) => /^[SD]\d+$/i.test(id))
+        : [];
+      if (!itemRefs.length) itemRefs = dataQueryRefs.slice(0, 2);
+      return {
+        label: String(item.label || item.text || "经营指标").trim(),
+        value: item.value,
+        delta: item.delta,
+        refs: itemRefs
+      };
+    });
+  }
+
+  function enrichList(items) {
     if (!Array.isArray(items)) return items;
     return items.map((item, index) => {
       if (typeof item === "string") {
@@ -223,10 +245,10 @@ function enrichProposalWithReferences(proposal, references) {
   return {
     ...proposal,
     summaryRefs: proposal.summaryRefs || defaultRefs.slice(0, 2),
-    metrics: enrichList(proposal.metrics, "指标"),
-    insights: enrichList(proposal.insights, "洞察"),
-    actions: enrichList(proposal.actions, "动作"),
-    risks: enrichList(proposal.risks, "风险"),
+    metrics: enrichMetrics(proposal.metrics),
+    insights: enrichList(proposal.insights),
+    actions: enrichList(proposal.actions),
+    risks: enrichList(proposal.risks),
     references: refs
   };
 }
