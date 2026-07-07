@@ -39,6 +39,18 @@
   },
   "routes": [
     {
+      "src": "/api/sidecar-health",
+      "dest": "/api/health"
+    },
+    {
+      "src": "/api/sidecar-report",
+      "dest": "/api/agent-run"
+    },
+    {
+      "src": "/api/auth/check-username",
+      "dest": "/api/auth/register"
+    },
+    {
       "src": "/api/(.*)",
       "dest": "/api/$1"
     },

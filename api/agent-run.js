@@ -2,7 +2,14 @@ const { getClientIp, handleError, HttpError, readJson, sendJson } = require("./_
 const { getModelConfig, getSupabaseConfig } = require("./_lib/env");
 const { checkRateLimit } = require("./_lib/rate-limit");
 const { loadSupabaseContext } = require("./_lib/supabase-context");
-const { runHaidilaoWorkflow } = require("./_lib/agent-workflow");
+const { runHaidilaoWorkflow, runDeterministicAgents } = require("./_lib/agent-workflow");
+const {
+  buildReportTaskFromWorkflowState,
+  buildTaskFromClientPayload,
+  enrichWorkflowWithSidecarReport,
+  getSidecarConfig,
+  requestToolReport
+} = require("./_lib/sidecar-client");
 
 module.exports = async function handler(req, res) {
   const startedAt = Date.now();
@@ -20,7 +27,12 @@ module.exports = async function handler(req, res) {
       throw new HttpError(429, "RATE_LIMITED", "Agent requests are temporarily rate limited.");
     }
 
-    const request = validateAgentRequest(await readJson(req, { limitBytes: 64 * 1024 }));
+    const body = await readJson(req, { limitBytes: 96 * 1024 });
+    if (isSidecarReportRequest(req, body)) {
+      return handleSidecarReport(req, res, body, { startedAt, requestId });
+    }
+
+    const request = validateAgentRequest(body);
     const modelConfig = getModelConfig(process.env);
     if (!modelConfig.configured) {
       throw new HttpError(
@@ -90,4 +102,79 @@ function safeText(value, fallback, maxLength) {
 
 function makeRequestId() {
   return `bp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function isSidecarReportRequest(req, body) {
+  const url = new URL(req.url || "/api/agent-run", "http://localhost");
+  return url.pathname.includes("sidecar-report") || body?.action === "sidecar-report";
+}
+
+async function handleSidecarReport(req, res, body, meta) {
+  const { startedAt, requestId } = meta;
+  const config = getSidecarConfig(process.env);
+  if (!config.enabled) {
+    throw new HttpError(503, "SIDECAR_DISABLED", "请设置 SIDECAR_ENABLED=true 后再调用侧车报告服务。");
+  }
+
+  const taskText =
+    (body.task && String(body.task).trim()) ||
+    (body.proposal || body.summary || body.charts ? buildTaskFromClientPayload(body) : "");
+
+  if (taskText) {
+    const report = await requestToolReport({
+      task: taskText,
+      requestId,
+      fileType: body.fileType || config.reportFileType,
+      templateType: body.templateType || config.templateType,
+      config
+    });
+    return sendJson(res, 200, {
+      ok: true,
+      mode: "direct-task",
+      requestId,
+      report,
+      latencyMs: Date.now() - startedAt
+    });
+  }
+
+  const supabaseContext = await loadSupabaseContext(getSupabaseConfig(process.env), {
+    brandId: body.brandId || "haidilao"
+  });
+
+  const state = {
+    request: normalizeSidecarRequest(body),
+    requestId,
+    supabaseContext,
+    outputs: {},
+    trace: []
+  };
+
+  await runDeterministicAgents(state);
+  const sidecar = await enrichWorkflowWithSidecarReport(state, process.env);
+
+  return sendJson(res, 200, {
+    ok: true,
+    mode: "workflow-report",
+    requestId,
+    taskPreview: buildReportTaskFromWorkflowState(state).slice(0, 1200),
+    workflow: {
+      agents: state.trace,
+      qualityGates: (state.outputs["quality-agent"] && state.outputs["quality-agent"].gates) || []
+    },
+    sidecar,
+    latencyMs: Date.now() - startedAt
+  });
+}
+
+function normalizeSidecarRequest(body) {
+  const brand = body.brand && typeof body.brand === "object" ? body.brand : {};
+  return {
+    brand: {
+      id: body.brandId || "haidilao",
+      name: brand.name || "海底捞",
+      title: brand.title || "海底捞半年度经营提案"
+    },
+    scenario: "semiannual",
+    scenarioLabel: "半年度提案"
+  };
 }

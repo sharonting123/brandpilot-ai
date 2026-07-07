@@ -1,9 +1,14 @@
 const { getRuntimeConfig } = require("./_lib/env");
 const { assertMethod, handleError, sendJson } = require("./_lib/http");
+const { getSidecarConfig, probeSidecarHealth } = require("./_lib/sidecar-client");
 
 module.exports = async function handler(req, res) {
   try {
     assertMethod(req, ["GET"]);
+    if (isSidecarHealthRequest(req)) {
+      return handleSidecarHealth(res);
+    }
+
     const config = getRuntimeConfig();
     const deep = shouldRunDeepCheck(req);
     const supabaseLive = deep && config.supabase.configured ? await checkSupabase(config.supabase) : null;
@@ -36,6 +41,26 @@ module.exports = async function handler(req, res) {
 function shouldRunDeepCheck(req) {
   const url = new URL(req.url || "/api/health", "http://localhost");
   return url.searchParams.get("deep") === "1";
+}
+
+function isSidecarHealthRequest(req) {
+  const url = new URL(req.url || "/api/health", "http://localhost");
+  return url.pathname.includes("sidecar-health") || url.searchParams.get("scope") === "sidecar";
+}
+
+async function handleSidecarHealth(res) {
+  const config = getSidecarConfig(process.env);
+  const health = await probeSidecarHealth(config);
+  return sendJson(res, 200, {
+    ok: true,
+    config: {
+      enabled: config.enabled,
+      reportEnabled: config.reportEnabled,
+      toolBaseUrl: config.toolBaseUrl,
+      backendBaseUrl: config.backendBaseUrl
+    },
+    health
+  });
 }
 
 async function checkSupabase(config) {
