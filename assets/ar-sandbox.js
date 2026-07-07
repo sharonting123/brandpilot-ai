@@ -1,6 +1,7 @@
 /**
  * BrandPilot 真 AR 中国经营沙盘
  * Three.js renders the sandbox. WebXR enters markerless AR when supported.
+ * MediaPipe Hands enables gesture control: swipe to rotate, pinch to zoom, point to select.
  */
 (function (global) {
   "use strict";
@@ -12,6 +13,27 @@
     line: 0x3b82f6,
     map: 0xffc300
   };
+
+  // ===== 手势识别状态 =====
+  var gesture = {
+    enabled: false,
+    hands: null,          // MediaPipe Hands instance
+    camera: null,         // <video> element for hand tracking
+    stream: null,         // getUserMedia stream
+    rafId: null,          // requestAnimationFrame ID for gesture loop
+    lastX: null,          // 上帧手掌 X 坐标（用于 swipe）
+    lastY: null,          // 上帧手掌 Y 坐标
+    lastPinchDist: null,  // 上帧拇指食指距离（用于 pinch zoom）
+    pinchActive: false,   // 当前是否在 pinch
+    swipeActive: false,   // 当前是否在 swipe
+    pointActive: false,   // 当前食指指向
+    pointCooldown: 0,     // 指向选择冷却帧数（防抖）
+    statusEl: null        // 手势状态提示元素
+  };
+
+  // 手势识别所需的 21 个关键点索引（MediaPipe Hands）
+  // 0: wrist, 4: thumb tip, 8: index tip, 12: middle tip, 16: ring tip, 20: pinky tip
+  // 5: index MCP, 9: middle MCP, 13: ring MCP, 17: pinky MCP
 
   var state = {
     container: null,
@@ -94,6 +116,18 @@
       '</div>' +
       '<div class="ar-sandbox-status"></div>' +
       '<div class="ar-city-label-layer"></div>' +
+      '<div class="ar-gesture-overlay" id="arGestureOverlay">' +
+      '<video class="ar-gesture-video" autoplay playsinline muted></video>' +
+      '<canvas class="ar-gesture-trail" width="320" height="240"></canvas>' +
+      '<div class="ar-gesture-status"></div>' +
+      '<div class="ar-gesture-hints">' +
+      '<div class="ar-gesture-hint"><span class="ar-gesture-icon">✋</span>张手滑动 — 旋转沙盘</div>' +
+      '<div class="ar-gesture-hint"><span class="ar-gesture-icon">🤏</span>捏合 — 缩放</div>' +
+      '<div class="ar-gesture-hint"><span class="ar-gesture-icon">☝</span>食指指向 — 选择城市</div>' +
+      '<div class="ar-gesture-hint"><span class="ar-gesture-icon">✊</span>握拳 — 停止旋转</div>' +
+      '</div>' +
+      '<button class="ar-gesture-toggle" type="button">手势控制</button>' +
+      '</div>' +
       '</div>' +
       '<aside class="ar-sandbox-detail"></aside>' +
       '</div>';
@@ -102,6 +136,19 @@
     state.labelLayer = container.querySelector(".ar-city-label-layer");
     state.detailEl = container.querySelector(".ar-sandbox-detail");
     state.statusEl = container.querySelector(".ar-sandbox-status");
+    gesture.statusEl = container.querySelector(".ar-gesture-status");
+    gesture.camera = container.querySelector(".ar-gesture-video");
+    var toggleBtn = container.querySelector(".ar-gesture-toggle");
+    var trailCanvas = container.querySelector(".ar-gesture-trail");
+    if (toggleBtn) {
+      toggleBtn.addEventListener("click", function () {
+        if (gesture.enabled) {
+          stopGesture();
+        } else {
+          startGesture();
+        }
+      });
+    }
     bindDomEvents();
     renderEmpty();
   }
@@ -661,6 +708,308 @@
     return escapeHtml(text);
   }
 
+  // ===== 手势识别：启动 / 停止 / 处理 =====
+
+  function setGestureStatus(text) {
+    if (gesture.statusEl) {
+      gesture.statusEl.textContent = text || "";
+      gesture.statusEl.style.opacity = text ? "1" : "0";
+    }
+  }
+
+  function startGesture() {
+    if (gesture.enabled) return;
+    if (!global.Hands) {
+      setGestureStatus("正在加载手势识别模型...");
+      loadMediaPipeScript().then(function () {
+        doStartGesture();
+      }).catch(function (err) {
+        setGestureStatus("手势模型加载失败: " + (err.message || err));
+      });
+      return;
+    }
+    doStartGesture();
+  }
+
+  function loadMediaPipeScript() {
+    return new Promise(function (resolve, reject) {
+      if (global.Hands) return resolve();
+      var script = document.createElement("script");
+      script.src = "https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js";
+      script.crossOrigin = "anonymous";
+      script.onload = function () {
+        if (global.Hands) resolve();
+        else reject(new Error("Hands 加载但未定义"));
+      };
+      script.onerror = function () { reject(new Error("脚本加载失败")); };
+      document.head.appendChild(script);
+    });
+  }
+
+  function doStartGesture() {
+    if (!global.Hands || !gesture.camera) {
+      setGestureStatus("手势识别环境未就绪");
+      return;
+    }
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: 320, height: 240 }, audio: false })
+      .then(function (stream) {
+        gesture.stream = stream;
+        gesture.camera.srcObject = stream;
+        return gesture.camera.play();
+      })
+      .then(function () {
+        gesture.hands = new global.Hands({
+          locateFile: function (file) {
+            return "https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/" + file;
+          }
+        });
+        gesture.hands.setOptions({
+          maxNumHands: 1,
+          modelComplexity: 0,
+          minDetectionConfidence: 0.6,
+          minTrackingConfidence: 0.5
+        });
+        gesture.hands.onResults(processHandResults);
+        gesture.enabled = true;
+        setGestureStatus("手势识别已启动 ✋");
+        var overlay = state.container.querySelector(".ar-gesture-overlay");
+        if (overlay) overlay.classList.add("active");
+        var btn = state.container.querySelector(".ar-gesture-toggle");
+        if (btn) btn.textContent = "关闭手势";
+        gestureLoop();
+      })
+      .catch(function (err) {
+        setGestureStatus("摄像头启动失败: " + (err.message || err));
+      });
+  }
+
+  function stopGesture() {
+    gesture.enabled = false;
+    if (gesture.rafId) {
+      cancelAnimationFrame(gesture.rafId);
+      gesture.rafId = null;
+    }
+    if (gesture.stream) {
+      gesture.stream.getTracks().forEach(function (track) { track.stop(); });
+      gesture.stream = null;
+    }
+    if (gesture.camera) gesture.camera.srcObject = null;
+    gesture.hands = null;
+    gesture.lastX = null;
+    gesture.lastY = null;
+    gesture.lastPinchDist = null;
+    gesture.pinchActive = false;
+    gesture.swipeActive = false;
+    gesture.pointActive = false;
+    setGestureStatus("");
+    var overlay = state.container.querySelector(".ar-gesture-overlay");
+    if (overlay) overlay.classList.remove("active");
+    var btn = state.container.querySelector(".ar-gesture-toggle");
+    if (btn) btn.textContent = "手势控制";
+  }
+
+  function gestureLoop() {
+    if (!gesture.enabled || !gesture.hands || !gesture.camera) return;
+    if (gesture.camera.readyState >= 2) {
+      gesture.hands.send({ image: gesture.camera });
+    }
+    gesture.rafId = requestAnimationFrame(gestureLoop);
+  }
+
+  function processHandResults(results) {
+    if (!gesture.enabled) return;
+    var trail = state.container.querySelector(".ar-gesture-trail");
+    var ctx = trail ? trail.getContext("2d") : null;
+
+    if (ctx) {
+      ctx.clearRect(0, 0, trail.width, trail.height);
+      // 画摄像头画面镜像
+      ctx.save();
+      ctx.translate(trail.width, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(gesture.camera, 0, 0, trail.width, trail.height);
+      ctx.restore();
+    }
+
+    if (!results.multiHandLandmarks || !results.multiHandLandmarks.length) {
+      gesture.lastX = null;
+      gesture.lastY = null;
+      gesture.lastPinchDist = null;
+      gesture.pinchActive = false;
+      gesture.swipeActive = false;
+      if (gesture.pointActive) {
+        gesture.pointActive = false;
+        setGestureStatus("手势识别已启动 ✋");
+      }
+      return;
+    }
+
+    var lm = results.multiHandLandmarks[0]; // 21 个关键点
+    var gestureType = detectGesture(lm);
+
+    // 画手部骨架
+    if (ctx) drawHandSkeleton(ctx, lm, trail.width, trail.height);
+
+    var palm = lm[9]; // middle MCP 作为手掌中心
+    var palmX = 1 - palm.x; // 镜像 X
+    var palmY = palm.y;
+
+    if (gestureType === "open") {
+      // 张手滑动 → 旋转
+      gesture.pinchActive = false;
+      gesture.pointActive = false;
+      if (gesture.lastX !== null) {
+        var dx = palmX - gesture.lastX;
+        var dy = palmY - gesture.lastY;
+        if (Math.abs(dx) > 0.005 || Math.abs(dy) > 0.005) {
+          gesture.swipeActive = true;
+          state.autoRotate = false;
+          if (state.sandtable) {
+            state.sandtable.rotation.z -= dx * 3.0;
+            state.sandtable.rotation.x = clamp(state.sandtable.rotation.x + dy * 1.5, -0.62, 0.42);
+          }
+          setGestureStatus("✋ 旋转中");
+        }
+      }
+      gesture.lastX = palmX;
+      gesture.lastY = palmY;
+    } else if (gestureType === "pinch") {
+      // 捏合 → 缩放
+      gesture.swipeActive = false;
+      gesture.pointActive = false;
+      var thumb = lm[4];
+      var indexTip = lm[8];
+      var dist = Math.sqrt(
+        Math.pow(thumb.x - indexTip.x, 2) +
+        Math.pow(thumb.y - indexTip.y, 2)
+      );
+      if (gesture.lastPinchDist !== null) {
+        var delta = dist - gesture.lastPinchDist;
+        if (Math.abs(delta) > 0.002) {
+          gesture.pinchActive = true;
+          if (state.sandtable) {
+            var next = clamp(state.sandtable.scale.x + delta * 5, 0.5, 2.0);
+            state.sandtable.scale.set(next, next, next);
+          }
+          setGestureStatus("🤏 缩放中");
+        }
+      }
+      gesture.lastPinchDist = dist;
+      gesture.lastX = null;
+    } else if (gestureType === "point") {
+      // 食指指向 → 选择城市
+      gesture.swipeActive = false;
+      gesture.pinchActive = false;
+      gesture.lastX = null;
+      gesture.lastPinchDist = null;
+      if (gesture.pointCooldown > 0) {
+        gesture.pointCooldown--;
+      } else {
+        // 用食指指尖坐标做 raycast
+        var indexTipMirror = { x: 1 - lm[8].x, y: lm[8].y };
+        pickByNormalizedCoord(indexTipMirror.x, indexTipMirror.y);
+        gesture.pointCooldown = 30; // ~1 秒冷却
+      }
+      if (!gesture.pointActive) {
+        gesture.pointActive = true;
+      }
+      setGestureStatus("☝ 指向选择");
+    } else if (gestureType === "fist") {
+      // 握拳 → 停止
+      gesture.swipeActive = false;
+      gesture.pinchActive = false;
+      gesture.pointActive = false;
+      gesture.lastX = null;
+      gesture.lastPinchDist = null;
+      setGestureStatus("✊ 已暂停");
+    } else {
+      gesture.lastX = null;
+      gesture.lastPinchDist = null;
+    }
+  }
+
+  // 检测手势类型
+  function detectGesture(lm) {
+    // 手指是否伸展：tip.y < pip.y（指尖在上方 = 伸展）
+    function isFingerExtended(tipIdx, pipIdx) {
+      return lm[tipIdx].y < lm[pipIdx].y - 0.02;
+    }
+    var thumbExt = Math.abs(lm[4].x - lm[3].x) > 0.04;
+    var indexExt = isFingerExtended(8, 6);
+    var middleExt = isFingerExtended(12, 10);
+    var ringExt = isFingerExtended(16, 14);
+    var pinkyExt = isFingerExtended(20, 18);
+
+    var extCount = (thumbExt ? 1 : 0) + (indexExt ? 1 : 0) + (middleExt ? 1 : 0) + (ringExt ? 1 : 0) + (pinkyExt ? 1 : 0);
+
+    // pinch: 拇指尖和食指尖距离很近，中指/无名指/小指弯曲
+    var thumbIndexDist = Math.sqrt(
+      Math.pow(lm[4].x - lm[8].x, 2) + Math.pow(lm[4].y - lm[8].y, 2)
+    );
+    if (thumbIndexDist < 0.06 && !middleExt && !ringExt) {
+      return "pinch";
+    }
+
+    // point: 只有食指伸展
+    if (indexExt && !middleExt && !ringExt && !pinkyExt) {
+      return "point";
+    }
+
+    // fist: 所有手指弯曲
+    if (extCount <= 1) {
+      return "fist";
+    }
+
+    // open: 至少 4 指伸展
+    if (extCount >= 4) {
+      return "open";
+    }
+
+    return "unknown";
+  }
+
+  // 用归一化坐标（0-1）做 raycast 选择城市
+  function pickByNormalizedCoord(nx, ny) {
+    if (!state.raycaster || !state.camera || !state.renderer) return;
+    state.pointer.x = nx * 2 - 1;
+    state.pointer.y = -(ny * 2 - 1);
+    state.raycaster.setFromCamera(state.pointer, state.camera);
+    var intersects = state.raycaster.intersectObjects(state.cityMeshes, false);
+    var hit = intersects.find(function (item) { return !item.object.userData.ignoreRaycast; });
+    if (hit && hit.object.userData.type === "city") {
+      selectCity(hit.object.userData.city.name);
+    }
+  }
+
+  // 在 trail canvas 上画手部骨架
+  function drawHandSkeleton(ctx, lm, w, h) {
+    var connections = [
+      [0,1],[1,2],[2,3],[3,4],      // thumb
+      [0,5],[5,6],[6,7],[7,8],      // index
+      [5,9],[9,10],[10,11],[11,12],  // middle
+      [9,13],[13,14],[14,15],[15,16],// ring
+      [13,17],[17,18],[18,19],[19,20],// pinky
+      [0,17]                          // palm base
+    ];
+    ctx.strokeStyle = "rgba(99,102,241,0.8)";
+    ctx.lineWidth = 2;
+    connections.forEach(function (conn) {
+      var p1 = lm[conn[0]];
+      var p2 = lm[conn[1]];
+      ctx.beginPath();
+      ctx.moveTo((1 - p1.x) * w, p1.y * h);
+      ctx.lineTo((1 - p2.x) * w, p2.y * h);
+      ctx.stroke();
+    });
+    // 画关键点
+    ctx.fillStyle = "rgba(245,158,11,0.9)";
+    lm.forEach(function (p) {
+      ctx.beginPath();
+      ctx.arc((1 - p.x) * w, p.y * h, 3, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
   global.BrandPilotAR = {
     init: init,
     update: update,
@@ -668,6 +1017,8 @@
     resize: resize,
     enterXR: enterXR,
     enterMarkerAR: enterMarkerAR,
+    startGesture: startGesture,
+    stopGesture: stopGesture,
     getSceneData: function () {
       return state.sceneData;
     }

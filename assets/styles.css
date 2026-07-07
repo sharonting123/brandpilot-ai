@@ -3122,6 +3122,106 @@ button, select, textarea {
   font-size: 13px;
 }
 
+/* ===== 手势识别叠层 ===== */
+.ar-gesture-overlay {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  opacity: 0.5;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+.ar-gesture-overlay.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+.ar-gesture-video {
+  width: 0;
+  height: 0;
+  visibility: hidden;
+}
+.ar-gesture-overlay.active .ar-gesture-video {
+  width: 120px;
+  height: 90px;
+  visibility: visible;
+  border-radius: 8px;
+  border: 1px solid rgba(99,102,241,0.4);
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+.ar-gesture-trail {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 120px;
+  height: 90px;
+  border-radius: 8px;
+  display: none;
+  pointer-events: none;
+}
+.ar-gesture-overlay.active .ar-gesture-trail {
+  display: block;
+}
+.ar-gesture-status {
+  font-size: 12px;
+  font-weight: 600;
+  color: #818cf8;
+  background: rgba(30,27,75,0.8);
+  padding: 4px 10px;
+  border-radius: 999px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  white-space: nowrap;
+}
+.ar-gesture-hints {
+  display: none;
+  flex-direction: column;
+  gap: 4px;
+  background: rgba(15,23,42,0.85);
+  border-radius: 10px;
+  padding: 10px 12px;
+  backdrop-filter: blur(8px);
+}
+.ar-gesture-overlay.active .ar-gesture-hints {
+  display: flex;
+}
+.ar-gesture-hint {
+  font-size: 11px;
+  color: #cbd5e1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ar-gesture-icon {
+  font-size: 14px;
+}
+.ar-gesture-toggle {
+  background: rgba(99,102,241,0.2);
+  border: 1px solid rgba(99,102,241,0.4);
+  color: #a5b4fc;
+  border-radius: 999px;
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: all 0.2s;
+}
+.ar-gesture-toggle:hover {
+  background: rgba(99,102,241,0.3);
+  color: #c7d2fe;
+}
+.ar-gesture-overlay.active .ar-gesture-toggle {
+  background: #6366f1;
+  color: #fff;
+  border-color: #6366f1;
+}
+
 .ghost-button.sm {
   padding: 4px 10px;
   font-size: 12px;
