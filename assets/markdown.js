@@ -30,7 +30,7 @@
   }
 
   function linkifyCitationHtml(html, refIndex) {
-    return String(html || "").replace(/\[([KDSAP]\d+)\]/g, function (_, id) {
+    return String(html || "").replace(/\[([KDSAPC]\d+)\]/g, function (_, id) {
       var ref = refIndex[id];
       var href = ref ? ref.href : "#ref-" + id;
       var title = ref ? ref.title : id;

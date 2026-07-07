@@ -27,7 +27,9 @@ module.exports = async function handler(req, res) {
       throw new HttpError(429, "RATE_LIMITED", "Agent requests are temporarily rate limited.");
     }
 
-    const body = await readJson(req, { limitBytes: 96 * 1024 });
+    const body = await readJson(req, {
+      limitBytes: isSidecarReportRequest(req, {}) ? 4 * 1024 * 1024 : 96 * 1024
+    });
     if (isSidecarReportRequest(req, body)) {
       return handleSidecarReport(req, res, body, { startedAt, requestId });
     }

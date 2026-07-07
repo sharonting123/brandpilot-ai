@@ -468,6 +468,21 @@
     statusText.textContent = text || "就绪";
     if (options && options.protectMs) {
       statusProtectedUntil = Date.now() + options.protectMs;
+    } else if (options && options.clearProtect) {
+      statusProtectedUntil = 0;
+    }
+  }
+
+  function syncDocumentUploadStatus(options) {
+    if (!window.BrandPilotDocuments) return;
+    var items = window.BrandPilotDocuments.getAttachments();
+    if (!items.length) {
+      setStatusText("就绪", { clearProtect: true });
+      return;
+    }
+    var summary = window.BrandPilotDocuments.formatUploadStatusSummary(items);
+    if (summary) {
+      setStatusText(summary, { protectMs: (options && options.protectMs) || 600000 });
     }
   }
 
@@ -602,9 +617,7 @@
       if (docUploadBusy || isProcessing) {
         event.preventDefault();
         setStatusText("请等待当前分析完成后再上传", { protectMs: 3000 });
-        return;
       }
-      setStatusText("请选择要上传的文件…", { protectMs: 3000 });
     });
 
     documentUploadInput.addEventListener("change", function () {
@@ -615,9 +628,11 @@
         redirectToLogin();
         return;
       }
+      statusProtectedUntil = 0;
       setDocumentUploadBusy(true);
       setStatusText(
-        window.BrandPilotDocuments.hasPendingImages(files) ? "OCR 识别中…" : "解析文档中…"
+        window.BrandPilotDocuments.hasPendingImages(files) ? "OCR 识别中…" : "解析文档中…",
+        { clearProtect: true }
       );
       window.BrandPilotDocuments.addFiles(files)
         .then(function (added) {
@@ -626,14 +641,10 @@
             addedCount: (added && added.length) || 1
           });
           updateUploadBadge();
-          var count = (added && added.length) || 1;
-          var hasOcr = (added || []).some(function (item) { return item.sourceType === "ocr"; });
-          var names = (added || []).map(function (item) { return item.filename; }).join("、");
-          setStatusText(
-            hasOcr ? "✅ 已识别 " + count + " 个文件" : "✅ 已添加 " + count + " 个文档",
-            { protectMs: 8000 }
-          );
-          if (chatInput) {
+          var list = (added && added.length) ? added : window.BrandPilotDocuments.getAttachments();
+          syncDocumentUploadStatus({ protectMs: 600000 });
+          var names = (list || []).map(function (item) { return item.filename; }).join("、");
+          if (chatInput && names) {
             chatInput.placeholder =
               names +
               " 已就绪，输入问题后发送；或直接发送让 AI 分析文档内容";
@@ -659,9 +670,7 @@
         window.BrandPilotDocuments.renderChips(chatAttachments);
         updateUploadBadge();
         resetChatInputPlaceholder();
-        if (!window.BrandPilotDocuments.getAttachments().length) {
-          setStatusText("就绪");
-        }
+        syncDocumentUploadStatus();
       });
     }
   }
@@ -1244,7 +1253,7 @@
 
   function linkifyCitations(html, refIndex) {
     if (!html) return "";
-    return String(html).replace(/\[([KDSAP]\d+)\]/g, function (_, id) {
+    return String(html).replace(/\[([KDSAPC]\d+)\]/g, function (_, id) {
       var ref = refIndex[id];
       if (!ref) {
         return (
@@ -2110,7 +2119,22 @@
     "blockquote{border-left:3px solid #ffc300;margin:12px 0;padding:8px 14px;background:#fffdf5;color:#555;}" +
     ".export-meta{color:#666;font-size:13px;margin-bottom:24px;}.metric-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;}" +
     ".metric-card{border:1px solid #eee;border-radius:10px;padding:12px;background:#fafafa;}" +
-    "img{max-width:100%;height:auto;border:1px solid #eee;border-radius:8px;}";
+    "img{max-width:100%;height:auto;border:1px solid #eee;border-radius:8px;}" +
+    "a.citation-ref{color:#2563eb;text-decoration:none;border-bottom:1px dotted #93c5fd;}" +
+    "a.citation-ref:hover{color:#1d4ed8;}" +
+    ".export-references{margin-top:32px;padding-top:16px;border-top:1px solid #eee;}" +
+    ".export-references li{margin:10px 0;}" +
+    ".reference-excerpt{color:#64748b;font-size:12px;margin:4px 0 0;}" +
+    ".funnel-viz{display:flex;flex-direction:column;align-items:center;gap:0;padding:4px 12px 8px;}" +
+    ".funnel-viz-stage{width:100%;display:flex;justify-content:center;}" +
+    ".funnel-viz-bar{position:relative;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:46px;padding:0 18px;border-radius:10px;background:linear-gradient(135deg,#ffe08a 0%,#ffc300 48%,#f5b800 100%);box-shadow:0 8px 22px rgba(255,195,0,.28);color:#1a1f2e;}" +
+    ".funnel-viz-stage.is-bottleneck .funnel-viz-bar{background:linear-gradient(135deg,#ffb380 0%,#ff6633 52%,#ff4b10 100%);box-shadow:0 8px 22px rgba(255,102,51,.24);}" +
+    ".funnel-viz-label{font-size:13px;font-weight:600;white-space:nowrap;}" +
+    ".funnel-viz-value{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;}" +
+    ".funnel-viz-connector{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 0;color:#64748b;font-size:11px;}" +
+    ".funnel-viz-connector.is-bottleneck{color:#c2410c;font-weight:600;}" +
+    ".funnel-viz-rate{padding:2px 10px;border-radius:999px;background:#f6fcee;border:1px solid rgba(126,184,82,.2);}" +
+    ".viz-export-chart{margin:20px 0;}";
 
   function wrapExportHtml(innerHtml, title) {
     return (
@@ -2121,6 +2145,74 @@
       innerHtml +
       "</body></html>"
     );
+  }
+
+  function prepareChartExportsForReport() {
+    var html2canvasFn = typeof html2canvas !== "undefined" ? html2canvas : null;
+    if (!html2canvasFn) return Promise.resolve();
+
+    var jobs = chartExports
+      .filter(function (item) {
+        return item.type === "html" && item.element;
+      })
+      .map(function (item) {
+        return html2canvasFn(item.element, {
+          backgroundColor: "#ffffff",
+          scale: 2,
+          logging: false,
+          useCORS: true
+        })
+          .then(function (canvas) {
+            item.type = "image";
+            item.src = canvas.toDataURL("image/png");
+          })
+          .catch(function () {
+            /* 保留 HTML 漏斗兜底 */
+          });
+      });
+
+    return Promise.all(jobs);
+  }
+
+  function getChartImagesForPayload() {
+    return chartExports
+      .map(function (item) {
+        if (item.type === "image" && item.src) {
+          return { title: item.title || "图表", dataUrl: item.src };
+        }
+        if (item.type === "canvas" && item.chart && typeof item.chart.toBase64Image === "function") {
+          return { title: item.title || "图表", dataUrl: item.chart.toBase64Image() };
+        }
+        return null;
+      })
+      .filter(Boolean);
+  }
+
+  function buildExportReferencesSection() {
+    var refs = (currentReferences || []).filter(function (ref) {
+      return ref && ref.type !== "agent";
+    });
+    if (!refs.length) return "";
+
+    var html = '<section class="viz-export-section export-references"><h2>引用索引</h2><ul class="reference-list">';
+    refs.forEach(function (ref) {
+      html +=
+        '<li id="ref-' +
+        escapeHtml(ref.id) +
+        '" class="reference-item"><strong>[' +
+        escapeHtml(ref.id) +
+        "]</strong> " +
+        escapeHtml(ref.title || ref.id);
+      if (ref.location || ref.source) {
+        html += ' <span class="reference-location">· ' + escapeHtml(ref.location || ref.source) + "</span>";
+      }
+      if (ref.excerpt) {
+        html += '<p class="reference-excerpt">' + escapeHtml(String(ref.excerpt).slice(0, 240)) + "</p>";
+      }
+      html += "</li>";
+    });
+    html += "</ul></section>";
+    return html;
   }
 
   function handleDownloadHtml() {
@@ -2264,17 +2356,45 @@
 
     if (exportData.answer) {
       sections.push("<h2>完整分析</h2>");
-      sections.push(
+      var answerHtml =
         window.BrandPilotMarkdown
-          ? window.BrandPilotMarkdown.renderMarkdown(exportData.answer)
-          : "<p>" + escapeHtml(exportData.answer) + "</p>"
-      );
+          ? window.BrandPilotMarkdown.renderMarkdown(exportData.answer, { references: currentReferences })
+          : "<p>" + escapeHtml(exportData.answer) + "</p>";
+      sections.push(linkifyCitations(answerHtml, buildReferenceIndex(currentReferences)));
     }
 
     if (exportData.charts && exportData.charts.length) {
       sections.push("<h2>数据图表</h2>");
-      exportData.charts.forEach(function (chart) {
-        sections.push("<h3>" + escapeHtml(chart.title || "图表") + "</h3>");
+      chartExports.forEach(function (item) {
+        sections.push("<h3>" + escapeHtml(item.title || "图表") + "</h3>");
+        if (item.type === "image" && item.src) {
+          sections.push(
+            '<img src="' +
+              item.src +
+              '" alt="' +
+              escapeHtml(item.title || "图表") +
+              '" style="max-width:100%;height:auto;" />'
+          );
+          return;
+        }
+        if (item.chart && typeof item.chart.toBase64Image === "function") {
+          sections.push(
+            '<img src="' +
+              item.chart.toBase64Image() +
+              '" alt="' +
+              escapeHtml(item.title || "图表") +
+              '" style="max-width:100%;height:auto;" />'
+          );
+          return;
+        }
+        if (item.type === "html" && item.element) {
+          sections.push(item.element.outerHTML);
+          return;
+        }
+        var chart = exportData.charts.find(function (c) {
+          return (c.title || "") === (item.title || "");
+        });
+        if (!chart) return;
         var labels = (chart.data && chart.data.labels) || [];
         var values =
           (chart.data &&
@@ -2298,22 +2418,27 @@
       });
     }
 
+    var referencesHtml = buildExportReferencesSection();
+    if (referencesHtml) sections.push(referencesHtml);
+
     if (!sections.length) return "";
     return wrapExportHtml(sections.join("\n"), title);
   }
 
   function openLocalFormalReport(exportData, reason) {
-    var html = buildLocalFormalReportHtml(exportData);
-    if (!html) {
-      setStatusText("无法生成本地报告", { protectMs: 5000 });
-      alert("当前没有可生成报告的分析内容。");
-      return false;
-    }
-    var meta = "基于当前分析结果生成的可编辑报告";
-    if (reason) meta += "（" + reason + "）";
-    openReportPreview(html, meta + " · 可直接编辑，保存后可导出");
-    setStatusText("正式报告已打开（本地模式）", { protectMs: 5000 });
-    return true;
+    return prepareChartExportsForReport().then(function () {
+      var html = buildLocalFormalReportHtml(exportData);
+      if (!html) {
+        setStatusText("无法生成本地报告", { protectMs: 5000 });
+        alert("当前没有可生成报告的分析内容。");
+        return false;
+      }
+      var meta = "基于当前分析结果生成的可编辑报告";
+      if (reason) meta += "（" + reason + "）";
+      openReportPreview(html, meta + " · 可直接编辑，保存后可导出");
+      setStatusText("正式报告已打开（本地模式）", { protectMs: 5000 });
+      return true;
+    });
   }
 
   function handleSidecarReport() {
@@ -2330,52 +2455,65 @@
     setSidecarButtonLoading(true);
     setStatusText("正在生成正式报告…", { protectMs: 30000 });
 
-    var payload = {
-      templateType: "fix",
-      proposal: exportData.proposal || null,
-      summary: exportData.answer || (exportData.proposal && exportData.proposal.summary) || "",
-      brandName: (exportData.proposal && exportData.proposal.title) || "海底捞",
-      period:
-        (exportData.dataSpec && exportData.dataSpec.period && exportData.dataSpec.period.label) ||
-        "2026 H1",
-      charts: exportData.charts || []
-    };
+    prepareChartExportsForReport()
+      .then(function () {
+        var payload = {
+          templateType: "fix",
+          proposal: exportData.proposal || null,
+          summary: exportData.answer || (exportData.proposal && exportData.proposal.summary) || "",
+          brandName: (exportData.proposal && exportData.proposal.title) || "海底捞",
+          period:
+            (exportData.dataSpec && exportData.dataSpec.period && exportData.dataSpec.period.label) ||
+            "2026 H1",
+          charts: exportData.charts || [],
+          chartImages: getChartImagesForPayload(),
+          references: (currentReferences || []).filter(function (ref) {
+            return ref && ref.type !== "agent";
+          })
+        };
 
-    var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-    var timeoutId = controller
-      ? window.setTimeout(function () { controller.abort(); }, 45000)
-      : null;
+        var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+        var timeoutId = controller
+          ? window.setTimeout(function () { controller.abort(); }, 45000)
+          : null;
 
-    fetch("/api/sidecar-report", {
-      method: "POST",
-      headers: window.BrandPilotAuth
-        ? window.BrandPilotAuth.authHeaders({ "Content-Type": "application/json" })
-        : { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      signal: controller ? controller.signal : undefined
-    })
-      .then(parseJsonResponse)
-      .then(function (data) {
-        if (data && data.ok === false) {
-          throw new Error(data.message || "侧车报告服务不可用");
-        }
-        var html = extractSidecarHtml(data);
-        if (!html) throw new Error("未返回 HTML 报告内容");
-        lastSidecarHtml = html;
-        openReportPreview(html, describeSidecarMode(data) + " · 可直接编辑，保存后可导出");
-        setStatusText("正式报告已生成", { protectMs: 4000 });
+        return fetch("/api/sidecar-report", {
+          method: "POST",
+          headers: window.BrandPilotAuth
+            ? window.BrandPilotAuth.authHeaders({ "Content-Type": "application/json" })
+            : { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          signal: controller ? controller.signal : undefined
+        })
+          .then(parseJsonResponse)
+          .then(function (data) {
+            if (data && data.ok === false) {
+              throw new Error(data.message || "侧车报告服务不可用");
+            }
+            var html = extractSidecarHtml(data);
+            if (!html) throw new Error("未返回 HTML 报告内容");
+            lastSidecarHtml = html;
+            openReportPreview(html, describeSidecarMode(data) + " · 可直接编辑，保存后可导出");
+            setStatusText("正式报告已生成", { protectMs: 4000 });
+          })
+          .catch(function (error) {
+            var reason =
+              error && error.name === "AbortError"
+                ? "侧车服务超时"
+                : (error && error.message) || "侧车服务不可用";
+            return openLocalFormalReport(exportData, reason).then(function (opened) {
+              if (!opened) {
+                setStatusText("正式报告生成失败", { protectMs: 6000 });
+                alert("正式报告生成失败：" + reason);
+              }
+            });
+          })
+          .finally(function () {
+            if (timeoutId) window.clearTimeout(timeoutId);
+            setSidecarButtonLoading(false);
+          });
       })
-      .catch(function (error) {
-        var reason =
-          error && error.name === "AbortError"
-            ? "侧车服务超时"
-            : (error && error.message) || "侧车服务不可用";
-        if (openLocalFormalReport(exportData, reason)) return;
-        setStatusText("正式报告生成失败", { protectMs: 6000 });
-        alert("正式报告生成失败：" + reason);
-      })
-      .finally(function () {
-        if (timeoutId) window.clearTimeout(timeoutId);
+      .catch(function () {
         setSidecarButtonLoading(false);
       });
   }
@@ -2773,7 +2911,9 @@
     if (hasAnswer) {
       var answerSection = document.createElement("section");
       answerSection.className = "viz-export-section";
-      answerSection.innerHTML = "<h2>完整分析</h2>" + vizAnswer.innerHTML;
+      var refIndex = buildReferenceIndex(currentReferences);
+      answerSection.innerHTML =
+        "<h2>完整分析</h2>" + linkifyCitations(vizAnswer.innerHTML, refIndex);
       root.appendChild(answerSection);
     }
 
@@ -2787,7 +2927,12 @@
         var title = document.createElement("h3");
         title.textContent = item.title || "图表";
         block.appendChild(title);
-        if (item.type === "html" && item.element) {
+        if (item.type === "image" && item.src) {
+          var snapshot = document.createElement("img");
+          snapshot.alt = item.title || "图表";
+          snapshot.src = item.src;
+          block.appendChild(snapshot);
+        } else if (item.type === "html" && item.element) {
           block.appendChild(item.element.cloneNode(true));
         } else if (item.chart) {
           var img = document.createElement("img");
@@ -2798,6 +2943,13 @@
         chartsSection.appendChild(block);
       });
       root.appendChild(chartsSection);
+    }
+
+    var referencesHtml = buildExportReferencesSection();
+    if (referencesHtml) {
+      var refWrap = document.createElement("div");
+      refWrap.innerHTML = referencesHtml;
+      root.appendChild(refWrap.firstElementChild);
     }
 
     root.style.position = "fixed";

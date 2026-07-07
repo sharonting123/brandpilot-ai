@@ -455,7 +455,15 @@ function buildTaskFromClientPayload(body) {
     lines.push("");
   }
 
-  if (Array.isArray(body.charts) && body.charts.length) {
+  if (Array.isArray(body.chartImages) && body.chartImages.length) {
+    lines.push("## 图表（嵌入正文末尾，必须使用以下图片）");
+    body.chartImages.forEach((item) => {
+      if (!item || !item.dataUrl) return;
+      lines.push(`### ${item.title || "图表"}`);
+      lines.push(`<img src="${item.dataUrl}" alt="${item.title || "图表"}" style="max-width:100%;height:auto;" />`);
+      lines.push("");
+    });
+  } else if (Array.isArray(body.charts) && body.charts.length) {
     lines.push("## 图表数据（放在完整分析文字之后渲染）");
     body.charts.forEach((chart) => {
       const labels = (chart.data && chart.data.labels) || [];
@@ -472,9 +480,17 @@ function buildTaskFromClientPayload(body) {
     "## 输出要求",
     "- 生成面向 KA 客户的 HTML 经营提案报告（固定骨架模板）",
     "- 只使用上文提供的真实数据，禁止编造外部事实",
-    "- 页面顺序：指标卡与文字分析在前，ECharts 图表章节放在完整分析文字之后",
-    "- 包含指标卡、ECharts 图表、策略动作与风险提示"
+    "- 页面顺序：指标卡与文字分析在前，图表章节放在完整分析文字之后",
+    "- 正文中的引用编号如 [S1][C1][D1] 须保留为可点击锚点，链接到文末引用索引",
+    "- 包含指标卡、图表（优先使用上文 chartImages 的 img）、策略动作与风险提示"
   );
+
+  if (Array.isArray(body.references) && body.references.length) {
+    lines.push("", "## 引用索引（文末展示）");
+    body.references.forEach((ref) => {
+      lines.push(`- [${ref.id}] ${ref.title || ref.id}${ref.excerpt ? "：" + String(ref.excerpt).slice(0, 120) : ""}`);
+    });
+  }
 
   return lines.join("\n");
 }

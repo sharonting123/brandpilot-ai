@@ -185,6 +185,40 @@
     };
   }
 
+  var POLICY_HINT =
+    "💡 目前仅支持上传<strong>策略性文档</strong>（方案、报告、制度说明等）；经营<strong>数字类</strong>问题请直接提问，系统从 Supabase 底表查询。";
+
+  function parseStatusLabel(item) {
+    if (!item) return "待解析";
+    if (item.sourceType === "ocr") return "OCR 已解析";
+    return "文本已解析";
+  }
+
+  function formatUploadStatusSummary(items) {
+    var list = items || [];
+    if (!list.length) return "";
+    var parts = list.map(function (item) {
+      return "「" + item.filename + "」" + parseStatusLabel(item);
+    });
+    if (parts.length === 1) return "✅ " + parts[0];
+    if (parts.length === 2) return "✅ " + parts.join(" · ");
+    return "✅ " + parts.slice(0, 2).join(" · ") + " 等 " + parts.length + " 个文件已解析";
+  }
+
+  function formatChipMeta(item) {
+    var status = parseStatusLabel(item);
+    var meta =
+      status +
+      " · " +
+      (item.format || "").toUpperCase() +
+      " · " +
+      (item.charCount || 0).toLocaleString("zh-CN") +
+      " 字 · " +
+      (item.chunkCount || 1) +
+      " 段";
+    if (item.truncated) meta += " · 已截断";
+    return meta;
+  }
   function renderChips(container, options) {
     if (!container) return;
     if (!state.items.length) {
@@ -195,22 +229,30 @@
     }
     container.hidden = false;
     var opts = options || {};
+    var names = state.items
+      .map(function (item) {
+        return escapeHtml(item.filename) + "（" + escapeHtml(parseStatusLabel(item)) + "）";
+      })
+      .join("、");
     var hint =
+      '<p class="doc-attachments-hint doc-attachments-hint--policy">' +
+      POLICY_HINT +
+      "</p>";
+    hint +=
       opts.justCompleted
-        ? '<p class="doc-attachments-hint doc-attachments-hint--done">✅ 上传完成！已添加 ' +
-          (opts.addedCount || state.items.length) +
-          " 个文档，可输入问题后点发送；图片已 OCR 的会按问题选相关片段。</p>"
+        ? '<p class="doc-attachments-hint doc-attachments-hint--done">✅ 上传完成：' +
+          names +
+          "。可输入问题后发送。</p>"
         : '<p class="doc-attachments-hint">📎 已添加 ' +
           state.items.length +
-          " 个文档。系统会<strong>切分为段落</strong>，发送时按你的问题选取相关片段（图片会先 OCR 识别）。</p>";
+          " 个文档：" +
+          names +
+          "</p>";
     container.innerHTML = hint + state.items.map(function (item) {
-      var meta = item.format.toUpperCase() + " · " + item.charCount.toLocaleString("zh-CN") + " 字 · " + item.chunkCount + " 段";
-      if (item.sourceType === "ocr") {
-        meta += item.ocrProvider === "longcat" ? " · LongCat OCR" : " · OCR";
-      }
-      if (item.truncated) meta += " · 已截断";
+      var meta = formatChipMeta(item);
       return (
         '<span class="doc-chip" data-doc-id="' + escapeAttr(item.id) + '">' +
+        '<span class="doc-chip-status" title="' + escapeAttr(parseStatusLabel(item)) + '">✓</span>' +
         '<span class="doc-chip-name" title="' + escapeAttr(item.filename) + '">' + escapeHtml(item.filename) + "</span>" +
         '<span class="doc-chip-meta">' + escapeHtml(meta) + "</span>" +
         '<button type="button" class="doc-chip-remove" data-doc-remove="' + escapeAttr(item.id) + '" aria-label="移除文档">×</button>' +
@@ -222,7 +264,7 @@
       window.setTimeout(function () {
         container.classList.remove("upload-just-completed");
         if (state.items.length) renderChips(container);
-      }, 6000);
+      }, 8000);
     }
   }
 
@@ -243,6 +285,9 @@
     clearAttachments: clearAttachments,
     getAttachments: getAttachments,
     getAttachmentsForRequest: getAttachmentsForRequest,
+    formatUploadStatusSummary: formatUploadStatusSummary,
+    parseStatusLabel: parseStatusLabel,
+    policyHint: POLICY_HINT,
     renderChips: renderChips,
     hasPendingImages: hasPendingImages,
     isImageFile: isImageFile,
