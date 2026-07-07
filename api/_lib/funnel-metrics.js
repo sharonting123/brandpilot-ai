@@ -158,6 +158,57 @@ function buildFunnelMetrics(context, filters = {}) {
   };
 }
 
+function buildTrafficPathComparison(context, filters = {}) {
+  const paths = ["search", "recommend", "all"];
+  const comparison = {};
+  for (const path of paths) {
+    const metrics = buildFunnelMetrics(context, { ...filters, trafficPath: path });
+    comparison[path] = {
+      trafficPath: path,
+      funnel: metrics.funnel,
+      summary: metrics.summary,
+      bottleneck: metrics.bottleneck
+    };
+  }
+
+  const searchPaid = comparison.search.summary.totalPaidOrders || 0;
+  const recommendPaid = comparison.recommend.summary.totalPaidOrders || 0;
+  const allPaid = comparison.all.summary.totalPaidOrders || 0;
+  comparison.split = {
+    searchPaidOrders: searchPaid,
+    recommendPaidOrders: recommendPaid,
+    allPaidOrders: allPaid,
+    searchShare: allPaid ? Number((searchPaid / allPaid).toFixed(4)) : null,
+    recommendShare: allPaid ? Number((recommendPaid / allPaid).toFixed(4)) : null,
+    note:
+      "搜索路径 source=mt_search_*；推荐路径 source=mt_feed_poi；all=两路径之和，标签为「流量曝光/流量点击」，不可称作搜索。"
+  };
+  return comparison;
+}
+
+function buildTrafficFunnelPromptBlock(comparison) {
+  if (!comparison) return "";
+  return (
+    "\n\n## 搜索 / 推荐双路径漏斗（系统预聚合，分析流量转化时必须分别引用）\n" +
+    "```json\n" +
+    JSON.stringify(comparison, null, 2) +
+    "\n```\n" +
+    "要求：复盘流量转化时分别写清搜索链路与推荐链路的曝光、点击、损耗点；汇总口径仅用于总量，不得把汇总流量称作搜索。"
+  );
+}
+
+function funnelChartFromMetrics(metrics, title) {
+  const funnel = metrics && metrics.funnel ? metrics.funnel : [];
+  return {
+    type: "funnel",
+    title,
+    data: {
+      labels: funnel.map((stage) => stage.stage),
+      datasets: [{ label: "用户数", data: funnel.map((stage) => stage.count) }]
+    }
+  };
+}
+
 function funnelRowsForSql(funnel) {
   return (funnel || []).map((stage, index) => ({
     stage_order: index + 1,
@@ -207,6 +258,9 @@ function buildFunnelSql(brandId, filters = {}) {
 
 module.exports = {
   buildFunnelMetrics,
+  buildTrafficPathComparison,
+  buildTrafficFunnelPromptBlock,
+  funnelChartFromMetrics,
   funnelRowsForSql,
   buildFunnelSql,
   filterFactsByPeriod,

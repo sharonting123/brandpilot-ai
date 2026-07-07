@@ -283,6 +283,7 @@ function buildProposalStructuredPrompt(brandName, params, context = {}) {
     "- metrics 每项必须含 label、value、refs(至少1个，只能用 " + refHint + ")",
     "- insights/actions/risks 必须是对象数组，每项含 text(string) 和 refs(string[])",
     "- timeline/assets 每项含 title, body",
+    "- charts 中漏斗必须区分搜索链路与推荐链路（各一张 type=funnel），禁止把汇总流量标成搜索",
     "- 不要输出 Markdown，只输出 JSON",
     "",
     "示例：",

@@ -268,8 +268,10 @@
       return String(value || "");
     };
     var status = inferStepStatus(step);
-    var stepName = friendlyStepName(step.name);
+    var stepName = friendlyStepName(step.name) || "处理中";
     var stepSummary = friendlyStepSummary(step);
+    var hasChildren = step.children && step.children.length > 0;
+    var showSpinner = status === "running" && !hasChildren;
     var duration = step.durationMs && status !== "running"
       ? '<span class="trace-duration">' + escapeHtml(friendlyDuration(step.durationMs)) + "</span>"
       : "";
@@ -291,10 +293,13 @@
         "</span>";
     }
 
+    var dotStatus = showSpinner ? status : status === "running" && hasChildren ? "done" : status;
+    var classNames = ["progress-step", "status-" + dotStatus];
+    if (showSpinner) classNames.push("running", "active");
+    if (dotStatus === "done") classNames.push("done");
+
     var html =
-      '<li class="progress-step status-' + status +
-      (status === "running" ? " running active" : "") +
-      (status === "done" ? " done" : "") +
+      '<li class="' + classNames.join(" ") +
       '" data-step-id="' + escapeHtml(step.id || "") + '">' +
       '<span class="progress-dot"></span>' +
       '<span class="progress-text">' +

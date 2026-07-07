@@ -26,6 +26,13 @@ const {
   buildNl2SqlContextBlock,
   finalizeAnswerWithNl2Sql
 } = require("../nl2sql-pipeline");
+const { getContext } = require("../agent-tools");
+const { extractFilters } = require("../nl2sql");
+const {
+  buildTrafficPathComparison,
+  buildTrafficFunnelPromptBlock,
+  funnelChartFromMetrics
+} = require("../funnel-metrics");
 
 /**
  * 获取年度提案工作流的 system prompt
@@ -50,7 +57,8 @@ function getSystemPrompt(brandName, params) {
     "- GTV 三因子拆解：交易用户数 × 购买频次 × 客单价",
     "- 变现率视角：take rate（佣金率+广告费率）、广告商户渗透率",
     "- 城市分层：按 GMV 和 ROI 分配资源",
-    "- 链路归因：搜索/推荐→POI→套餐→下单→支付→核销",
+    "- 链路归因：必须分别分析搜索路径（mt_search_*）与推荐路径（mt_feed_poi），再给出汇总；禁止把全部流量称作搜索",
+    "- 系统已预聚合 search / recommend / all 三口径漏斗，优先引用 JSON 中的分路径数据",
     "",
     "约束：",
     "- 只使用工具返回的真实数据，不编造外部事实",
@@ -132,7 +140,6 @@ async function execute(params) {
   let toolCallsMade = [];
   let tokenUsage = emptyTokenUsage();
   const toolStart = Date.now();
-  reportProgress(onProgress, buildStepStart("年度提案 Agent", "拉取品牌数据并生成提案…"));
 
   if (!modelConfig || !modelConfig.configured) {
     // 调试态：模型未配置不再降级到确定性分析，直接抛错暴露问题
@@ -160,7 +167,16 @@ async function execute(params) {
   });
   nlPayload = nl;
   const proposalParams = { ...intentParams, _message: message };
-  const systemPrompt = getSystemPrompt(brandName, proposalParams) + buildNl2SqlContextBlock(nl);
+  const context = await getContext(resolvedBrandId);
+  const funnelFilters = {
+    ...(nl && nl.filters ? nl.filters : {}),
+    ...extractFilters(message, intentParams)
+  };
+  const trafficFunnels = buildTrafficPathComparison(context, funnelFilters);
+  const systemPrompt =
+    getSystemPrompt(brandName, proposalParams) +
+    buildNl2SqlContextBlock(nl) +
+    buildTrafficFunnelPromptBlock(trafficFunnels);
 
   reportProgress(onProgress, buildStepStart("推理Agent", "正在整合查数结果与知识，撰写分析结论…"));
 
@@ -347,28 +363,36 @@ function buildFallbackProposal(brandName, params = {}, nlPayload = null) {
   });
 }
 
-function buildFallbackCharts(brandName, includeGtvTrend) {
-  const charts = [
-    {
+function buildFallbackCharts(brandName, includeGtvTrend, trafficFunnels) {
+  const charts = [];
+  if (trafficFunnels && trafficFunnels.search) {
+    charts.push(
+      funnelChartFromMetrics(trafficFunnels.search, brandName + " 搜索链路转化漏斗")
+    );
+    charts.push(
+      funnelChartFromMetrics(trafficFunnels.recommend, brandName + " 推荐链路转化漏斗")
+    );
+  } else {
+    charts.push({
       type: "funnel",
-      title: brandName + " 搜索到核销转化漏斗",
+      title: brandName + " 搜索链路转化漏斗",
       data: {
         labels: ["搜索曝光", "搜索点击", "POI点击", "套餐详情", "下单提交", "支付订单", "核销订单"],
         datasets: [{ label: "用户数", data: [5120000, 486400, 205000, 94500, 33900, 21600, 18400] }]
       }
-    },
-    {
-      type: "bar",
-      title: "城市GMV分布（6月）",
+    });
+    charts.push({
+      type: "funnel",
+      title: brandName + " 推荐链路转化漏斗",
       data: {
-        labels: ["上海", "北京", "深圳", "成都", "杭州"],
-        datasets: [{ label: "GMV（万元）", data: [2473, 2247, 1644, 1458, 1094] }]
+        labels: ["推荐曝光", "推荐点击", "POI点击", "套餐详情", "下单提交", "支付订单", "核销订单"],
+        datasets: [{ label: "用户数", data: [2150000, 129000, 78000, 35200, 12800, 8200, 7100] }]
       }
-    }
-  ];
+    });
+  }
 
   if (includeGtvTrend) {
-    charts.splice(1, 0, {
+    charts.push({
       type: "line",
       title: "H1 月度 GTV 趋势（万元）",
       data: {
@@ -377,6 +401,15 @@ function buildFallbackCharts(brandName, includeGtvTrend) {
       }
     });
   }
+
+  charts.push({
+    type: "bar",
+    title: "城市GMV分布（6月）",
+    data: {
+      labels: ["上海", "北京", "深圳", "成都", "杭州"],
+      datasets: [{ label: "GMV（万元）", data: [2473, 2247, 1644, 1458, 1094] }]
+    }
+  });
 
   return charts;
 }

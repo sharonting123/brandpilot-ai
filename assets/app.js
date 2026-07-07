@@ -232,6 +232,13 @@
     var parentId = step.parentId || (stepId === "local_start" ? null : "local_start");
     if (parentId && progressStepsMap[parentId]) {
       attachProgressChild(parentId, stepId);
+      if (
+        progressStepsMap[parentId].status === "running" &&
+        parentId !== "local_start" &&
+        stepId !== parentId
+      ) {
+        progressStepsMap[parentId].status = "done";
+      }
     } else if (stepId !== "local_start") {
       attachProgressChild("local_start", stepId);
     }
@@ -1238,8 +1245,18 @@
     scrollToBottom();
   }
 
+  function finalizeAllProgressSteps() {
+    Object.keys(progressStepsMap).forEach(function (id) {
+      if (progressStepsMap[id].status === "running") {
+        progressStepsMap[id].status = "done";
+      }
+    });
+    renderProgressTreeDom();
+  }
+
   function finalizeStreamMessage(latencyMs, data) {
     if (progressMessageEl) {
+      finalizeAllProgressSteps();
       var titleEl = progressMessageEl.querySelector(".progress-title");
       if (titleEl) titleEl.textContent = "执行完成 · " + latencyMs + "ms";
       removeProgressMessage();

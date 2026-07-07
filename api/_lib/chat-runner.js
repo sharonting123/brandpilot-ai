@@ -263,11 +263,6 @@ async function runChatRequest(ctx) {
       workflowSubSeq += 1;
       const subId = workflowId + "_sub_" + workflowSubSeq;
       const subGroup = step.group || inferWorkflowStepGroup(step.name);
-      emitFriendlyStart(emit, subId, step.name, step.summary || friendlyStepSummary(step), {
-        parentId: workflowId,
-        level: 2,
-        group: subGroup
-      });
       emitFriendlyStep(emit, {
         id: subId,
         status: inferStepStatus(step),
@@ -276,7 +271,7 @@ async function runChatRequest(ctx) {
         group: subGroup,
         name: step.name,
         tool: step.tool,
-        summary: step.summary,
+        summary: step.summary || friendlyStepSummary(step),
         durationMs: step.durationMs
       });
     }
