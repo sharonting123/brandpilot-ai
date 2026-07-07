@@ -34,7 +34,7 @@ const KEYWORD_RULES = [
   },
   {
     workflow: "funnel_diagnosis",
-    strong: ["漏斗", "损耗", "断点", "链路", "搜索到", "下单到", "转化链", "搜索到核销"],
+    strong: ["漏斗", "损耗", "断点", "链路", "搜索到", "推荐链路", "搜索链路", "推荐路径", "转化链", "搜索到核销"],
     weak: ["转化", "流失", "诊断", "核销"],
     weight: 1.0
   },
@@ -58,7 +58,7 @@ const INTENT_JSON_INSTRUCTION = [
   "0. greeting（寒暄/身份咨询）：纯打招呼（你好、在吗）、问你是谁/能做什么/有什么能力、谢谢/再见。不包含任何经营数据或分析请求。",
   "0b. document_qa（文档解析）：用户已上传文档，问文档主要内容/总结/解读，且不涉及 GMV/核销等经营查数。",
   "1. annual_proposal（品牌年度提案）：用户要完整提案/报告/年度复盘/方案规划。",
-  "2. funnel_diagnosis（链路诊断）：用户问搜索到核销的转化漏斗、损耗点、断点。",
+  "2. funnel_diagnosis（链路诊断）：用户问搜索/推荐到核销的七阶段转化漏斗、损耗点、断点；可指定 trafficPath=search|recommend|all。",
   "3. competitor_benchmark（竞对对比）：用户要对比平台（美团 vs 抖音）或品牌竞品（海底捞 vs 呷哺呷哺）。",
   "4. period_compare（同环比分析）：用户问环比/同比/趋势变化、是否下降、哪个城市拖累。",
   "5. data_query（纯数据问答）：用户问具体数字，如「6月GMV多少」。",

@@ -302,7 +302,7 @@ function detectMetricFromGraph(text) {
   const t = String(text || "").toLowerCase();
 
   const priorityPatterns = [
-    { metric: "funnel", re: /漏斗|链路|转化链|ctr|曝光.*点击/ },
+    { metric: "funnel", re: /漏斗|链路|转化链|推荐链路|搜索链路|ctr|曝光.*点击/ },
     { metric: "gtv", re: /gtv|流水/ },
     { metric: "gmv", re: /gmv|营业额/ },
     { metric: "verified_rate", re: /核销率/ },
@@ -372,6 +372,59 @@ function inferNextDrillDimension(scopeLevel, text) {
   return graph.childLevel[scopeLevel] || "city";
 }
 
+function detectTrafficPathFromText(text) {
+  const t = String(text || "");
+  if (!t) return null;
+
+  if (/推荐动作|推荐策略|推荐方案|推荐动作清单/.test(t)) return null;
+
+  const recommendPatterns = [
+    /推荐链路/,
+    /推荐路径/,
+    /推荐流量/,
+    /推荐来源/,
+    /推荐转化/,
+    /推荐.*?(链路|路径|漏斗|损耗|断点|转化|核销|曝光|点击)/,
+    /信息流/,
+    /feed\s*流/i,
+    /mt_feed/i
+  ];
+  const searchPatterns = [
+    /搜索链路/,
+    /搜索路径/,
+    /搜索流量/,
+    /搜索来源/,
+    /搜索转化/,
+    /从搜索/,
+    /搜索到核销/,
+    /搜索到/,
+    /搜索.*?(链路|路径|漏斗|损耗|断点|转化|核销|曝光|点击)/
+  ];
+
+  for (const re of recommendPatterns) {
+    if (re.test(t)) return "recommend";
+  }
+  for (const re of searchPatterns) {
+    if (re.test(t)) return "search";
+  }
+
+  if (/推荐(?!动作|策略|方案)/.test(t) && /链路|漏斗|转化|损耗|核销|曝光|点击|来源/.test(t)) {
+    return "recommend";
+  }
+  if (/搜索/.test(t) && /链路|漏斗|转化|损耗|核销|曝光|点击|来源/.test(t)) {
+    return "search";
+  }
+
+  return null;
+}
+
+function trafficPathLabel(path) {
+  if (path === "recommend") return "推荐";
+  if (path === "search") return "搜索";
+  if (path === "all") return "搜索+推荐汇总";
+  return path || "搜索+推荐汇总";
+}
+
 function validateDrillFromGraph(scope, dimension, text) {
   const warnings = [];
   const rules = getBreakdownRules();
@@ -402,6 +455,8 @@ module.exports = {
   getMetricSpec,
   getTableMeta,
   detectMetricFromGraph,
+  detectTrafficPathFromText,
+  trafficPathLabel,
   getBreakdownRules,
   getDisambiguationHints,
   getScenario,

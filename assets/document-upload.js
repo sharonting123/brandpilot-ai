@@ -157,21 +157,32 @@
   }
 
   function getAttachments() {
+    return state.items.map(mapAttachmentItem);
+  }
+
+  /** 发送到 /api/chat 时只带 text，避免 chunks 重复撑爆请求体；服务端会重新切分。 */
+  function getAttachmentsForRequest() {
     return state.items.map(function (item) {
-      return {
-        filename: item.filename,
-        name: item.filename,
-        format: item.format,
-        text: item.text,
-        chunks: item.chunks,
-        chunkCount: item.chunkCount,
-        charCount: item.charCount,
-        truncated: item.truncated,
-        sourceType: item.sourceType,
-        ocrModel: item.ocrModel,
-        ocrProvider: item.ocrProvider
-      };
+      var mapped = mapAttachmentItem(item);
+      delete mapped.chunks;
+      return mapped;
     });
+  }
+
+  function mapAttachmentItem(item) {
+    return {
+      filename: item.filename,
+      name: item.filename,
+      format: item.format,
+      text: item.text,
+      chunks: item.chunks,
+      chunkCount: item.chunkCount,
+      charCount: item.charCount,
+      truncated: item.truncated,
+      sourceType: item.sourceType,
+      ocrModel: item.ocrModel,
+      ocrProvider: item.ocrProvider
+    };
   }
 
   function renderChips(container, options) {
@@ -231,6 +242,7 @@
     removeAttachment: removeAttachment,
     clearAttachments: clearAttachments,
     getAttachments: getAttachments,
+    getAttachmentsForRequest: getAttachmentsForRequest,
     renderChips: renderChips,
     hasPendingImages: hasPendingImages,
     isImageFile: isImageFile,

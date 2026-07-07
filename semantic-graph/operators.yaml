@@ -70,16 +70,23 @@ operators:
         type: supabase_context
       - name: filters
         type: time_filters
+      - name: trafficPath
+        type: traffic_source
+        optional: true
+        default: all
     outputs:
       - funnel
       - bottleneck
       - stageCount
       - conversion_rates
+    stage_count: 7
+    stages:
+      canonical: [流量曝光, 流量点击, POI点击, 套餐详情, 下单提交, 支付订单, 核销订单]
     formulas:
       conversion_rate: current_stage / previous_stage
       loss_rate: 1 - conversion_rate
     scenarios: [funnel_diagnosis, annual_proposal]
-    implementation: api/_lib/metric-operators.js
+    implementation: api/_lib/funnel-metrics.js
     source_tables:
       - fact_search_keyword_monthly
       - fact_poi_monthly

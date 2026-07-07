@@ -410,27 +410,25 @@ computeAnomalyScore(series)
 computeOpportunityScore(metrics)
 ```
 
-漏斗算子输出示例：
+漏斗算子输出示例（七阶段，前两段随 trafficPath 命名）：
 
 ```json
 {
   "operator": "computeFunnel",
+  "trafficPath": "recommend",
   "stages": [
-    {
-      "name": "搜索曝光",
-      "value": 100000,
-      "conversionFromPrevious": null
-    },
-    {
-      "name": "搜索点击",
-      "value": 12000,
-      "conversionFromPrevious": 0.12
-    }
+    { "name": "推荐曝光", "value": 82000, "conversionFromPrevious": null },
+    { "name": "推荐点击", "value": 9600, "conversionFromPrevious": 0.117 },
+    { "name": "POI点击", "value": 5100, "conversionFromPrevious": 0.531 },
+    { "name": "套餐详情", "value": 2800, "conversionFromPrevious": 0.549 },
+    { "name": "下单提交", "value": 1900, "conversionFromPrevious": 0.679 },
+    { "name": "支付订单", "value": 1650, "conversionFromPrevious": 0.868 },
+    { "name": "核销订单", "value": 1410, "conversionFromPrevious": 0.855 }
   ],
   "largestLeakage": {
-    "from": "POI 访问",
-    "to": "套餐详情",
-    "rate": 0.31
+    "from": "推荐曝光",
+    "to": "推荐点击",
+    "rate": 0.117
   },
   "refs": ["S1", "D2"]
 }

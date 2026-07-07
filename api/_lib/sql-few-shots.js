@@ -65,6 +65,22 @@ const SQL_FEW_SHOTS = [
     reasoning: "用户问转化链路损耗，查漏斗七阶段聚合，需按月份过滤日表。"
   },
   {
+    queryType: "funnel_conversion",
+    table: "fact_search_keyword_monthly",
+    question: "海底捞2026年6月推荐链路的转化哪里损耗最大？",
+    sql:
+      "-- 推荐路径七阶段漏斗（source=mt_feed_poi）\n" +
+      "WITH search_agg AS (\n" +
+      "  SELECT SUM(impressions) impressions, SUM(clicks) clicks, SUM(poi_clicks) poi_clicks,\n" +
+      "         SUM(deal_clicks) deal_clicks, SUM(order_submits) order_submits,\n" +
+      "         SUM(paid_orders) paid_orders, SUM(verified_orders) verified_orders\n" +
+      "  FROM fact_search_keyword_monthly\n" +
+      "  WHERE brand_id = 'haidilao' AND month = '2026-06-30' AND source = 'mt_feed_poi'\n" +
+      ")\n" +
+      "SELECT stage_order, stage, user_count, conversion_rate_pct FROM funnel_stage_view ORDER BY stage_order",
+    reasoning: "用户问推荐链路损耗，漏斗需加 source=mt_feed_poi 过滤，仅统计推荐流量。"
+  },
+  {
     queryType: "search_keywords",
     table: "fact_search_keyword_monthly",
     question: "搜索曝光最高的关键词有哪些？",

@@ -1,7 +1,7 @@
 const { monthKeyToEndDate, monthMatches } = require("./period-utils");
 const { normalizeMonthEnd } = require("./month-end");
 const { routeTimeQuery, semanticsToFilters } = require("./time-router");
-const { getSchemaCatalog: getGraphSchemaCatalog, getCities } = require("./semantic-graph");
+const { getSchemaCatalog: getGraphSchemaCatalog, getCities, detectTrafficPathFromText, trafficPathLabel } = require("./semantic-graph");
 
 function getSchemaCatalogResolved() {
   return getGraphSchemaCatalog();
@@ -23,7 +23,7 @@ const SCHEMA_CATALOG = new Proxy([], {
 const QUERY_TEMPLATES = [
   {
     id: "funnel_conversion",
-    keywords: ["漏斗", "链路", "损耗", "断点", "流失", "转化链", "搜索到核销", "搜索到", "核销", "转化"],
+    keywords: ["漏斗", "链路", "损耗", "断点", "流失", "转化链", "搜索到核销", "搜索到", "推荐链路", "推荐路径", "推荐到", "搜索链路", "核销", "转化"],
     table: "fact_search_keyword_monthly",
     sql: (brandId, filters) => {
       const { buildFunnelSql } = require("./funnel-metrics");
@@ -216,6 +216,15 @@ function extractFilters(question, intentParams = {}, options = {}) {
 
   if (intentParams.city && !filters.city) filters.city = intentParams.city;
   if (intentParams.dimension && !filters.dimension) filters.dimension = intentParams.dimension;
+
+  const trafficPath =
+    intentParams.trafficPath ||
+    (intentParams.filters && intentParams.filters.trafficPath) ||
+    detectTrafficPathFromText(text);
+  if (trafficPath) {
+    filters.trafficPath = trafficPath;
+    filters.trafficPathLabel = trafficPathLabel(trafficPath);
+  }
 
   return filters;
 }

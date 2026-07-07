@@ -113,57 +113,71 @@ async function handleSidecarReport(req, res, body, meta) {
   const { startedAt, requestId } = meta;
   const config = getSidecarConfig(process.env);
   if (!config.enabled) {
-    throw new HttpError(503, "SIDECAR_DISABLED", "请设置 SIDECAR_ENABLED=true 后再调用侧车报告服务。");
+    return sendJson(res, 503, {
+      ok: false,
+      error: "SIDECAR_DISABLED",
+      message: "请设置 SIDECAR_ENABLED=true 后再调用侧车报告服务。"
+    });
   }
 
-  const taskText =
-    (body.task && String(body.task).trim()) ||
-    (body.proposal || body.summary || body.charts ? buildTaskFromClientPayload(body) : "");
+  try {
+    const taskText =
+      (body.task && String(body.task).trim()) ||
+      (body.proposal || body.summary || body.charts ? buildTaskFromClientPayload(body) : "");
 
-  if (taskText) {
-    const report = await requestToolReport({
-      task: taskText,
-      requestId,
-      fileType: body.fileType || config.reportFileType,
-      templateType: body.templateType || config.templateType,
-      config
+    if (taskText) {
+      const report = await requestToolReport({
+        task: taskText,
+        requestId,
+        fileType: body.fileType || config.reportFileType,
+        templateType: body.templateType || config.templateType,
+        config
+      });
+      return sendJson(res, 200, {
+        ok: true,
+        mode: "direct-task",
+        requestId,
+        report,
+        latencyMs: Date.now() - startedAt
+      });
+    }
+
+    const supabaseContext = await loadSupabaseContext(getSupabaseConfig(process.env), {
+      brandId: body.brandId || "haidilao"
     });
+
+    const state = {
+      request: normalizeSidecarRequest(body),
+      requestId,
+      supabaseContext,
+      outputs: {},
+      trace: []
+    };
+
+    await runDeterministicAgents(state);
+    const sidecar = await enrichWorkflowWithSidecarReport(state, process.env);
+
     return sendJson(res, 200, {
       ok: true,
-      mode: "direct-task",
+      mode: "workflow-report",
       requestId,
-      report,
+      taskPreview: buildReportTaskFromWorkflowState(state).slice(0, 1200),
+      workflow: {
+        agents: state.trace,
+        qualityGates: (state.outputs["quality-agent"] && state.outputs["quality-agent"].gates) || []
+      },
+      sidecar,
+      latencyMs: Date.now() - startedAt
+    });
+  } catch (error) {
+    return sendJson(res, 503, {
+      ok: false,
+      error: "SIDECAR_REPORT_FAILED",
+      message: error.message || "侧车报告服务不可用",
+      requestId,
       latencyMs: Date.now() - startedAt
     });
   }
-
-  const supabaseContext = await loadSupabaseContext(getSupabaseConfig(process.env), {
-    brandId: body.brandId || "haidilao"
-  });
-
-  const state = {
-    request: normalizeSidecarRequest(body),
-    requestId,
-    supabaseContext,
-    outputs: {},
-    trace: []
-  };
-
-  await runDeterministicAgents(state);
-  const sidecar = await enrichWorkflowWithSidecarReport(state, process.env);
-
-  return sendJson(res, 200, {
-    ok: true,
-    mode: "workflow-report",
-    requestId,
-    taskPreview: buildReportTaskFromWorkflowState(state).slice(0, 1200),
-    workflow: {
-      agents: state.trace,
-      qualityGates: (state.outputs["quality-agent"] && state.outputs["quality-agent"].gates) || []
-    },
-    sidecar,
-    latencyMs: Date.now() - startedAt
-  });
 }
 
 function normalizeSidecarRequest(body) {

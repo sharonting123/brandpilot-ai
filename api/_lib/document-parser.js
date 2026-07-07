@@ -15,8 +15,6 @@ const SUPPORTED_EXT = new Set([
   ".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"
 ]);
 const IMAGE_EXT = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"]);
-const SENTENCE_END = /[。！？；\n]/;
-
 function normalizeText(text) {
   return String(text || "")
     .replace(/\u0000/g, "")
@@ -44,7 +42,7 @@ function splitLongParagraph(text, maxChars = CHUNK_SIZE) {
   while (rest.length > maxChars) {
     let cut = maxChars;
     const slice = rest.slice(0, maxChars);
-    const matches = [...slice.matchAll(SENTENCE_END)];
+    const matches = [...slice.matchAll(/[。！？；\n]/g)];
     if (matches.length) {
       const last = matches[matches.length - 1];
       if (last.index >= Math.floor(maxChars * 0.45)) {

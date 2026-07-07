@@ -448,8 +448,15 @@ function buildTaskFromClientPayload(body) {
     lines.push("");
   }
 
+  const analysisText = String(body.summary || "").trim();
+  if (analysisText && analysisText !== (proposal.summary || "").trim()) {
+    lines.push("## 完整分析");
+    lines.push(analysisText);
+    lines.push("");
+  }
+
   if (Array.isArray(body.charts) && body.charts.length) {
-    lines.push("## 图表数据");
+    lines.push("## 图表数据（放在完整分析文字之后渲染）");
     body.charts.forEach((chart) => {
       const labels = (chart.data && chart.data.labels) || [];
       const values = (chart.data && chart.data.datasets && chart.data.datasets[0] && chart.data.datasets[0].data) || [];
@@ -465,6 +472,7 @@ function buildTaskFromClientPayload(body) {
     "## 输出要求",
     "- 生成面向 KA 客户的 HTML 经营提案报告（固定骨架模板）",
     "- 只使用上文提供的真实数据，禁止编造外部事实",
+    "- 页面顺序：指标卡与文字分析在前，ECharts 图表章节放在完整分析文字之后",
     "- 包含指标卡、ECharts 图表、策略动作与风险提示"
   );
 

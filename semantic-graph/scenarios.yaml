@@ -66,9 +66,10 @@ scenarios:
 
   funnel_diagnosis:
     label: 链路诊断
-    intent_signals: [漏斗, 链路, 损耗, 断点, 转化链, 搜索到核销]
+    intent_signals: [漏斗, 链路, 损耗, 断点, 转化链, 搜索到核销, 推荐链路, 搜索链路, 推荐路径, 搜索路径]
     query_data: true
     default_metrics: [funnel]
+    dimensions: [traffic_source]
     operators: [computeFunnel]
     primary_tables:
       - fact_search_keyword_monthly
@@ -80,12 +81,14 @@ scenarios:
       - Metric Operators
       - Answer Composer
     funnel_stages:
-      - 搜索曝光
-      - 搜索点击
-      - POI 访问
-      - 套餐点击
-      - 支付订单
-      - 核销订单
+      # 与 api/_lib/funnel-metrics.js 七阶段对齐；前两段随 traffic_source 动态命名
+      canonical: [流量曝光, 流量点击, POI点击, 套餐详情, 下单提交, 支付订单, 核销订单]
+      search: [搜索曝光, 搜索点击, POI点击, 套餐详情, 下单提交, 支付订单, 核销订单]
+      recommend: [推荐曝光, 推荐点击, POI点击, 套餐详情, 下单提交, 支付订单, 核销订单]
+      note: 未指定来源时 trafficPath=all，前两段为「流量曝光/流量点击」；指定搜索/推荐时见 dimensions.traffic_source
+    example_questions:
+      - 海底捞2026年6月从搜索到核销的转化链路哪里损耗最大？
+      - 海底捞2026年6月推荐链路的转化哪里损耗最大？
 
   competitor_benchmark:
     label: 竞对对比
@@ -120,6 +123,7 @@ intent_slots:
   - target_grain
   - metric
   - dimension
+  - traffic_source
   - drill_scope
 
 # 场景 → Query Engine queryType 映射

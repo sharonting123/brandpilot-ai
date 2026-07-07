@@ -79,13 +79,18 @@ dimensions:
     label: 流量来源
     column: source
     table: fact_search_keyword_monthly
+    filter_key: trafficPath
     values: [mt_search_poi, mt_search_deal, mt_feed_poi]
-    aliases: [来源, 渠道来源, 搜索, 推荐]
+    path_values:
+      search: [mt_search_poi, mt_search_deal]
+      recommend: [mt_feed_poi]
+      all: [mt_search_poi, mt_search_deal, mt_feed_poi]
+    aliases: [来源, 渠道来源, 搜索, 推荐, 搜索链路, 推荐链路, 搜索路径, 推荐路径]
     canonical:
       mt_search_poi: 搜索
       mt_search_deal: 搜索套餐
       mt_feed_poi: 推荐
-    note: 搜索+推荐 paid/verified 之和 = fact_brand_monthly 品牌月度汇总
+    note: 搜索+推荐 paid/verified 之和 = fact_brand_monthly 品牌月度汇总；漏斗前两段标签随 trafficPath 变化
 
   campaign:
     label: 活动/套餐

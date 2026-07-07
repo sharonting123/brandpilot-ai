@@ -16,7 +16,7 @@ const {
   dimensionLabel,
   validateDrillQuestion
 } = require("./drill-knowledge-graph");
-const { getQueryTypeMap, getScenario } = require("./semantic-graph");
+const { getQueryTypeMap, getScenario, detectTrafficPathFromText, trafficPathLabel } = require("./semantic-graph");
 
 const WORKFLOW_QUERY_TYPE_FALLBACK = {
   funnel_diagnosis: "funnel_conversion",
@@ -55,6 +55,10 @@ function extractAnalysisSlots(message, options = {}) {
   const metric = intentParams.metric || detectMetricFromText(text);
   const drillScope = resolveDrillScope(text, intentParams);
   const dimension = intentParams.dimension || inferBreakdownDimension(drillScope, text) || detectExplicitDimension(text);
+  const trafficPath =
+    intentParams.trafficPath ||
+    (intentParams.filters && intentParams.filters.trafficPath) ||
+    detectTrafficPathFromText(text);
   const drillWarnings = validateDrillQuestion(drillScope, dimension, text);
 
   const time = {
@@ -84,6 +88,10 @@ function extractAnalysisSlots(message, options = {}) {
   if (drillScope.city) filters.city = drillScope.city;
   if (drillScope.businessArea) filters.businessArea = drillScope.businessArea;
   if (dimension) filters.dimension = dimension;
+  if (trafficPath) {
+    filters.trafficPath = trafficPath;
+    filters.trafficPathLabel = trafficPathLabel(trafficPath);
+  }
 
   const drillSummary = [
     formatDrillPath(drillScope),
@@ -113,6 +121,7 @@ function extractAnalysisSlots(message, options = {}) {
       label: "识别指标 / 维度",
       summary: [
         `指标 ${metric}`,
+        trafficPath ? `流量来源 ${trafficPathLabel(trafficPath)}` : null,
         drillSummary,
         drillWarnings.length ? drillWarnings[0].message : null
       ]
@@ -126,6 +135,7 @@ function extractAnalysisSlots(message, options = {}) {
     queryType,
     metric,
     dimension,
+    trafficPath: trafficPath || null,
     drillScope,
     drillWarnings,
     time,
@@ -149,6 +159,7 @@ function mergeSlotsIntoIntentParams(params, slots) {
     dateTo: slots.time.to,
     city: slots.drillScope.city || params.city,
     businessArea: slots.drillScope.businessArea || params.businessArea,
+    trafficPath: slots.trafficPath || params.trafficPath,
     drillScope: slots.drillScope,
     filters: { ...(params.filters || {}), ...slots.filters },
     analysisSlots: slots

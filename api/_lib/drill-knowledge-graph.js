@@ -128,6 +128,8 @@ function detectExplicitDimension(text) {
   if (/分城市|各城市|同城|城市对比|城市间|按城市/.test(t)) return "city";
   if (/平台|渠道|美团.*抖音|抖音.*美团|分平台/.test(t)) return "platform";
   if (/关键词|搜索词|热搜/.test(t)) return "keyword";
+  if (/推荐链路|推荐路径|推荐流量|推荐来源|推荐转化|信息流/.test(t)) return "traffic_source";
+  if (/搜索链路|搜索路径|搜索流量|搜索来源|搜索到/.test(t)) return "traffic_source";
   if (/套餐|活动|deal/.test(t)) return "campaign";
   return null;
 }

@@ -9,15 +9,27 @@ const { tracePush, reportProgress, buildStepStart } = require("../workflow-progr
 const { emptyTokenUsage, mergeTokenUsage, extractUsageFromGenerateResult } = require("../token-usage");
 const { prefetchNl2Sql } = require("../nl2sql-pipeline");
 const { buildFunnelStageFormulas } = require("../calculation-format");
+const { trafficPathLabel } = require("../semantic-graph");
 
 function getSystemPrompt(brandName, params, nl, funnelRaw) {
   const periodLabel =
     nl && nl.filters && nl.filters.year && nl.filters.monthNum
       ? `${nl.filters.year}年${nl.filters.monthNum}月`
       : params.period || "最新数据";
+  const pathLabel =
+    (nl && nl.filters && nl.filters.trafficPathLabel) ||
+    (params.filters && params.filters.trafficPathLabel) ||
+    (params.trafficPath && trafficPathLabel(params.trafficPath)) ||
+    "搜索+推荐汇总";
+  const pathNote =
+    pathLabel === "搜索+推荐汇总"
+      ? "当前为搜索与推荐双路径汇总口径。"
+      : `当前仅统计「${pathLabel}」来源流量（trafficPath=${(nl && nl.filters && nl.filters.trafficPath) || params.trafficPath || "all"}）。`;
 
   return [
-    "你是 BrandPilot AI 的链路诊断专家，正在为「" + brandName + "」诊断搜索到核销的转化链路。",
+    "你是 BrandPilot AI 的链路诊断专家，正在为「" + brandName + "」诊断转化链路。",
+    "",
+    "【流量来源】" + pathNote,
     "",
     "【重要】系统已预先执行 NL2SQL 与漏斗聚合，请直接基于下方 JSON 数据分析，不要再次调用 runNl2Sql / computeFunnel。",
     "",
@@ -27,7 +39,7 @@ function getSystemPrompt(brandName, params, nl, funnelRaw) {
     "3. 分析造成损耗的可能原因",
     "4. 给出针对性的优化建议",
     "",
-    "漏斗阶段：搜索曝光 → 搜索点击 → POI点击 → 套餐详情 → 下单提交 → 支付订单 → 核销订单",
+    "漏斗阶段：流量曝光 → 流量点击 → POI点击 → 套餐详情 → 下单提交 → 支付订单 → 核销订单（阶段名会随搜索/推荐来源变化）",
     "",
     "回复结构清晰，包含：",
     "1. 【漏斗概览】各阶段的量和转化率",
@@ -57,13 +69,15 @@ async function buildToolDefinitions() {
   return buildSharedTools(["retrieveKnowledge", "queryBrandData"]);
 }
 
-function buildFunnelChart(funnelStr) {
+function buildFunnelChart(funnelStr, pathLabel) {
   try {
     const data = typeof funnelStr === "string" ? JSON.parse(funnelStr) : funnelStr;
     const stages = data.funnel || [];
+    const sourceSuffix =
+      pathLabel && pathLabel !== "搜索+推荐汇总" ? `（${pathLabel}）` : "";
     return [{
       type: "funnel",
-      title: "搜索到核销转化漏斗",
+      title: "转化漏斗" + sourceSuffix,
       description: data.bottleneck ? data.bottleneck.label : "链路漏斗（各阶段转化率见漏斗连接标注）",
       data: {
         labels: stages.map((s) => s.stage),
@@ -192,7 +206,13 @@ async function execute(params) {
     });
   }
 
-  const charts = funnelRaw ? buildFunnelChart(funnelRaw) : [];
+  const pathLabel =
+    (nl && nl.filters && nl.filters.trafficPathLabel) ||
+    (intentParams.filters && intentParams.filters.trafficPathLabel) ||
+    (intentParams.trafficPath && trafficPathLabel(intentParams.trafficPath)) ||
+    "搜索+推荐汇总";
+
+  const charts = funnelRaw ? buildFunnelChart(funnelRaw, pathLabel) : [];
 
   return {
     workflow: "funnel_diagnosis",

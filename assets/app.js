@@ -611,6 +611,10 @@
       var files = documentUploadInput.files;
       documentUploadInput.value = "";
       if (!files || !files.length || !window.BrandPilotDocuments) return;
+      if (!window.BrandPilotAuth || !window.BrandPilotAuth.isLoggedIn()) {
+        redirectToLogin();
+        return;
+      }
       setDocumentUploadBusy(true);
       setStatusText(
         window.BrandPilotDocuments.hasPendingImages(files) ? "OCR 识别中…" : "解析文档中…"
@@ -687,7 +691,11 @@
     }
 
     var message = chatInput.value.trim();
-    var attachments = window.BrandPilotDocuments ? window.BrandPilotDocuments.getAttachments() : [];
+    var attachments = window.BrandPilotDocuments
+      ? (window.BrandPilotDocuments.getAttachmentsForRequest
+          ? window.BrandPilotDocuments.getAttachmentsForRequest()
+          : window.BrandPilotDocuments.getAttachments())
+      : [];
     if (!message && !attachments.length) return;
     if (!message && attachments.length) {
       message = "请结合上传文档内容进行分析。";
@@ -2263,6 +2271,33 @@
       );
     }
 
+    if (exportData.charts && exportData.charts.length) {
+      sections.push("<h2>数据图表</h2>");
+      exportData.charts.forEach(function (chart) {
+        sections.push("<h3>" + escapeHtml(chart.title || "图表") + "</h3>");
+        var labels = (chart.data && chart.data.labels) || [];
+        var values =
+          (chart.data &&
+            chart.data.datasets &&
+            chart.data.datasets[0] &&
+            chart.data.datasets[0].data) ||
+          [];
+        if (labels.length) {
+          sections.push("<ul>");
+          labels.forEach(function (label, index) {
+            sections.push(
+              "<li>" +
+                escapeHtml(String(label)) +
+                "：" +
+                escapeHtml(values[index] != null ? String(values[index]) : "-") +
+                "</li>"
+            );
+          });
+          sections.push("</ul>");
+        }
+      });
+    }
+
     if (!sections.length) return "";
     return wrapExportHtml(sections.join("\n"), title);
   }
@@ -2321,6 +2356,9 @@
     })
       .then(parseJsonResponse)
       .then(function (data) {
+        if (data && data.ok === false) {
+          throw new Error(data.message || "侧车报告服务不可用");
+        }
         var html = extractSidecarHtml(data);
         if (!html) throw new Error("未返回 HTML 报告内容");
         lastSidecarHtml = html;
@@ -2732,6 +2770,13 @@
       root.appendChild(proposalSection);
     }
 
+    if (hasAnswer) {
+      var answerSection = document.createElement("section");
+      answerSection.className = "viz-export-section";
+      answerSection.innerHTML = "<h2>完整分析</h2>" + vizAnswer.innerHTML;
+      root.appendChild(answerSection);
+    }
+
     if (hasCharts) {
       var chartsSection = document.createElement("section");
       chartsSection.className = "viz-export-section";
@@ -2753,13 +2798,6 @@
         chartsSection.appendChild(block);
       });
       root.appendChild(chartsSection);
-    }
-
-    if (hasAnswer) {
-      var answerSection = document.createElement("section");
-      answerSection.className = "viz-export-section";
-      answerSection.innerHTML = "<h2>完整分析</h2>" + vizAnswer.innerHTML;
-      root.appendChild(answerSection);
     }
 
     root.style.position = "fixed";

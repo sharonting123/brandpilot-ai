@@ -319,9 +319,9 @@ metrics:
 
   funnel:
     label: 转化漏斗
-    aliases: [漏斗, 链路, 转化链, 搜索到核销]
+    aliases: [漏斗, 链路, 转化链, 搜索到核销, 推荐到核销, 推荐链路, 搜索链路]
     domain: funnel
-    description: 搜索曝光 → 点击 → POI 访问 → 下单 → 支付 → 核销 多阶段复合指标
+    description: 七阶段转化漏斗（流量曝光→流量点击→POI点击→套餐详情→下单提交→支付订单→核销订单）；支持 traffic_source 分搜索/推荐/汇总
     storage_grain: month
     supported_grains: [day, week, month, range]
     preferred_grain: month
@@ -329,16 +329,21 @@ metrics:
       - fact_search_keyword_monthly
       - fact_poi_monthly
       - fact_deal_campaign_monthly
+    dimensions: [traffic_source]
+    stages:
+      canonical: [流量曝光, 流量点击, POI点击, 套餐详情, 下单提交, 支付订单, 核销订单]
+      search: [搜索曝光, 搜索点击, POI点击, 套餐详情, 下单提交, 支付订单, 核销订单]
+      recommend: [推荐曝光, 推荐点击, POI点击, 套餐详情, 下单提交, 支付订单, 核销订单]
     derived: true
     cardinality:
-      stage: 6
+      stage: 7
     fanout:
       level: high
       multiplier: 3
     estimation:
       method: multi_table_aggregate
-      formula: "按 month 对齐三表 SUM 各阶段指标"
-      expected_rows: "months_in_range * stage_count"
+      formula: "按 month + trafficPath 对齐三表 SUM 各阶段指标"
+      expected_rows: "months_in_range * 7"
 
   pay_gmv:
     label: 支付 GMV

@@ -121,26 +121,37 @@ joins:
       row_multiplier: 1
       method: preserve_left_rows
 
-# 多表漏斗路径（无显式 FK，按 month + brand 对齐聚合）
+# 多表漏斗路径（无显式 FK，按 month + brand + trafficPath 对齐聚合）
 funnel_paths:
-  - id: search_to_poi_to_deal
-    label: 搜索 → POI → 套餐 漏斗
+  - id: search_recommend_to_verify
+    label: 搜索+推荐 七阶段转化漏斗
     storage_grain: month
     cardinality: per_stage
+    stage_count: 7
     fanout:
       level: high
       multiplier: 3
     estimation:
       method: align_by_month
-      expected_rows: "months_in_range * stage_count"
+      expected_rows: "months_in_range * 7"
+    compute_stages:
+      - { order: 1, stage: 流量曝光, fields: [fact_search_keyword_monthly.impressions], path_labels: { search: 搜索曝光, recommend: 推荐曝光, all: 流量曝光 } }
+      - { order: 2, stage: 流量点击, fields: [fact_search_keyword_monthly.clicks], path_labels: { search: 搜索点击, recommend: 推荐点击, all: 流量点击 } }
+      - { order: 3, stage: POI点击, fields: [fact_search_keyword_monthly.poi_clicks, fact_poi_monthly.search_visits, fact_poi_monthly.recommend_visits] }
+      - { order: 4, stage: 套餐详情, fields: [fact_search_keyword_monthly.deal_clicks, fact_deal_campaign_monthly.detail_views] }
+      - { order: 5, stage: 下单提交, fields: [fact_search_keyword_monthly.order_submits, fact_deal_campaign_monthly.order_submits] }
+      - { order: 6, stage: 支付订单, fields: [fact_search_keyword_monthly.paid_orders, fact_deal_campaign_monthly.paid_orders] }
+      - { order: 7, stage: 核销订单, fields: [fact_search_keyword_monthly.verified_orders, fact_deal_campaign_monthly.verified_orders] }
     steps:
       - table: fact_search_keyword_monthly
-        stages: [impressions, clicks, paid_orders, verified_orders]
+        filter_dimension: traffic_source
+        stages: [impressions, clicks, poi_clicks, deal_clicks, order_submits, paid_orders, verified_orders]
       - table: fact_poi_monthly
-        stages: [exposure, visits, deal_clicks]
+        stages: [search_visits, recommend_visits, deal_clicks]
         join: poi_fact_to_dim
       - table: fact_deal_campaign_monthly
-        stages: [paid_orders, verified_orders, pay_gmv]
+        filter_dimension: traffic_source
+        stages: [detail_views, order_submits, paid_orders, verified_orders, pay_gmv]
         join: deal_fact_to_dim
     time_align: month
 

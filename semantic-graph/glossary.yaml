@@ -63,8 +63,27 @@ terms:
   漏斗:
     maps_to: metric.funnel
     scenario: funnel_diagnosis
-    stages: [流量曝光, 流量点击, POI访问, 套餐点击, 支付, 核销]
-    note: 搜索(mt_search_*) + 推荐(mt_feed_poi) 双路径；总和与 fact_brand_monthly 对齐
+    stages: [流量曝光, 流量点击, POI点击, 套餐详情, 下单提交, 支付订单, 核销订单]
+    stage_count: 7
+    note: 前两段随 traffic_source 动态命名（搜索曝光/推荐曝光/流量曝光）；搜索+推荐汇总时 paid/verified 与 fact_brand_monthly 对齐
+
+  推荐链路:
+    maps_to: dimension.traffic_source
+    value: recommend
+    filter_key: trafficPath
+    source_values: [mt_feed_poi]
+    aliases: [推荐路径, 推荐流量, 推荐来源, 信息流, feed]
+    scenario: funnel_diagnosis
+    note: 仅统计 source=mt_feed_poi 的漏斗阶段
+
+  搜索链路:
+    maps_to: dimension.traffic_source
+    value: search
+    filter_key: trafficPath
+    source_values: [mt_search_poi, mt_search_deal]
+    aliases: [搜索路径, 搜索流量, 搜索来源, 搜索到核销]
+    scenario: funnel_diagnosis
+    note: 仅统计 source LIKE mt_search% 的漏斗阶段
 
   月末:
     maps_to: time.month

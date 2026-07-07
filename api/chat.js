@@ -15,7 +15,7 @@ module.exports = async function handler(req, res) {
       throw new HttpError(405, "METHOD_NOT_ALLOWED", "使用 POST /api/chat。");
     }
 
-    const body = await readJson(req, { limitBytes: 256 * 1024 });
+    const body = await readJson(req, { limitBytes: 2 * 1024 * 1024 });
     const message = String(body.message || "").trim();
     const attachments = Array.isArray(body.attachments) ? body.attachments : [];
     if (!message && !attachments.length) {

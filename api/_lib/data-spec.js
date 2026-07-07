@@ -2,6 +2,8 @@
  * 统一数据口径与统计周期说明
  */
 
+const { detectTrafficPathFromText, trafficPathLabel } = require("./semantic-graph");
+
 const METRIC_DEFINITIONS = {
   gmv: {
     name: "GMV",
@@ -33,7 +35,7 @@ const METRIC_DEFINITIONS = {
   },
   funnel: {
     name: "转化漏斗",
-    definition: "搜索曝光 → 门店访问 → 套餐点击 → 下单支付 → 核销，按链路事件归因"
+    definition: "七阶段：流量曝光→流量点击→POI点击→套餐详情→下单提交→支付订单→核销；支持搜索/推荐分路径或双路径汇总"
   },
   marketShare: {
     name: "渠道份额",
@@ -175,6 +177,11 @@ function buildDataSpec(options = {}) {
   }
 
   const metrics = metricsForWorkflow(workflow, message);
+  const trafficPath =
+    intentParams.trafficPath ||
+    (intentParams.filters && intentParams.filters.trafficPath) ||
+    detectTrafficPathFromText(message);
+  const trafficNote = trafficPath ? ` · 流量来源：${trafficPathLabel(trafficPath)}` : "";
   const dataModeNote =
     dataMode === "supabase"
       ? "数据来自 Supabase 经营底表，以经分月报/日报同步为准。"
@@ -185,8 +192,8 @@ function buildDataSpec(options = {}) {
     .map((m) => `${m.name}=${m.definition.replace(/（.*?）/g, "")}`)
     .join("；");
 
-  const footnote = `数据口径：${SOURCE_LABEL} · 统计周期：${period.label}（${period.range}） · ${metricPart}`;
-  const shortLine = `${period.label} · ${SOURCE_LABEL}`;
+  const footnote = `数据口径：${SOURCE_LABEL}${trafficNote} · 统计周期：${period.label}（${period.range}） · ${metricPart}`;
+  const shortLine = `${period.label} · ${SOURCE_LABEL}${trafficNote}`;
 
   return {
     period,
@@ -195,7 +202,9 @@ function buildDataSpec(options = {}) {
     dataModeNote,
     metrics,
     footnote,
-    shortLine
+    shortLine,
+    trafficPath: trafficPath || null,
+    trafficPathLabel: trafficPath ? trafficPathLabel(trafficPath) : null
   };
 }
 
