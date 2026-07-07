@@ -29,7 +29,7 @@ const {
 const { getContext } = require("../agent-tools");
 const { extractFilters } = require("../nl2sql");
 const {
-  buildTrafficPathComparison,
+  registerTrafficPathComparison,
   buildTrafficFunnelPromptBlock,
   funnelChartFromMetrics
 } = require("../funnel-metrics");
@@ -106,7 +106,8 @@ async function generateStructuredProposal(agentAnswer, _modelConfig, brandName, 
     nlPayload: context.nlPayload,
     references,
     params,
-    message: params._message || ""
+    message: params._message || "",
+    trafficFunnelRef: context.trafficFunnelRef || null
   };
   const ProposalSchema = buildProposalSchema(z, brandName, params, agentAnswer, schemaContext);
   const system = buildProposalStructuredPrompt(brandName, params, schemaContext);
@@ -172,11 +173,12 @@ async function execute(params) {
     ...(nl && nl.filters ? nl.filters : {}),
     ...extractFilters(message, intentParams)
   };
-  const trafficFunnels = buildTrafficPathComparison(context, funnelFilters);
+  const trafficFunnelBundle = registerTrafficPathComparison(context, funnelFilters, resolvedBrandId);
+  const trafficFunnels = trafficFunnelBundle.comparison;
   const systemPrompt =
     getSystemPrompt(brandName, proposalParams) +
     buildNl2SqlContextBlock(nl) +
-    buildTrafficFunnelPromptBlock(trafficFunnels);
+    buildTrafficFunnelPromptBlock(trafficFunnelBundle);
 
   reportProgress(onProgress, buildStepStart("推理Agent", "正在整合查数结果与知识，撰写分析结论…"));
 
@@ -236,7 +238,7 @@ async function execute(params) {
         modelConfig,
         brandName,
         proposalParams,
-        { nlPayload, references: getCitationRegistry() }
+        { nlPayload, references: getCitationRegistry(), trafficFunnelRef: trafficFunnelBundle.citationRef }
       );
       structuredProposal = structuredResult.object;
       tokenUsage = mergeTokenUsage(tokenUsage, structuredResult.tokenUsage);

@@ -269,6 +269,7 @@ function buildProposalStructuredPrompt(brandName, params, context = {}) {
   const periods = buildReviewPlanPeriods(params, message);
   const titleExample = buildProposalTitle(brandName, params, message);
   const dataRefs = collectDataQueryRefs(context.references || []);
+  const trafficRef = context.trafficFunnelRef || null;
   const refHint = dataRefs.length ? dataRefs.join("、") : "S1、D1";
   return [
     "你从 agent 的分析文本中提取结构化提案 JSON。",
@@ -282,13 +283,16 @@ function buildProposalStructuredPrompt(brandName, params, context = {}) {
     "格式要求：",
     "- metrics 每项必须含 label、value、refs(至少1个，只能用 " + refHint + ")",
     "- insights/actions/risks 必须是对象数组，每项含 text(string) 和 refs(string[])",
+    trafficRef
+      ? "- 涉及搜索/推荐/CTR/双路径漏斗的 insights，refs 必须包含 " + trafficRef + "，禁止用品牌月表 D1 或 GTV 查数 S1"
+      : "",
     "- timeline/assets 每项含 title, body",
     "- charts 中漏斗必须区分搜索链路与推荐链路（各一张 type=funnel），禁止把汇总流量标成搜索",
     "- 不要输出 Markdown，只输出 JSON",
     "",
     "示例：",
     JSON.stringify({ ...PROPOSAL_JSON_EXAMPLE, title: titleExample }, null, 2)
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 module.exports = {

@@ -6,6 +6,9 @@
 const { monthKeyToEndDate, monthMatches } = require("./period-utils");
 const { buildTimeWhereClause } = require("./time-router");
 const { SOURCE_SEARCH, SOURCE_RECOMMEND } = require("./traffic-split");
+const { registerDataTable, registerCalculation } = require("./citation-registry");
+const { buildTableSql } = require("./table-sql-catalog");
+const { buildFunnelStageFormulas } = require("./calculation-format");
 
 function safeRatio(numerator, denominator) {
   if (!denominator) return 0;
@@ -186,12 +189,102 @@ function buildTrafficPathComparison(context, filters = {}) {
   return comparison;
 }
 
-function buildTrafficFunnelPromptBlock(comparison) {
+function buildTrafficComparisonFormulas(comparison) {
+  const lines = [];
+  for (const path of ["search", "recommend"]) {
+    const bucket = comparison[path];
+    const funnel = (bucket && bucket.funnel) || [];
+    const exposure = funnel[0] || {};
+    const click = funnel[1] || {};
+    const ctr = exposure.count ? click.count / exposure.count : null;
+    lines.push(
+      `${path === "search" ? "搜索" : "推荐"} CTR = ${click.stage || "点击"} / ${exposure.stage || "曝光"}` +
+        ` = ${click.count || 0} / ${exposure.count || 0}` +
+        (ctr != null ? ` = ${(ctr * 100).toFixed(1)}%` : "")
+    );
+    lines.push(...buildFunnelStageFormulas(bucket));
+  }
+  if (comparison.split) {
+    const sExp = comparison.search.summary.totalImpressions || 0;
+    const rExp = comparison.recommend.summary.totalImpressions || 0;
+    if (sExp && rExp) {
+      lines.push(`推荐曝光 / 搜索曝光 = ${rExp} / ${sExp} = ${(rExp / sExp).toFixed(2)} 倍`);
+    }
+  }
+  return lines.filter(Boolean);
+}
+
+function registerTrafficPathComparison(context, filters = {}, brandId = "haidilao") {
+  const comparison = buildTrafficPathComparison(context, filters);
+  const dataMode = context.dataMode || "empty";
+
+  const keywordRef = registerDataTable(
+    "fact_search_keyword_monthly",
+    "搜索/推荐 keyword 月表（source=mt_search_* 与 mt_feed_poi，按 trafficPath 分路径聚合）",
+    {
+      brandId,
+      filters,
+      sql: buildFunnelSql(brandId, filters),
+      dataMode
+    }
+  );
+  const poiRef = registerDataTable("fact_poi_monthly", "POI 访问（search_visits / recommend_visits）", {
+    brandId,
+    filters,
+    sql: buildTableSql("fact_poi_monthly", brandId, filters),
+    dataMode
+  });
+  const campaignRef = registerDataTable("fact_deal_campaign_monthly", "套餐活动下单/支付/核销", {
+    brandId,
+    filters,
+    sql: buildTableSql("fact_deal_campaign_monthly", brandId, filters),
+    dataMode
+  });
+
+  const formulaLines = buildTrafficComparisonFormulas(comparison);
+  const inputRefs = [keywordRef.id, poiRef.id, campaignRef.id].filter(Boolean);
+  const calcRef = registerCalculation("搜索/推荐双路径漏斗", formulaLines.join("\n"), {
+    formula: "CTR = 流量点击 / 流量曝光；分路径 source=mt_search_* | mt_feed_poi",
+    formulaLines,
+    operator: "trafficPathComparison",
+    inputs: inputRefs,
+    filters,
+    result: {
+      search: {
+        impressions: comparison.search.summary.totalImpressions,
+        clicks: (comparison.search.funnel[1] && comparison.search.funnel[1].count) || 0,
+        ctr: comparison.search.funnel[1] && comparison.search.funnel[1].rateFromPrevious
+      },
+      recommend: {
+        impressions: comparison.recommend.summary.totalImpressions,
+        clicks: (comparison.recommend.funnel[1] && comparison.recommend.funnel[1].count) || 0,
+        ctr: comparison.recommend.funnel[1] && comparison.recommend.funnel[1].rateFromPrevious
+      },
+      split: comparison.split
+    },
+    comparison
+  });
+
+  return {
+    comparison,
+    citationRef: calcRef.id,
+    dataRefs: inputRefs,
+    formulaLines
+  };
+}
+
+function buildTrafficFunnelPromptBlock(bundle) {
+  const comparison = bundle && bundle.comparison ? bundle.comparison : bundle;
+  const citationRef = bundle && bundle.citationRef ? bundle.citationRef : null;
   if (!comparison) return "";
+  const payload = citationRef ? { citationRef, ...comparison } : comparison;
   return (
     "\n\n## 搜索 / 推荐双路径漏斗（系统预聚合，分析流量转化时必须分别引用）\n" +
+    (citationRef
+      ? `**引用编号： [${citationRef}]** — 凡涉及搜索/推荐/CTR/双路径漏斗的洞察、指标，refs 必须包含 ${citationRef}，禁止绑定品牌月表或 GTV 查数的 D1/S1。\n`
+      : "") +
     "```json\n" +
-    JSON.stringify(comparison, null, 2) +
+    JSON.stringify(payload, null, 2) +
     "\n```\n" +
     "要求：复盘流量转化时分别写清搜索链路与推荐链路的曝光、点击、损耗点；汇总口径仅用于总量，不得把汇总流量称作搜索。"
   );
@@ -259,6 +352,8 @@ function buildFunnelSql(brandId, filters = {}) {
 module.exports = {
   buildFunnelMetrics,
   buildTrafficPathComparison,
+  registerTrafficPathComparison,
+  buildTrafficComparisonFormulas,
   buildTrafficFunnelPromptBlock,
   funnelChartFromMetrics,
   funnelRowsForSql,
