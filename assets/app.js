@@ -41,7 +41,11 @@
   var reportPreviewMeta = document.getElementById("reportPreviewMeta");
   var documentUploadButton = document.getElementById("documentUploadButton");
   var documentUploadInput = document.getElementById("documentUploadInput");
-  var docUploadStatus = document.getElementById("docUploadStatus");
+  var docUploadPanel = document.getElementById("docUploadPanel");
+  var docUploadPanelTitle = document.getElementById("docUploadPanelTitle");
+  var docUploadPanelSummary = document.getElementById("docUploadPanelSummary");
+  var docUploadSteps = document.getElementById("docUploadSteps");
+  var docUploadFileList = document.getElementById("docUploadFileList");
   var chatAttachments = document.getElementById("chatAttachments");
   var vizProcess = document.getElementById("vizProcess");
   var vizResultsHeader = document.getElementById("vizResultsHeader");
@@ -474,35 +478,178 @@
     }
   }
 
+  var UPLOAD_STEP_ORDER = ["select", "read", "parse", "done"];
+
+  function setDocUploadStep(step) {
+    if (!docUploadSteps) return;
+    var activeIndex = UPLOAD_STEP_ORDER.indexOf(step);
+    docUploadSteps.querySelectorAll(".doc-upload-step").forEach(function (node) {
+      var nodeStep = node.getAttribute("data-step");
+      var nodeIndex = UPLOAD_STEP_ORDER.indexOf(nodeStep);
+      node.classList.remove("is-active", "is-complete");
+      if (nodeIndex < activeIndex) node.classList.add("is-complete");
+      if (nodeIndex === activeIndex) node.classList.add("is-active");
+    });
+  }
+
+  function renderDocUploadFileRows(fileNames) {
+    if (!docUploadFileList) return;
+    docUploadFileList.innerHTML = (fileNames || [])
+      .map(function (name, index) {
+        return (
+          '<li class="doc-upload-file-item is-pending" data-file-index="' +
+          index +
+          '">' +
+          '<span class="doc-upload-file-icon" aria-hidden="true">⏳</span>' +
+          '<span class="doc-upload-file-name" title="' +
+          escapeHtml(name).replace(/"/g, "&quot;") +
+          '">' +
+          escapeHtml(name) +
+          "</span>" +
+          '<span class="doc-upload-file-state">等待处理</span>' +
+          "</li>"
+        );
+      })
+      .join("");
+  }
+
+  function updateDocUploadFileRow(index, options) {
+    if (!docUploadFileList) return;
+    var row = docUploadFileList.querySelector('[data-file-index="' + index + '"]');
+    if (!row) return;
+    var opts = options || {};
+    var icon = row.querySelector(".doc-upload-file-icon");
+    var state = row.querySelector(".doc-upload-file-state");
+    row.classList.remove("is-pending", "is-active", "is-done", "is-error");
+    if (opts.error) {
+      row.classList.add("is-error");
+      if (icon) icon.textContent = "✕";
+      if (state) state.textContent = opts.message || "解析失败";
+      return;
+    }
+    if (opts.done && opts.item) {
+      row.classList.add("is-done");
+      if (icon) icon.textContent = "✓";
+      if (state) {
+        state.textContent =
+          window.BrandPilotDocuments.parseStatusLabel(opts.item) +
+          " · " +
+          (opts.item.charCount || 0).toLocaleString("zh-CN") +
+          " 字 · " +
+          (opts.item.chunkCount || 1) +
+          " 段";
+      }
+      return;
+    }
+    row.classList.add("is-active");
+    if (icon) icon.textContent = "◌";
+    if (state) {
+      state.textContent = window.BrandPilotDocuments
+        ? window.BrandPilotDocuments.filePhaseLabel(opts.phase)
+        : opts.phase || "处理中…";
+    }
+  }
+
+  function showDocUploadPanel(fileNames) {
+    if (!docUploadPanel) return;
+    docUploadPanel.hidden = false;
+    docUploadPanel.classList.remove("is-done", "is-error");
+    docUploadPanel.classList.add("is-busy");
+    if (docUploadPanelTitle) docUploadPanelTitle.textContent = "正在上传文档…";
+    if (docUploadPanelSummary) {
+      docUploadPanelSummary.textContent =
+        "共 " + (fileNames || []).length + " 个文件，请稍候";
+    }
+    setDocUploadStep("select");
+    renderDocUploadFileRows(fileNames);
+    if (docUploadPanel.scrollIntoView) {
+      docUploadPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }
+
+  function finishDocUploadPanel(items, hadError) {
+    if (!docUploadPanel) return;
+    docUploadPanel.classList.remove("is-busy");
+    docUploadPanel.classList.toggle("is-done", !hadError);
+    docUploadPanel.classList.toggle("is-error", Boolean(hadError));
+    setDocUploadStep("done");
+    if (docUploadPanelTitle) {
+      docUploadPanelTitle.textContent = hadError ? "部分文档解析失败" : "✅ 文档上传成功";
+    }
+    if (docUploadPanelSummary && items && items.length) {
+      docUploadPanelSummary.textContent =
+        "已解析 " +
+        items.length +
+        " 个文档，可输入问题后发送；数字类问题请直接提问查底表";
+    }
+  }
+
+  function hideDocUploadPanel() {
+    if (!docUploadPanel) return;
+    docUploadPanel.hidden = true;
+    docUploadPanel.classList.remove("is-busy", "is-done", "is-error");
+    if (docUploadFileList) docUploadFileList.innerHTML = "";
+    if (docUploadPanelSummary) docUploadPanelSummary.textContent = "";
+  }
+
+  function handleDocUploadProgress(event) {
+    if (!event || !window.BrandPilotDocuments) return;
+    if (event.type === "batch_start") {
+      showDocUploadPanel(event.files || []);
+      setDocUploadStep("select");
+      return;
+    }
+    if (event.type === "file_start") {
+      setDocUploadStep("read");
+      updateDocUploadFileRow(event.index, { phase: "reading" });
+      setStatusText("正在读取：" + event.file, { clearProtect: true });
+      return;
+    }
+    if (event.type === "file_phase") {
+      if (event.phase === "reading") setDocUploadStep("read");
+      else setDocUploadStep("parse");
+      updateDocUploadFileRow(event.index, { phase: event.phase });
+      setStatusText(
+        window.BrandPilotDocuments.filePhaseLabel(event.phase) + "：" + event.file,
+        { clearProtect: true }
+      );
+      return;
+    }
+    if (event.type === "file_done") {
+      updateDocUploadFileRow(event.index, { done: true, item: event.item });
+      return;
+    }
+    if (event.type === "file_error") {
+      updateDocUploadFileRow(event.index, { error: true, message: event.message });
+      return;
+    }
+    if (event.type === "batch_done") {
+      finishDocUploadPanel(event.items || [], false);
+      return;
+    }
+  }
+
   function syncDocumentUploadStatus(options) {
     if (!window.BrandPilotDocuments) return;
     var items = window.BrandPilotDocuments.getAttachments();
     if (!items.length) {
       setStatusText("就绪", { clearProtect: true });
-      setDocUploadStatusLine("", { hidden: true });
+      hideDocUploadPanel();
       return;
     }
     var summary = window.BrandPilotDocuments.formatUploadStatusSummary(items);
     if (summary) {
       setStatusText(summary, { protectMs: (options && options.protectMs) || 600000 });
-      setDocUploadStatusLine(summary.replace(/^✅\s*/, ""), { done: true });
+      if (docUploadPanel && !docUploadPanel.classList.contains("is-busy")) {
+        docUploadPanel.hidden = false;
+        docUploadPanel.classList.add("is-done");
+        if (docUploadPanelTitle) docUploadPanelTitle.textContent = "✅ 文档已就绪";
+        if (docUploadPanelSummary) {
+          docUploadPanelSummary.textContent = summary.replace(/^✅\s*/, "");
+        }
+        setDocUploadStep("done");
+      }
     }
-  }
-
-  function setDocUploadStatusLine(text, options) {
-    if (!docUploadStatus) return;
-    var opts = options || {};
-    if (opts.hidden || !text) {
-      docUploadStatus.hidden = true;
-      docUploadStatus.textContent = "";
-      docUploadStatus.classList.remove("is-pending", "is-done", "is-error");
-      return;
-    }
-    docUploadStatus.hidden = false;
-    docUploadStatus.textContent = text;
-    docUploadStatus.classList.toggle("is-pending", Boolean(opts.pending));
-    docUploadStatus.classList.toggle("is-done", Boolean(opts.done));
-    docUploadStatus.classList.toggle("is-error", Boolean(opts.error));
   }
 
   function isStatusProtected() {
@@ -651,12 +798,10 @@
       }
       statusProtectedUntil = 0;
       setDocumentUploadBusy(true);
-      var progressText = window.BrandPilotDocuments.hasPendingImages(files)
-        ? "OCR 识别中…"
-        : "解析文档中…";
-      setStatusText(progressText, { clearProtect: true });
-      setDocUploadStatusLine(progressText, { pending: true });
-      window.BrandPilotDocuments.addFiles(files)
+      showDocUploadPanel(Array.prototype.map.call(files, function (file) { return file.name; }));
+      window.BrandPilotDocuments.addFiles(files, {
+        onProgress: handleDocUploadProgress
+      })
         .then(function (added) {
           window.BrandPilotDocuments.renderChips(chatAttachments, {
             justCompleted: true,
@@ -678,7 +823,9 @@
         .catch(function (error) {
           alert(error.message || "文档解析失败");
           setStatusText("文档解析失败", { protectMs: 4000 });
-          setDocUploadStatusLine("文档解析失败", { error: true });
+          finishDocUploadPanel(window.BrandPilotDocuments.getAttachments(), true);
+          if (docUploadPanelTitle) docUploadPanelTitle.textContent = "文档解析失败";
+          if (docUploadPanelSummary) docUploadPanelSummary.textContent = error.message || "请重试";
         })
         .finally(function () {
           setDocumentUploadBusy(false);
@@ -741,7 +888,7 @@
       window.BrandPilotDocuments.renderChips(chatAttachments);
       updateUploadBadge();
       resetChatInputPlaceholder();
-      setDocUploadStatusLine("", { hidden: true });
+      hideDocUploadPanel();
     }
 
     conversationHistory.push({ role: "user", content: message });

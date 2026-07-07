@@ -97,17 +97,26 @@
     return IMAGE_EXT.test(file && file.name ? file.name : "");
   }
 
-  function parseFile(file) {
+  function parseFile(file, onProgress) {
+    function report(phase) {
+      if (typeof onProgress === "function") {
+        onProgress({ phase: phase, filename: file.name });
+      }
+    }
     if (!file) return Promise.reject(new Error("未选择文件"));
     if (file.size > MAX_FILE_BYTES) {
       return Promise.reject(new Error(file.name + " 超过 6MB 上限"));
     }
     if (TEXT_EXT.test(file.name)) {
+      report("reading");
       return readFileAsText(file).then(function (text) {
+        report("parsing");
         return parseLocally(file, text);
       });
     }
+    report("reading");
     return readFileAsBase64(file).then(function (base64) {
+      report(isImageFile(file) ? "ocr" : "parsing");
       return parseOnServer(file, base64);
     });
   }
@@ -116,7 +125,9 @@
     return Array.prototype.some.call(files || [], isImageFile);
   }
 
-  function addFiles(fileList) {
+  function addFiles(fileList, options) {
+    var opts = options || {};
+    var onProgress = opts.onProgress;
     var files = Array.prototype.slice.call(fileList || []);
     if (!files.length) return Promise.resolve([]);
     if (state.items.length >= MAX_FILES) {
@@ -125,27 +136,81 @@
 
     var available = MAX_FILES - state.items.length;
     var batch = files.slice(0, available);
-    return Promise.all(
-      batch.map(function (file) {
-        return parseFile(file).then(function (parsed) {
-          var item = {
-            id: uid(),
-            filename: parsed.filename || file.name,
-            format: parsed.format || "",
-            text: parsed.text || "",
-            chunks: parsed.chunks || [],
-            chunkCount: parsed.chunkCount || Math.max(1, Math.ceil((parsed.text || "").length / 1000)),
-            charCount: parsed.charCount || (parsed.text || "").length,
-            truncated: Boolean(parsed.truncated),
-            sourceType: parsed.sourceType || (isImageFile(file) ? "ocr" : "text"),
-            ocrModel: parsed.ocrModel || "",
-            ocrProvider: parsed.ocrProvider || parsed.provider || ""
-          };
-          state.items.push(item);
-          return item;
-        });
-      })
-    );
+    if (onProgress) {
+      onProgress({
+        type: "batch_start",
+        files: batch.map(function (file) { return file.name; }),
+        total: batch.length
+      });
+    }
+
+    return batch.reduce(function (chain, file, index) {
+      return chain.then(function (results) {
+        if (onProgress) {
+          onProgress({
+            type: "file_start",
+            file: file.name,
+            index: index,
+            total: batch.length
+          });
+        }
+        return parseFile(file, function (evt) {
+          if (onProgress) {
+            onProgress({
+              type: "file_phase",
+              file: file.name,
+              index: index,
+              total: batch.length,
+              phase: evt.phase
+            });
+          }
+        })
+          .then(function (parsed) {
+            var item = {
+              id: uid(),
+              filename: parsed.filename || file.name,
+              format: parsed.format || "",
+              text: parsed.text || "",
+              chunks: parsed.chunks || [],
+              chunkCount: parsed.chunkCount || Math.max(1, Math.ceil((parsed.text || "").length / 1000)),
+              charCount: parsed.charCount || (parsed.text || "").length,
+              truncated: Boolean(parsed.truncated),
+              sourceType: parsed.sourceType || (isImageFile(file) ? "ocr" : "text"),
+              ocrModel: parsed.ocrModel || "",
+              ocrProvider: parsed.ocrProvider || parsed.provider || ""
+            };
+            state.items.push(item);
+            if (onProgress) {
+              onProgress({
+                type: "file_done",
+                file: file.name,
+                index: index,
+                total: batch.length,
+                item: item
+              });
+            }
+            results.push(item);
+            return results;
+          })
+          .catch(function (error) {
+            if (onProgress) {
+              onProgress({
+                type: "file_error",
+                file: file.name,
+                index: index,
+                total: batch.length,
+                message: error.message || "解析失败"
+              });
+            }
+            throw error;
+          });
+      });
+    }, Promise.resolve([])).then(function (results) {
+      if (onProgress) {
+        onProgress({ type: "batch_done", items: results, total: batch.length });
+      }
+      return results;
+    });
   }
 
   function removeAttachment(id) {
@@ -275,6 +340,15 @@
     return escapeHtml(value).replace(/"/g, "&quot;");
   }
 
+  function filePhaseLabel(phase) {
+    if (phase === "reading") return "正在读取…";
+    if (phase === "parsing") return "正在解析…";
+    if (phase === "ocr") return "正在 OCR 识别…";
+    if (phase === "done") return "解析完成";
+    if (phase === "error") return "解析失败";
+    return "等待处理";
+  }
+
   global.BrandPilotDocuments = {
     addFiles: addFiles,
     removeAttachment: removeAttachment,
@@ -283,6 +357,7 @@
     getAttachmentsForRequest: getAttachmentsForRequest,
     formatUploadStatusSummary: formatUploadStatusSummary,
     parseStatusLabel: parseStatusLabel,
+    filePhaseLabel: filePhaseLabel,
     policyHint: POLICY_HINT,
     renderChips: renderChips,
     hasPendingImages: hasPendingImages,
