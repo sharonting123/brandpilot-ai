@@ -524,7 +524,7 @@
       '<p class="welcome-section-label">使用小贴士</p>' +
       '<ul class="welcome-tips">' +
       "<li>尽量写清 <strong>品牌</strong> 和 <strong>统计周期</strong>（如「海底捞 2026年6月」）</li>" +
-      "<li>右侧会展示结构化报告与 Chart.js 图表，支持 HTML / PDF / Word 导出</li>" +
+      "<li>右侧会展示结构化报告与 Chart.js 图表，支持 HTML / PDF / Word / Markdown 导出</li>" +
       "<li>登录后对话会保存到左侧「历史对话」；同一会话里问过多个问题后，点击任意一轮对话旁的 <strong>↗ 恢复右侧报告</strong> 即可切换查看该次结果</li>" +
       "</ul>" +
       '<p class="chat-hint">也可以从下面示例快速体验：</p>' +
@@ -3215,10 +3215,11 @@
         "body:focus{outline:2px solid #a78bfa;outline-offset:-2px;}" +
         "[contenteditable]:empty:before{content:attr(data-placeholder);color:#94a3b8;}" +
         ".bp-report-image-wrap{position:relative;display:inline-block;max-width:100%;margin:12px 0;vertical-align:top;}" +
-        ".bp-report-image-wrap.is-selected{outline:2px solid #3f9f50;outline-offset:2px;border-radius:8px;}" +
-        ".bp-editable-image{display:block;height:auto;border:1px solid #ebebeb;border-radius:8px;}" +
-        ".bp-report-image-resize{position:absolute;right:4px;bottom:4px;width:14px;height:14px;border-radius:3px;background:#3f9f50;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.18);cursor:nwse-resize;}" +
-        ".bp-report-image-resize:hover{background:#359647;}";
+        ".bp-report-image-wrap.is-selected{outline:2px solid #a78bfa;outline-offset:2px;border-radius:8px;}" +
+        ".bp-editable-image{display:block;height:auto;border:1px solid #e2e8f0;border-radius:8px;}" +
+        ".bp-report-image-resize{position:absolute;right:6px;bottom:6px;width:12px;height:12px;border-radius:2px;background:#94a3b8;border:2px solid #fff;box-shadow:0 1px 3px rgba(15,23,42,.15);cursor:nwse-resize;opacity:0;pointer-events:none;transition:opacity .15s ease;}" +
+        ".bp-report-image-wrap:hover .bp-report-image-resize,.bp-report-image-wrap.is-selected .bp-report-image-resize{opacity:1;pointer-events:auto;}" +
+        ".bp-report-image-resize:hover{background:#64748b;}";
       (doc.head || doc.documentElement).appendChild(style);
     }
 
@@ -3250,10 +3251,38 @@
     }
   }
 
+  function serializeReportDocument(doc) {
+    if (!doc || !doc.documentElement) return "";
+    var root = doc.documentElement.cloneNode(true);
+
+    var editStyle = root.querySelector("#bp-report-edit-style");
+    if (editStyle) editStyle.parentNode.removeChild(editStyle);
+
+    Array.from(root.querySelectorAll(".bp-report-image-wrap")).forEach(function (wrap) {
+      var img = wrap.querySelector("img");
+      if (!img || !wrap.parentNode) return;
+      wrap.parentNode.replaceChild(img, wrap);
+    });
+
+    var body = root.querySelector("body");
+    if (body) {
+      body.removeAttribute("contenteditable");
+      body.removeAttribute("spellcheck");
+      body.removeAttribute("data-edit-bound");
+      body.removeAttribute("data-paste-bound");
+      Array.from(body.querySelectorAll(".bp-editable-image")).forEach(function (img) {
+        img.classList.remove("bp-editable-image");
+      });
+    }
+
+    root.removeAttribute("data-image-click-bound");
+    return root.outerHTML;
+  }
+
   function getReportHtmlFromFrame() {
     var doc = reportPreviewFrame && reportPreviewFrame.contentDocument;
     if (!doc || !doc.documentElement) return lastSidecarHtml || "";
-    return "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
+    return "<!DOCTYPE html>\n" + serializeReportDocument(doc);
   }
 
   function ensureSidecarSavedForExport() {
