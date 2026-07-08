@@ -483,10 +483,13 @@
       var messages = data.messages || [];
       messages.forEach(function (msg) {
         if (msg.role === "user") {
-          addMessage("user", msg.content);
+          addUserMessage(msg.content, (msg.metadata && msg.metadata.attachments) || []);
           conversationHistory.push({ role: "user", content: msg.content });
         } else if (msg.role === "assistant") {
-          if (msg.metadata && msg.metadata.workflow) {
+          if (
+            msg.metadata &&
+            (msg.metadata.workflow || msg.metadata.proposal || (msg.metadata.charts && msg.metadata.charts.length))
+          ) {
             addAgentMessage(buildAgentMessageFromStored(msg), 0, { skipRestoreHighlight: true });
           } else {
             addMessage("assistant", msg.content);
@@ -589,27 +592,43 @@
       workflow: data.workflow || "",
       workflowLabel: data.workflowLabel || "",
       scene: data.scene || null,
-      capabilities: data.capabilities || null
+      capabilities: data.capabilities || null,
+      intent: data.intent || null,
+      tokenUsage: data.tokenUsage || null,
+      agentTrace: data.agentTrace ? JSON.parse(JSON.stringify(data.agentTrace)) : [],
+      quality: data.quality || null,
+      warnings: data.warnings || [],
+      dataMode: data.dataMode || null,
+      persistence: data.persistence || null,
+      model: data.model || null,
+      totalDurationMs: data.totalDurationMs || null
     };
   }
 
   function buildAgentMessageFromStored(msg) {
     var meta = msg.metadata || {};
+    var answer = String(msg.content || "").trim();
+    if (!answer && meta.proposal && meta.proposal.summary) {
+      answer = String(meta.proposal.summary).trim();
+    }
     return {
       workflow: meta.workflow,
       workflowLabel: meta.workflowLabel,
       intent: meta.intent,
       tokenUsage: meta.tokenUsage,
-      agentTrace: [],
-      answer: msg.content,
+      agentTrace: meta.agentTrace || [],
+      answer: answer,
       proposal: meta.proposal,
       charts: meta.charts,
       references: meta.references,
       dossier: meta.dossier,
       dataSpec: meta.dataSpec,
-      capabilities: meta.capabilities,
-      dataMode: "supabase",
-      persistence: { persisted: true }
+      quality: meta.quality || null,
+      warnings: meta.warnings || [],
+      dataMode: meta.dataMode || "supabase",
+      model: meta.model || null,
+      totalDurationMs: meta.totalDurationMs || null,
+      persistence: meta.persistence || { persisted: true }
     };
   }
 

@@ -7,6 +7,11 @@ const { getModelConfig, getSupabaseConfig } = require("./env");
 const { recognizeIntent, workflowLabel, recognitionModeLabel } = require("./intent-router");
 const { mergeTokenUsage, emptyTokenUsage } = require("./token-usage");
 const { appendMessages } = require("./chat-store");
+const {
+  buildUserMessageRecord,
+  buildAssistantMessageRecord,
+  buildModelSnapshot
+} = require("./message-persistence");
 const { resetContextCache, getContext } = require("./agent-tools");
 const { persistWorkflowRun } = require("./event-store");
 const { filterWorkflowCharts } = require("./chart-policy");
@@ -526,6 +531,7 @@ async function runChatRequest(ctx) {
     },
     tokenUsage,
     agentTrace,
+    model: buildModelSnapshot(modelConfig),
     answer,
     charts: responseCharts,
     proposal: enrichedProposal,
@@ -563,24 +569,19 @@ async function runChatRequest(ctx) {
     });
     try {
       await appendMessages(sessionId, authUser.id, [
-        { role: "user", content: message },
-        {
-          role: "assistant",
-          content: response.answer,
-          metadata: {
-            requestId,
-            workflow: response.workflow,
-            workflowLabel: response.workflowLabel,
-            proposal: response.proposal,
-            charts: response.charts,
-            references: response.references,
-            dossier: response.dossier,
-            capabilities: response.capabilities,
-            dataSpec: response.dataSpec,
-            intent: response.intent,
-            tokenUsage: response.tokenUsage
-          }
-        }
+        buildUserMessageRecord({
+          message,
+          attachments,
+          brandId,
+          requestId
+        }),
+        buildAssistantMessageRecord(response, {
+          requestId,
+          brandId,
+          userMessage: message,
+          modelConfig,
+          messageSavedAt: new Date().toISOString()
+        })
       ]);
       response.sessionId = sessionId;
       response.messageSaved = true;

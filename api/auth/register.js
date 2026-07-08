@@ -1,4 +1,4 @@
-const { handleError, HttpError, readJson, sendJson } = require("../_lib/http");
+const { handleError, HttpError, readJson, sendJson, getClientIp } = require("../_lib/http");
 const {
   isAuthConfigured,
   validateUsername,
@@ -6,7 +6,7 @@ const {
   hashPassword,
   signToken
 } = require("../_lib/auth");
-const { createUser, isUsernameAvailable } = require("../_lib/chat-store");
+const { createUser, isUsernameAvailable, recordLoginEvent } = require("../_lib/chat-store");
 
 module.exports = async function handler(req, res) {
   try {
@@ -32,6 +32,18 @@ module.exports = async function handler(req, res) {
       username,
       passwordHash: hashPassword(password)
     });
+
+    try {
+      await recordLoginEvent({
+        userId: user.id,
+        username: user.username,
+        eventType: "register",
+        ipAddress: getClientIp(req),
+        userAgent: String(req.headers?.["user-agent"] || "").slice(0, 512) || null
+      });
+    } catch (error) {
+      console.warn("[login-event]", error.message || error);
+    }
 
     const token = signToken(user);
     return sendJson(res, 201, {

@@ -9,6 +9,7 @@ const { normalizeUsername } = require("./auth");
 const memoryUsers = new Map();
 const memorySessions = new Map();
 const memoryMessages = new Map();
+const memoryLoginEvents = [];
 
 function getAdminConfig(env = process.env) {
   const base = getSupabaseConfig(env);
@@ -430,6 +431,65 @@ function isChatStoreConfigured(env = process.env) {
   }
 }
 
+function normalizeLoginEventInput(input = {}) {
+  return {
+    userId: input.userId || input.user_id || null,
+    username: normalizeUsername(input.username || ""),
+    eventType: input.eventType || input.event_type || "login_success",
+    ipAddress: input.ipAddress || input.ip_address || null,
+    userAgent: String(input.userAgent || input.user_agent || "").slice(0, 512) || null,
+    metadata: input.metadata && typeof input.metadata === "object" ? input.metadata : {}
+  };
+}
+
+async function recordLoginEvent(input = {}) {
+  const event = normalizeLoginEventInput(input);
+  if (!event.username) return null;
+
+  const config = getAdminConfig();
+  if (config.mode === "memory") {
+    const row = {
+      id: `mem_login_${Date.now()}_${memoryLoginEvents.length}`,
+      user_id: event.userId,
+      username: event.username,
+      event_type: event.eventType,
+      ip_address: event.ipAddress,
+      user_agent: event.userAgent,
+      metadata: event.metadata,
+      created_at: new Date().toISOString()
+    };
+    memoryLoginEvents.push(row);
+    return formatLoginEvent(row);
+  }
+
+  const rows = await supabaseRequest(config, "login_events", {
+    method: "POST",
+    body: {
+      user_id: event.userId,
+      username: event.username,
+      event_type: event.eventType,
+      ip_address: event.ipAddress,
+      user_agent: event.userAgent,
+      metadata: event.metadata
+    }
+  });
+  return formatLoginEvent(Array.isArray(rows) ? rows[0] : rows);
+}
+
+function formatLoginEvent(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    userId: row.user_id,
+    username: row.username,
+    eventType: row.event_type,
+    ipAddress: row.ip_address,
+    userAgent: row.user_agent,
+    metadata: row.metadata || {},
+    createdAt: row.created_at
+  };
+}
+
 module.exports = {
   getAdminConfig,
   isChatStoreConfigured,
@@ -443,5 +503,6 @@ module.exports = {
   getSession,
   touchSession,
   listMessages,
-  appendMessages
+  appendMessages,
+  recordLoginEvent
 };
