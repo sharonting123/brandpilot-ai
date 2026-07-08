@@ -7,7 +7,7 @@
 const { TOOL_REGISTRY } = require("../agent-tools");
 const { buildSharedTools } = require("../ai-tools-factory");
 const { shouldShowGtvTrendChart } = require("../chart-policy");
-const { tracePush, reportProgress, buildStepStart, buildStepUpdate } = require("../workflow-progress");
+const { tracePush, reportProgress, buildStepStart } = require("../workflow-progress");
 const { buildChatMessages, ANSWER_SCOPE_RULE } = require("../workflow-utils");
 const { getAgentMaxTokens } = require("../token-budget");
 const { emptyTokenUsage, mergeTokenUsage, extractUsageFromGenerateResult } = require("../token-usage");
@@ -79,7 +79,7 @@ function getSystemPrompt(brandName, params) {
   ].join("\n");
 }
 
-async function buildToolDefinitions() {
+async function buildToolDefinitions(onProgress) {
   return buildSharedTools([
     "queryBrandData",
     "computeFunnel",
@@ -88,7 +88,7 @@ async function buildToolDefinitions() {
     "getBrandAssets",
     "runNl2Sql",
     "retrieveKnowledge"
-  ]);
+  ], { onProgress });
 }
 
 /**
@@ -157,7 +157,7 @@ async function execute(params) {
     apiKey: modelConfig.apiKey
   })(modelConfig.model);
 
-  const toolsDefined = await buildToolDefinitions();
+  const toolsDefined = await buildToolDefinitions(onProgress);
   const { nl } = await prefetchNl2Sql({
     message,
     brandId: resolvedBrandId,
@@ -190,15 +190,7 @@ async function execute(params) {
       tools: toolsDefined,
       maxSteps: 5,
       temperature: 0.3,
-      maxOutputTokens: getAgentMaxTokens(modelConfig),
-      onStepFinish: (event) => {
-        const tools = (event.toolCalls || []).map((tc) => tc.toolName).filter(Boolean);
-        if (!tools.length) return;
-        reportProgress(
-          onProgress,
-          buildStepUpdate("推理Agent", "已完成 " + tools.join("、") + "，继续写结论…", tools.join(" → "))
-        );
-      }
+      maxOutputTokens: getAgentMaxTokens(modelConfig)
     });
 
     agentAnswer = result.text;

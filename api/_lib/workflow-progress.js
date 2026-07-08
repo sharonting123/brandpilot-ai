@@ -14,26 +14,44 @@ function tracePush(agentTrace, onProgress, step) {
   reportProgress(onProgress, enriched);
 }
 
-function buildStepStart(name, summary) {
+function buildStepStart(name, summary, meta = {}) {
   return {
     phase: "start",
     name,
-    summary: summary || `正在${name}…`
+    summary: summary || `正在${name}…`,
+    ...meta
   };
 }
 
-function buildStepUpdate(name, summary, tool) {
+function buildStepUpdate(name, summary, tool, meta = {}) {
   return {
     phase: "update",
     name,
     summary: summary || `正在${name}…`,
-    tool: tool || undefined
+    tool: tool || undefined,
+    ...meta
   };
+}
+
+function buildStepDone(name, summary, tool, meta = {}) {
+  return {
+    phase: "done",
+    name,
+    summary: summary || "完成",
+    tool: tool || undefined,
+    ...meta
+  };
+}
+
+function traceOnlyPush(agentTrace, step) {
+  agentTrace.push({ ...step, status: inferStepStatus(step) });
 }
 
 module.exports = {
   reportProgress,
   tracePush,
+  traceOnlyPush,
   buildStepStart,
-  buildStepUpdate
+  buildStepUpdate,
+  buildStepDone
 };

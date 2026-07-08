@@ -229,6 +229,19 @@ DIGITAL_HUMAN_AVATAR_URL=https://your-cdn/avatar.jpg  # 可选
 cd native && g++ -O2 -std=c++17 -o s2v_segment.exe s2v_segment.cpp
 ```
 
+## 版本与回滚
+
+当前版本见根目录 [`VERSION`](VERSION)，完整变更见 [`CHANGELOG.md`](CHANGELOG.md)。
+
+每个发版会在 Git 打 tag（如 `v1.1.0`），GitHub **Releases** 同步记录，便于回滚：
+
+```bash
+git tag -l 'v*' --sort=-v:refname   # 列出所有版本
+git checkout v1.0.0                 # 查看旧版代码
+```
+
+发版流程：`更新 CHANGELOG →  bump VERSION & package.json → commit → git tag vX.Y.Z → git push && git push origin vX.Y.Z`
+
 ## 生产级能力清单
 
 - API 输入限制：`/api/agent-run` 限制 64KB JSON 请求体并校验品牌上下文。

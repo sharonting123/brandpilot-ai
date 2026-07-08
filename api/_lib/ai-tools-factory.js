@@ -2,12 +2,36 @@
  * 共享 AI 工具工厂：给各工作流挂载统一的 tool calling 定义。
  */
 
-async function buildSharedTools(toolNames = []) {
+const { reportProgress, buildStepStart, buildStepUpdate } = require("./workflow-progress");
+const { friendlyToolLabel } = require("./tool-labels");
+
+async function buildSharedTools(toolNames = [], options = {}) {
+  const { onProgress } = options || {};
   const [{ tool }, { z }] = await Promise.all([
     import("ai"),
     import("zod")
   ]);
   const { TOOL_REGISTRY } = require("./agent-tools");
+
+  function wrapExecute(toolName, executeFn) {
+    return async (args) => {
+      const label = friendlyToolLabel(toolName);
+      if (onProgress) {
+        reportProgress(
+          onProgress,
+          buildStepStart("工具调用", `正在${label}…`, { group: "query", tool: toolName })
+        );
+      }
+      const result = await executeFn(args);
+      if (onProgress) {
+        reportProgress(
+          onProgress,
+          buildStepUpdate("工具调用", `已完成${label}，继续分析…`, toolName, { group: "query" })
+        );
+      }
+      return result;
+    };
+  }
 
   const catalog = {
     queryBrandData: () =>
@@ -16,7 +40,7 @@ async function buildSharedTools(toolNames = []) {
         parameters: z.object({
           brandId: z.string().default("haidilao").describe("品牌 ID")
         }),
-        execute: async (args) => TOOL_REGISTRY.queryBrandData.fn(args)
+        execute: wrapExecute("queryBrandData", (args) => TOOL_REGISTRY.queryBrandData.fn(args))
       }),
     computeFunnel: () =>
       tool({
@@ -24,7 +48,7 @@ async function buildSharedTools(toolNames = []) {
         parameters: z.object({
           brandId: z.string().default("haidilao").describe("品牌 ID")
         }),
-        execute: async (args) => TOOL_REGISTRY.computeFunnel.fn(args)
+        execute: wrapExecute("computeFunnel", (args) => TOOL_REGISTRY.computeFunnel.fn(args))
       }),
     aggregateMonthly: () =>
       tool({
@@ -32,7 +56,7 @@ async function buildSharedTools(toolNames = []) {
         parameters: z.object({
           brandId: z.string().default("haidilao").describe("品牌 ID")
         }),
-        execute: async (args) => TOOL_REGISTRY.aggregateMonthly.fn(args)
+        execute: wrapExecute("aggregateMonthly", (args) => TOOL_REGISTRY.aggregateMonthly.fn(args))
       }),
     getCompetitorBenchmark: () =>
       tool({
@@ -40,7 +64,7 @@ async function buildSharedTools(toolNames = []) {
         parameters: z.object({
           brandId: z.string().default("haidilao").describe("品牌 ID")
         }),
-        execute: async (args) => TOOL_REGISTRY.getCompetitorBenchmark.fn(args)
+        execute: wrapExecute("getCompetitorBenchmark", (args) => TOOL_REGISTRY.getCompetitorBenchmark.fn(args))
       }),
     getBrandPeerBenchmark: () =>
       tool({
@@ -48,7 +72,7 @@ async function buildSharedTools(toolNames = []) {
         parameters: z.object({
           brandId: z.string().default("haidilao").describe("品牌 ID")
         }),
-        execute: async (args) => TOOL_REGISTRY.getBrandPeerBenchmark.fn(args)
+        execute: wrapExecute("getBrandPeerBenchmark", (args) => TOOL_REGISTRY.getBrandPeerBenchmark.fn(args))
       }),
     getBrandAssets: () =>
       tool({
@@ -56,7 +80,7 @@ async function buildSharedTools(toolNames = []) {
         parameters: z.object({
           brandId: z.string().default("haidilao").describe("品牌 ID")
         }),
-        execute: async (args) => TOOL_REGISTRY.getBrandAssets.fn(args)
+        execute: wrapExecute("getBrandAssets", (args) => TOOL_REGISTRY.getBrandAssets.fn(args))
       }),
     runNl2Sql: () =>
       tool({
@@ -65,7 +89,7 @@ async function buildSharedTools(toolNames = []) {
           brandId: z.string().default("haidilao").describe("品牌 ID"),
           question: z.string().describe("自然语言问数问题")
         }),
-        execute: async (args) => TOOL_REGISTRY.runNl2Sql.fn(args)
+        execute: wrapExecute("runNl2Sql", (args) => TOOL_REGISTRY.runNl2Sql.fn(args))
       }),
     retrieveKnowledge: () =>
       tool({
@@ -75,7 +99,7 @@ async function buildSharedTools(toolNames = []) {
           query: z.string().describe("检索问题"),
           topK: z.number().optional().describe("返回条数，默认 4")
         }),
-        execute: async (args) => TOOL_REGISTRY.retrieveKnowledge.fn(args)
+        execute: wrapExecute("retrieveKnowledge", (args) => TOOL_REGISTRY.retrieveKnowledge.fn(args))
       })
   };
 

@@ -44,15 +44,15 @@
   };
 
   var TOOL_NAMES = {
-    computeFunnel: "computeFunnel",
-    queryBrandData: "queryBrandData",
-    retrieveKnowledge: "retrieveKnowledge",
-    runNl2Sql: "runNl2Sql",
-    aggregateMonthly: "aggregateMonthly",
-    getCompetitorBenchmark: "getCompetitorBenchmark",
-    getBrandPeerBenchmark: "getBrandPeerBenchmark",
-    getBrandAssets: "getBrandAssets",
-    generateObject: "generateObject",
+    computeFunnel: "漏斗计算",
+    queryBrandData: "品牌数据查询",
+    retrieveKnowledge: "经营手册检索",
+    runNl2Sql: "自然语言查数",
+    aggregateMonthly: "月度经营数据",
+    getCompetitorBenchmark: "竞对基准",
+    getBrandPeerBenchmark: "同业对标",
+    getBrandAssets: "品牌资产",
+    generateObject: "结构化提取",
     nl2sql_fallback: "nl2sql_fallback",
     fallback: "fallback",
     skipped: "skipped",
@@ -146,6 +146,12 @@
     if (/^(调用 .+ 完成|call .+ done)$/.test(summary)) {
       var toolName = tool || summary.replace(/^(调用\s+|\s+完成|call\s+|\s+done)$/g, "");
       return "done: " + toolName;
+    }
+    if (/^正在/.test(summary)) {
+      return sanitizeTechTerms(summary);
+    }
+    if (/^已完成.+，继续/.test(summary)) {
+      return sanitizeTechTerms(summary);
     }
     if (/^完成 /.test(summary) && tool) {
       return sanitizeTechTerms(summary.replace(/^完成\s*/, "已完成：")) + "（" + tool + "）";

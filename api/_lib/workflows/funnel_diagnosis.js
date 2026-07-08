@@ -5,7 +5,7 @@
 
 const { TOOL_REGISTRY } = require("../agent-tools");
 const { buildChatMessages, ANSWER_SCOPE_RULE } = require("../workflow-utils");
-const { tracePush, reportProgress, buildStepStart } = require("../workflow-progress");
+const { tracePush, traceOnlyPush, reportProgress, buildStepStart } = require("../workflow-progress");
 const { emptyTokenUsage, mergeTokenUsage, extractUsageFromGenerateResult } = require("../token-usage");
 const { prefetchNl2Sql } = require("../nl2sql-pipeline");
 const { buildFunnelStageFormulas } = require("../calculation-format");
@@ -64,9 +64,9 @@ function getSystemPrompt(brandName, params, nl, funnelRaw) {
   ].join("\n");
 }
 
-async function buildToolDefinitions() {
+async function buildToolDefinitions(onProgress) {
   const { buildSharedTools } = require("../ai-tools-factory");
-  return buildSharedTools(["retrieveKnowledge", "queryBrandData"]);
+  return buildSharedTools(["retrieveKnowledge", "queryBrandData"], { onProgress });
 }
 
 function buildFunnelChart(funnelStr, pathLabel) {
@@ -148,7 +148,7 @@ async function execute(params) {
     apiKey: modelConfig.apiKey
   })(modelConfig.model);
 
-  const toolsDefined = await buildToolDefinitions();
+  const toolsDefined = await buildToolDefinitions(onProgress);
   const systemPrompt = getSystemPrompt(brandName, intentParams, nl, funnelRaw);
   const toolStart = Date.now();
   reportProgress(onProgress, buildStepStart("链路诊断 Agent", "基于 NL2SQL 结果生成诊断结论…"));
@@ -161,17 +161,7 @@ async function execute(params) {
       tools: toolsDefined,
       maxSteps: 4,
       temperature: 0.3,
-      maxOutputTokens: modelConfig.maxTokens,
-      onStepFinish: (event) => {
-        const tools = (event.toolCalls || []).map((tc) => tc.toolName).filter(Boolean);
-        if (!tools.length) return;
-        reportProgress(onProgress, {
-          name: "工具调用",
-          tool: tools.join(" → "),
-          summary: "完成 " + tools.join("、"),
-          durationMs: 0
-        });
-      }
+      maxOutputTokens: modelConfig.maxTokens
     });
 
     answer = result.text;
@@ -181,7 +171,7 @@ async function execute(params) {
       for (const step of result.steps) {
         if (step.toolCalls) {
           for (const tc of step.toolCalls) {
-            tracePush(agentTrace, onProgress, {
+            traceOnlyPush(agentTrace, {
               name: "工具调用",
               tool: tc.toolName,
               summary: "call " + tc.toolName + " done",

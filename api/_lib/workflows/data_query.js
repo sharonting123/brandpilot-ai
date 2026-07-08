@@ -7,7 +7,7 @@ const { shouldShowGtvTrendChart } = require("../chart-policy");
 const { TOOL_REGISTRY } = require("../agent-tools");
 const { buildSharedTools } = require("../ai-tools-factory");
 const { buildChatMessages, ANSWER_SCOPE_RULE } = require("../workflow-utils");
-const { tracePush, reportProgress, buildStepStart } = require("../workflow-progress");
+const { tracePush, traceOnlyPush, reportProgress, buildStepStart } = require("../workflow-progress");
 const { emptyTokenUsage, mergeTokenUsage, extractUsageFromGenerateResult } = require("../token-usage");
 const { findNl2SqlPayloadFromSteps } = require("../nl2sql-format");
 const {
@@ -45,14 +45,14 @@ function getSystemPrompt(brandName) {
   ].join("\n");
 }
 
-async function buildToolDefinitions() {
+async function buildToolDefinitions(onProgress) {
   return buildSharedTools([
     "retrieveKnowledge",
     "queryBrandData",
     "computeFunnel",
     "aggregateMonthly",
     "getCompetitorBenchmark"
-  ]);
+  ], { onProgress });
 }
 
 function buildTrendChart(monthlyRaw) {
@@ -103,7 +103,7 @@ async function execute(params) {
     apiKey: modelConfig.apiKey
   })(modelConfig.model);
 
-  const toolsDefined = await buildToolDefinitions();
+  const toolsDefined = await buildToolDefinitions(onProgress);
   const systemPrompt = getSystemPrompt(brandName);
 
   ({ nl: nlPayload } = await prefetchNl2Sql({
@@ -117,6 +117,8 @@ async function execute(params) {
 
   const enrichedSystem = systemPrompt + buildNl2SqlContextBlock(nlPayload);
 
+  reportProgress(onProgress, buildStepStart("数据查询 Agent", "正在分析查数结果并生成回答…", { group: "query" }));
+
   try {
     const result = await generateText({
       model,
@@ -125,17 +127,7 @@ async function execute(params) {
       tools: toolsDefined,
       maxSteps: 6,
       temperature: 0.3,
-      maxOutputTokens: modelConfig.maxTokens,
-      onStepFinish: (event) => {
-        const tools = (event.toolCalls || []).map((tc) => tc.toolName).filter(Boolean);
-        if (!tools.length) return;
-        reportProgress(onProgress, {
-          name: "工具调用",
-          tool: tools.join(" → "),
-          summary: "完成 " + tools.join("、"),
-          durationMs: 0
-        });
-      }
+      maxOutputTokens: modelConfig.maxTokens
     });
 
     answer = result.text;
@@ -162,7 +154,7 @@ async function execute(params) {
       }
       if (toolsUsed.size) {
         const toolList = [...toolsUsed];
-        tracePush(agentTrace, onProgress, {
+        traceOnlyPush(agentTrace, {
           name: "工具调用",
           tool: toolList.join(" → "),
           summary: "完成 " + toolList.join("、"),

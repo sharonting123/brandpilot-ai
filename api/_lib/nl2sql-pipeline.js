@@ -4,7 +4,7 @@
  */
 
 const { queryFromQuestion } = require("./data-query-engine");
-const { tracePush } = require("./workflow-progress");
+const { tracePush, reportProgress, buildStepStart } = require("./workflow-progress");
 
 const TIME_ROUTE_STEP_NAMES = {
   validate: "指标粒度校验",
@@ -32,6 +32,7 @@ async function prefetchNl2Sql(params = {}) {
   } = params;
 
   const nlStart = Date.now();
+  reportProgress(onProgress, buildStepStart("统一查数", "正在理解问题并检索数据…"));
   const nl = await queryFromQuestion({
     brandId,
     question: message,

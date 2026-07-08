@@ -275,6 +275,23 @@ async function runChatRequest(ctx) {
         return;
       }
 
+      if (step.phase === "done") {
+        if (!openWorkflowSubId) return;
+        emitFriendlyStep(emit, {
+          id: openWorkflowSubId,
+          status: inferStepStatus(step),
+          parentId: workflowId,
+          level: 2,
+          group: step.group || "analysis",
+          name: step.name,
+          tool: step.tool,
+          summary: step.summary,
+          durationMs: step.durationMs
+        });
+        openWorkflowSubId = null;
+        return;
+      }
+
       finishOpenWorkflowSub();
       workflowSubSeq += 1;
       const subId = workflowId + "_sub_" + workflowSubSeq;

@@ -1037,6 +1037,11 @@ button, select, textarea {
   flex: 1;
 }
 
+.progress-step.running .progress-text strong,
+.progress-step.active:not(.done) .progress-text strong {
+  color: var(--chat-green, #3f9f50);
+}
+
 .progress-step.running .progress-dot,
 .progress-step.active:not(.done) .progress-dot {
   width: 14px;
