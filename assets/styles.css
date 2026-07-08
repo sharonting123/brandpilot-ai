@@ -13,6 +13,11 @@
   --mt-orange: #ff6633;
   --mt-orange-soft: #fff0eb;
   --on-primary: #222222;
+  --chat-green: #3f9f50;
+  --chat-green-hover: #359647;
+  --chat-green-soft: #ecfdf3;
+  --chat-green-border: #86efac;
+  --chat-green-ink: #166534;
 
   --bg: #f5f5f5;
   --surface: #ffffff;
@@ -310,8 +315,8 @@ button, select, textarea {
 }
 
 .session-item.active {
-  border-color: var(--mt-yellow);
-  background: var(--blue-soft);
+  border-color: var(--chat-green-border);
+  background: var(--chat-green-soft);
 }
 
 .session-item-title {
@@ -805,7 +810,7 @@ button, select, textarea {
 }
 
 .message.user .message-avatar {
-  background: var(--blue-soft);
+  background: var(--chat-green-soft);
 }
 
 .message-body {
@@ -1054,15 +1059,15 @@ button, select, textarea {
 }
 
 .message-restorable:hover .message-content {
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.28);
+  box-shadow: 0 0 0 2px rgba(63, 159, 80, 0.28);
 }
 
 .message.user.message-restorable.is-active-result .message-content {
-  box-shadow: 0 0 0 2px rgba(255, 209, 0, 0.95), 0 0 0 4px rgba(59, 130, 246, 0.35);
+  box-shadow: 0 0 0 2px rgba(255, 195, 0, 0.95), 0 0 0 4px rgba(63, 159, 80, 0.35);
 }
 
 .message.assistant.message-restorable.is-active-result .message-content {
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.55);
+  box-shadow: 0 0 0 2px rgba(63, 159, 80, 0.55);
 }
 
 .message-restore-badge {
@@ -1070,10 +1075,10 @@ button, select, textarea {
   align-items: center;
   margin-top: 8px;
   padding: 5px 12px;
-  border: 1px solid #93c5fd;
+  border: 1px solid var(--mt-yellow-border);
   border-radius: 999px;
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: var(--mt-yellow-soft);
+  color: var(--mt-black);
   font-size: 12px;
   font-weight: 600;
   line-height: 1.2;
@@ -1086,15 +1091,16 @@ button, select, textarea {
 }
 
 .message-restore-badge:hover {
-  background: #dbeafe;
-  border-color: #3b82f6;
+  background: var(--mt-yellow);
+  border-color: var(--mt-yellow-hover);
+  color: var(--on-primary);
 }
 
 .message-restorable.is-active-result .message-restore-badge {
-  background: #dbeafe;
-  border-color: #2563eb;
-  color: #1e3a8a;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.18);
+  background: var(--mt-yellow);
+  border-color: var(--mt-yellow-hover);
+  color: var(--on-primary);
+  box-shadow: 0 0 0 2px rgba(255, 195, 0, 0.35);
 }
 
 .welcome-section-label {
@@ -3102,13 +3108,13 @@ body.doc-upload-disabled .doc-upload-ui {
   font-size: 11px;
   padding: 2px 8px;
   border-radius: 999px;
-  background: var(--green-soft);
-  color: var(--green);
+  background: var(--chat-green-soft);
+  color: var(--chat-green-ink);
 }
 
 .capability-badge span.ok {
-  background: var(--green-soft);
-  color: var(--green);
+  background: var(--chat-green-soft);
+  color: var(--chat-green-ink);
 }
 
 .capability-badge span.warn {
