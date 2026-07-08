@@ -975,6 +975,7 @@
       if (kind === "html") handleDownloadSidecarHtml();
       else if (kind === "pdf") handleDownloadSidecarPdf();
       else if (kind === "word") handleDownloadSidecarWord();
+      else if (kind === "markdown") handleDownloadSidecarMarkdown();
     });
 
     document.addEventListener("click", function (event) {
@@ -2730,6 +2731,23 @@
     sidecarReportButton.disabled = Boolean(loading);
   }
 
+  function isSidecarConfigHint(message) {
+    var text = String(message || "");
+    return (
+      text.indexOf("SIDECAR_ENABLED") >= 0 ||
+      text.indexOf("SIDECAR_DISABLED") >= 0 ||
+      text.indexOf("请设置 SIDECAR") >= 0
+    );
+  }
+
+  function sidecarFailureReason(error) {
+    if (!error || error.name === "AbortError") return "";
+    var message = String(error.message || "");
+    if (isSidecarConfigHint(message)) return "";
+    if (/侧车/.test(message)) return "";
+    return message;
+  }
+
   function parseJsonResponse(res) {
     return res.text().then(function (text) {
       var data = {};
@@ -2748,6 +2766,11 @@
   }
 
   function handleDownloadMarkdown() {
+    if (hasSavedFormalReport()) {
+      handleDownloadSidecarMarkdown();
+      return;
+    }
+
     var markdown = buildExportMarkdown();
     if (!markdown) {
       alert("当前没有可下载的分析内容。");
@@ -2868,8 +2891,8 @@
         return false;
       }
       var meta = "基于当前分析结果生成的可编辑报告";
-      if (reason) meta += "（" + reason + "）";
-      openReportPreview(html, meta + " · 可直接编辑，保存后可导出");
+      if (reason && !isSidecarConfigHint(reason)) meta += "（" + reason + "）";
+      openReportPreview(html, meta + " · 可直接编辑，保存后可导出 · 支持粘贴图片并拖动右下角调整大小");
       setStatusText("正式报告已打开（本地模式）", { protectMs: 5000 });
       return true;
     });
@@ -2927,16 +2950,13 @@
             var html = extractSidecarHtml(data);
             if (!html) throw new Error("未返回 HTML 报告内容");
             lastSidecarHtml = html;
-            openReportPreview(html, describeSidecarMode(data) + " · 可直接编辑，保存后可导出");
+            openReportPreview(html, describeSidecarMode(data) + " · 可直接编辑，保存后可导出 · 支持粘贴图片并拖动右下角调整大小");
             setStatusText("正式报告已生成", { protectMs: 4000 });
           })
           .catch(function (error) {
-            var reason =
-              error && error.name === "AbortError"
-                ? "侧车服务超时"
-                : (error && error.message) || "侧车服务不可用";
+            var reason = sidecarFailureReason(error);
             return openLocalFormalReport(exportData, reason).then(function (opened) {
-              if (!opened) {
+              if (!opened && reason) {
                 setStatusText("正式报告生成失败", { protectMs: 6000 });
                 alert("正式报告生成失败：" + reason);
               }
@@ -2997,6 +3017,140 @@
     }
   }
 
+  function markReportDirty() {
+    sidecarReportDirty = true;
+    sidecarReportSaved = false;
+    updateReportPreviewStatus();
+  }
+
+  function insertReportNodeAtCaret(doc, node) {
+    if (!doc || !node) return;
+    var sel = doc.getSelection && doc.getSelection();
+    if (!sel || !sel.rangeCount) {
+      doc.body.appendChild(node);
+      return;
+    }
+    var range = sel.getRangeAt(0);
+    range.deleteContents();
+    range.insertNode(node);
+    range.setStartAfter(node);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
+  function wrapReportImage(img, doc) {
+    if (!img || !doc) return null;
+    if (img.closest && img.closest(".bp-report-image-wrap")) {
+      return img.closest(".bp-report-image-wrap");
+    }
+
+    var wrap = doc.createElement("span");
+    wrap.className = "bp-report-image-wrap";
+    wrap.contentEditable = "false";
+    img.classList.add("bp-editable-image");
+    if (!img.getAttribute("alt")) img.setAttribute("alt", "报告图片");
+    if (!img.style.width) img.style.width = "480px";
+    img.style.maxWidth = "100%";
+    img.style.height = "auto";
+
+    var parent = img.parentNode;
+    if (parent) {
+      parent.insertBefore(wrap, img);
+    }
+    wrap.appendChild(img);
+
+    var handle = doc.createElement("span");
+    handle.className = "bp-report-image-resize";
+    handle.title = "拖动调整大小";
+    handle.setAttribute("aria-hidden", "true");
+    wrap.appendChild(handle);
+
+    bindReportImageResize(wrap, doc);
+    return wrap;
+  }
+
+  function bindReportImageResize(wrap, doc) {
+    var handle = wrap && wrap.querySelector(".bp-report-image-resize");
+    var img = wrap && wrap.querySelector("img");
+    if (!handle || !img || handle.getAttribute("data-resize-bound") === "true") return;
+
+    handle.setAttribute("data-resize-bound", "true");
+    handle.addEventListener("mousedown", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      var startX = event.clientX;
+      var startWidth = img.getBoundingClientRect().width;
+      var maxWidth = 920;
+      if (wrap.parentElement) {
+        maxWidth = Math.max(240, wrap.parentElement.getBoundingClientRect().width - 16);
+      }
+
+      function onMove(moveEvent) {
+        var nextWidth = Math.max(120, Math.min(startWidth + (moveEvent.clientX - startX), maxWidth));
+        img.style.width = Math.round(nextWidth) + "px";
+        img.style.height = "auto";
+      }
+
+      function onUp() {
+        doc.removeEventListener("mousemove", onMove);
+        doc.removeEventListener("mouseup", onUp);
+        markReportDirty();
+      }
+
+      doc.addEventListener("mousemove", onMove);
+      doc.addEventListener("mouseup", onUp);
+    });
+
+    img.addEventListener("click", function (event) {
+      event.stopPropagation();
+      doc.querySelectorAll(".bp-report-image-wrap.is-selected").forEach(function (node) {
+        node.classList.remove("is-selected");
+      });
+      wrap.classList.add("is-selected");
+    });
+  }
+
+  function enhanceAllReportImages(doc) {
+    if (!doc || !doc.body) return;
+    Array.from(doc.body.querySelectorAll("img")).forEach(function (img) {
+      wrapReportImage(img, doc);
+    });
+  }
+
+  function handleReportPaste(event, doc) {
+    var clipboard = event.clipboardData;
+    if (!clipboard || !clipboard.items) return;
+
+    for (var i = 0; i < clipboard.items.length; i++) {
+      var item = clipboard.items[i];
+      if (item.kind !== "file" || !item.type || item.type.indexOf("image") !== 0) continue;
+
+      var file = item.getAsFile();
+      if (!file) continue;
+
+      event.preventDefault();
+      var reader = new FileReader();
+      reader.onload = function () {
+        var img = doc.createElement("img");
+        img.src = reader.result;
+        img.alt = "粘贴图片";
+        var wrap = wrapReportImage(img, doc);
+        if (!wrap) return;
+        insertReportNodeAtCaret(doc, wrap);
+
+        var spacer = doc.createElement("p");
+        spacer.innerHTML = "<br>";
+        if (wrap.parentNode) wrap.parentNode.insertBefore(spacer, wrap.nextSibling);
+
+        markReportDirty();
+      };
+      reader.readAsDataURL(file);
+      return;
+    }
+  }
+
   function enableReportEditing() {
     var doc = reportPreviewFrame && reportPreviewFrame.contentDocument;
     if (!doc || !doc.body) {
@@ -3013,16 +3167,39 @@
       style.textContent =
         "body{cursor:text;min-height:100%;box-sizing:border-box;}" +
         "body:focus{outline:2px solid #a78bfa;outline-offset:-2px;}" +
-        "[contenteditable]:empty:before{content:attr(data-placeholder);color:#94a3b8;}";
+        "[contenteditable]:empty:before{content:attr(data-placeholder);color:#94a3b8;}" +
+        ".bp-report-image-wrap{position:relative;display:inline-block;max-width:100%;margin:12px 0;vertical-align:top;}" +
+        ".bp-report-image-wrap.is-selected{outline:2px solid #3f9f50;outline-offset:2px;border-radius:8px;}" +
+        ".bp-editable-image{display:block;height:auto;border:1px solid #ebebeb;border-radius:8px;}" +
+        ".bp-report-image-resize{position:absolute;right:4px;bottom:4px;width:14px;height:14px;border-radius:3px;background:#3f9f50;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.18);cursor:nwse-resize;}" +
+        ".bp-report-image-resize:hover{background:#359647;}";
       (doc.head || doc.documentElement).appendChild(style);
     }
+
+    enhanceAllReportImages(doc);
 
     if (!doc.body.getAttribute("data-edit-bound")) {
       doc.body.setAttribute("data-edit-bound", "true");
       doc.body.addEventListener("input", function () {
-        sidecarReportDirty = true;
-        sidecarReportSaved = false;
-        updateReportPreviewStatus();
+        markReportDirty();
+      });
+    }
+
+    if (!doc.body.getAttribute("data-paste-bound")) {
+      doc.body.setAttribute("data-paste-bound", "true");
+      doc.body.addEventListener("paste", function (event) {
+        handleReportPaste(event, doc);
+      });
+    }
+
+    if (!doc.getAttribute("data-image-click-bound")) {
+      doc.setAttribute("data-image-click-bound", "true");
+      doc.addEventListener("click", function (event) {
+        if (!event.target.closest(".bp-report-image-wrap")) {
+          doc.querySelectorAll(".bp-report-image-wrap.is-selected").forEach(function (node) {
+            node.classList.remove("is-selected");
+          });
+        }
       });
     }
   }
@@ -3057,7 +3234,7 @@
     sidecarReportDirty = false;
     updateReportPreviewStatus();
     if (reportPreviewMeta) {
-      reportPreviewMeta.textContent = "报告已保存，可继续导出 HTML / PDF / Word";
+      reportPreviewMeta.textContent = "报告已保存，可继续导出 HTML / PDF / Word / Markdown";
     }
     setStatusText("正式报告已保存", { protectMs: 4000 });
   }
@@ -3105,6 +3282,159 @@
     downloadBlob("\ufeff" + lastSidecarHtml, "application/msword", buildExportBaseName() + "_formal.doc");
     showPdfStatus("就绪");
     setStatusText("Word 报告已导出", { protectMs: 4000 });
+  }
+
+  function handleDownloadSidecarMarkdown() {
+    if (!ensureSidecarSavedForExport()) return;
+    var markdown = buildReportMarkdownFromSavedHtml();
+    if (!markdown) {
+      alert("无法读取已保存的报告内容。");
+      return;
+    }
+    downloadBlob(markdown, "text/markdown", buildExportBaseName() + "_formal.md");
+    setStatusText("Markdown 报告已导出", { protectMs: 4000 });
+  }
+
+  function buildReportMarkdownFromSavedHtml() {
+    var doc = reportPreviewFrame && reportPreviewFrame.contentDocument;
+    var body = doc && doc.body;
+    if (!body && lastSidecarHtml) {
+      try {
+        var parser = new DOMParser();
+        doc = parser.parseFromString(lastSidecarHtml, "text/html");
+        body = doc && doc.body;
+      } catch (error) {
+        body = null;
+      }
+    }
+    if (!body) return "";
+    return htmlBodyToMarkdown(body);
+  }
+
+  function htmlBodyToMarkdown(root) {
+    var lines = [];
+
+    function inlineText(node) {
+      if (!node) return "";
+      if (node.nodeType === 3) return node.textContent.replace(/\s+/g, " ");
+      if (node.nodeType !== 1) return "";
+      var tag = node.tagName.toLowerCase();
+      if (tag === "br") return "\n";
+      if (tag === "strong" || tag === "b") {
+        return "**" + Array.from(node.childNodes).map(inlineText).join("").trim() + "**";
+      }
+      if (tag === "em" || tag === "i") {
+        return "*" + Array.from(node.childNodes).map(inlineText).join("").trim() + "*";
+      }
+      if (tag === "code") {
+        return "`" + node.textContent.replace(/\s+/g, " ").trim() + "`";
+      }
+      if (tag === "a") {
+        var label = Array.from(node.childNodes).map(inlineText).join("").trim() || node.getAttribute("href") || "";
+        var href = node.getAttribute("href") || "";
+        return href ? "[" + label + "](" + href + ")" : label;
+      }
+      return Array.from(node.childNodes).map(inlineText).join("");
+    }
+
+    function blockText(node) {
+      return inlineText(node).replace(/\s+\n/g, "\n").replace(/\n\s+/g, "\n").trim();
+    }
+
+    function walk(node) {
+      if (!node) return;
+      if (node.nodeType === 3) {
+        var text = node.textContent.replace(/\s+/g, " ").trim();
+        if (text) lines.push(text);
+        return;
+      }
+      if (node.nodeType !== 1) return;
+
+      var tag = node.tagName.toLowerCase();
+      if (tag === "script" || tag === "style") return;
+
+      if (/^h[1-6]$/.test(tag)) {
+        var level = Number(tag.charAt(1)) || 1;
+        var heading = blockText(node);
+        if (heading) lines.push("#".repeat(Math.min(level, 6)) + " " + heading, "");
+        return;
+      }
+
+      if (tag === "p" || tag === "div" && node.classList.contains("export-meta")) {
+        var paragraph = blockText(node);
+        if (paragraph) lines.push(paragraph, "");
+        return;
+      }
+
+      if (tag === "blockquote") {
+        blockText(node)
+          .split("\n")
+          .filter(Boolean)
+          .forEach(function (line) {
+            lines.push("> " + line);
+          });
+        lines.push("");
+        return;
+      }
+
+      if (tag === "ul" || tag === "ol") {
+        var ordered = tag === "ol";
+        Array.from(node.children).forEach(function (child, index) {
+          if (child.tagName && child.tagName.toLowerCase() === "li") {
+            var item = blockText(child);
+            if (item) lines.push((ordered ? index + 1 + ". " : "- ") + item);
+          }
+        });
+        lines.push("");
+        return;
+      }
+
+      if (tag === "table") {
+        var table = htmlTableToMarkdown(node);
+        if (table) lines.push(table, "");
+        return;
+      }
+
+      if (tag === "img") {
+        var alt = node.getAttribute("alt") || "图表";
+        var src = node.getAttribute("src") || "";
+        if (src.indexOf("data:") === 0) {
+          lines.push("![" + alt + "](图表见 HTML 版本)", "");
+        } else if (src) {
+          lines.push("![" + alt + "](" + src + ")", "");
+        }
+        return;
+      }
+
+      if (tag === "section") {
+        Array.from(node.childNodes).forEach(walk);
+        return;
+      }
+
+      Array.from(node.childNodes).forEach(walk);
+    }
+
+    Array.from(root.childNodes).forEach(walk);
+    return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim() + "\n";
+  }
+
+  function htmlTableToMarkdown(table) {
+    var rows = Array.from(table.querySelectorAll("tr"));
+    if (!rows.length) return "";
+
+    var matrix = rows.map(function (row) {
+      return Array.from(row.children).map(function (cell) {
+        return String(cell.textContent || "").replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
+      });
+    });
+    if (!matrix.length || !matrix[0].length) return "";
+
+    var header = "| " + matrix[0].join(" | ") + " |";
+    var separator = "| " + matrix[0].map(function () { return "---"; }).join(" | ") + " |";
+    var body = matrix.slice(1).map(function (row) {
+      return "| " + row.join(" | ") + " |";
+    });
+    return [header, separator].concat(body).join("\n");
   }
 
   function handleDownloadSidecarPdf() {
