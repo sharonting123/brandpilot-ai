@@ -5028,7 +5028,7 @@ body.sandbox-page {
 
 .dossier-formulas code,
 .trace-formulas code,
-.reference-calc pre {
+.reference-calc pre:not(.reference-detail-json) {
   display: block;
   font-size: 12px;
   line-height: 1.55;
@@ -5165,9 +5165,12 @@ body.sandbox-page {
   padding: 10px;
   border-radius: 8px;
   background: #111827;
-  color: #f9fafb;
+  color: #ffffff;
   font-size: 11px;
   line-height: 1.45;
+  font-family: "SF Mono", "Menlo", "Consolas", monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .reference-sql {
