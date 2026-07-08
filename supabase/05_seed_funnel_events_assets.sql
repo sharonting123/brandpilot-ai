@@ -213,7 +213,7 @@ from (
       'haidilao',
       'resource_allocation',
       '下半年资源分配建议',
-      '优先投向搜索广告产品、商户广告教育、场景化套餐和 AI 经营复盘工具，用资源分配解释下半年增长路径。',
+      '优先投向搜索广告产品、推荐广告、商户广告教育、场景化套餐和 AI 经营复盘工具，用资源分配解释下半年增长路径。',
       '{"source":"html_reference","framework":"resource_allocation"}'::jsonb
     )
 ) as assets(brand_id, asset_type, title, content, metadata)
