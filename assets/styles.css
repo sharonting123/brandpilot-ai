@@ -218,6 +218,34 @@ button, select, textarea {
   background: var(--surface);
 }
 
+.chat-panel-header-start {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.chat-panel-header-start .panel-title {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.clear-conversation-button {
+  flex-shrink: 0;
+  color: var(--ink-2);
+}
+
+.clear-conversation-button:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: var(--chat-green-border);
+  background: var(--chat-green-soft);
+}
+
+.clear-conversation-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .brand-selector--inline {
   display: flex;
   align-items: center;

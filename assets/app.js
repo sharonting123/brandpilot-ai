@@ -58,6 +58,7 @@
   var sessionSidebar = document.getElementById("sessionSidebar");
   var sessionList = document.getElementById("sessionList");
   var newSessionButton = document.getElementById("newSessionButton");
+  var clearConversationButton = document.getElementById("clearConversationButton");
   var appContainer = document.getElementById("appContainer");
   var defaultChatPlaceholder =
     "输入你的问题，并尽量写明统计周期（如 2026年6月）";
@@ -367,6 +368,32 @@
         createNewSession();
       });
     }
+
+    if (clearConversationButton) {
+      clearConversationButton.addEventListener("click", handleClearConversation);
+    }
+  }
+
+  function hasConversationContent() {
+    if (!chatMessages) return false;
+    return chatMessages.querySelectorAll(".message.user").length > 0;
+  }
+
+  function handleClearConversation() {
+    if (isProcessing || docUploadBusy) return;
+    if (!window.BrandPilotAuth || !window.BrandPilotAuth.isLoggedIn()) {
+      redirectToLogin();
+      return;
+    }
+
+    if (hasConversationContent()) {
+      var confirmed = window.confirm(
+        "当前对话已保存在左侧「历史对话」中。\n\n确定清空当前界面并开始新对话吗？"
+      );
+      if (!confirmed) return;
+    }
+
+    createNewSession();
   }
 
   function refreshAuthUI() {

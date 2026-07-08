@@ -59,7 +59,15 @@
 
       <section class="chat-panel" id="chatPanel">
         <div class="chat-panel-header">
-          <h2 class="panel-title">本次对话</h2>
+          <div class="chat-panel-header-start">
+            <h2 class="panel-title">本次对话</h2>
+            <button
+              type="button"
+              class="ghost-button sm clear-conversation-button"
+              id="clearConversationButton"
+              title="清空当前对话；已保存的内容仍可在左侧历史对话中查看"
+            >清空对话</button>
+          </div>
           <div class="brand-selector brand-selector--inline">
             <label class="selector-label" for="brandSelect">品牌</label>
             <select id="brandSelect" class="selector-input">
