@@ -28,6 +28,8 @@ const {
 } = require("../nl2sql-pipeline");
 const { getContext } = require("../agent-tools");
 const { extractFilters } = require("../nl2sql");
+const { prefetchProposalDataSources } = require("../citation-prefetch");
+const { findCompetitorBenchmarkRef } = require("../citation-resolver");
 const {
   registerTrafficPathComparison,
   buildTrafficFunnelPromptBlock,
@@ -107,7 +109,8 @@ async function generateStructuredProposal(agentAnswer, _modelConfig, brandName, 
     references,
     params,
     message: params._message || "",
-    trafficFunnelRef: context.trafficFunnelRef || null
+    trafficFunnelRef: context.trafficFunnelRef || null,
+    competitorRef: findCompetitorBenchmarkRef(references)
   };
   const ProposalSchema = buildProposalSchema(z, brandName, params, agentAnswer, schemaContext);
   const system = buildProposalStructuredPrompt(brandName, params, schemaContext);
@@ -169,6 +172,12 @@ async function execute(params) {
   nlPayload = nl;
   const proposalParams = { ...intentParams, _message: message };
   const context = await getContext(resolvedBrandId);
+  prefetchProposalDataSources({
+    brandId: resolvedBrandId,
+    message,
+    context,
+    filters: nl && nl.filters ? nl.filters : extractFilters(message, intentParams)
+  });
   const funnelFilters = {
     ...(nl && nl.filters ? nl.filters : {}),
     ...extractFilters(message, intentParams)

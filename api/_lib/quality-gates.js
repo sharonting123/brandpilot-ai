@@ -2,6 +2,8 @@
  * 输出质量门禁
  */
 
+const { auditProposalReferences } = require("./citation-resolver");
+
 function runQualityGates(payload = {}) {
   const answer = String(payload.answer || "");
   const references = payload.references || [];
@@ -45,8 +47,8 @@ function runQualityGates(payload = {}) {
     }
   });
 
-  const passed = !issues.some((item) => item.level === "error");
-  return { passed, issues };
+  const finalPassed = !issues.some((item) => item.level === "error");
+  return { passed: finalPassed, issues };
 }
 
 module.exports = {

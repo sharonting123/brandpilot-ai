@@ -4,6 +4,7 @@
 
 const { getCitationRegistry, registerAgentStep } = require("./citation-registry");
 const { collectDataQueryRefs } = require("./proposal-metrics");
+const { resolveCitedRefs, resolveMetricRefs } = require("./citation-resolver");
 
 const AGENT_ROLE_MAP = {
   "意图识别": "识别用户问题类型并路由到对应工作流",
@@ -198,61 +199,6 @@ function renderDossierMarkdown({ brandName, period, workflowLabel, agents, refer
   return lines.join("\n");
 }
 
-function findTrafficFunnelRef(refs) {
-  const hit = (refs || []).find(
-    (item) =>
-      item.type === "calculation" &&
-      ((item.details && item.details.operator === "trafficPathComparison") ||
-        /双路径|搜索.*推荐.*漏斗/.test(String(item.title || "")))
-  );
-  return hit ? hit.id : null;
-}
-
-function isTrafficInsightText(text) {
-  return /搜索|推荐|CTR|双路径|流量曝光|流量点击|曝光→点击|曝光.{0,2}点击|转化链路|链路.*损耗|流量利用|mt_feed|mt_search/i.test(
-    String(text || "")
-  );
-}
-
-function refSupportsTrafficTopic(refId, refs) {
-  const ref = (refs || []).find((item) => item.id === refId);
-  if (!ref) return false;
-  if (ref.type === "calculation") {
-    return (
-      (ref.details && ref.details.operator === "trafficPathComparison") ||
-      /漏斗|双路径|CTR/i.test(String(ref.title || ""))
-    );
-  }
-  if (ref.type === "data") {
-    return /search_keyword|poi_monthly|deal_campaign/i.test(String(ref.source || ""));
-  }
-  if (ref.type === "sql") {
-    const blob = String(ref.source || "") + String((ref.details && ref.details.sql) || "");
-    return /funnel|search_keyword|feed_poi|mt_search/i.test(blob);
-  }
-  return false;
-}
-
-function resolveCitedRefs(text, refs, fallbackRefs) {
-  const trafficRef = findTrafficFunnelRef(refs);
-  const proposed = Array.isArray(fallbackRefs) ? fallbackRefs.map(String).filter(Boolean) : [];
-
-  if (isTrafficInsightText(text) && trafficRef) {
-    const keywordRef = (refs || []).find(
-      (item) => item.type === "data" && item.source === "fact_search_keyword_monthly"
-    );
-    const bound = [trafficRef];
-    if (keywordRef && keywordRef.id !== trafficRef) bound.push(keywordRef.id);
-    return bound;
-  }
-
-  if (isTrafficInsightText(text) && proposed.some((id) => !refSupportsTrafficTopic(id, refs))) {
-    return trafficRef ? [trafficRef] : proposed;
-  }
-
-  return proposed.length ? proposed : fallbackRefs || [];
-}
-
 function enrichProposalWithReferences(proposal, references) {
   if (!proposal || typeof proposal !== "object") return proposal;
   const refs = references || getCitationRegistry();
@@ -266,10 +212,19 @@ function enrichProposalWithReferences(proposal, references) {
         const bind = dataQueryRefs[index % dataQueryRefs.length] || dataQueryRefs[0];
         return { label: item.slice(0, 24), value: item, refs: bind ? [bind] : [] };
       }
-      let itemRefs = Array.isArray(item.refs)
-        ? item.refs.map(String).filter((id) => /^[SD]\d+$/i.test(id))
-        : [];
-      if (!itemRefs.length) itemRefs = dataQueryRefs.slice(0, 2);
+      const fallback =
+        item.refs && item.refs.length
+          ? item.refs
+          : dataQueryRefs.slice(0, 2);
+      const itemRefs = resolveMetricRefs(
+        {
+          label: String(item.label || item.text || "经营指标").trim(),
+          value: item.value,
+          delta: item.delta,
+          refs: fallback
+        },
+        refs
+      );
       return {
         label: String(item.label || item.text || "经营指标").trim(),
         value: item.value,

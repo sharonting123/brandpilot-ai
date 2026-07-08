@@ -221,7 +221,17 @@ async function getCompetitorBenchmark(params) {
   const brandId = params.brandId || "haidilao";
   const context = await getContext(brandId);
   const { buildPlatformBenchmarks } = require("./brand-peer");
+  const { filterCompetitorRows } = require("./column-aliases");
   const platformBenchmarks = buildPlatformBenchmarks(context.competitorBenchmarks || []);
+  const rows = filterCompetitorRows(context.competitorBenchmarks || []);
+
+  registerDataTable("fact_competitor_benchmark_monthly", "竞对基准 · 平台核销/补贴/内容占比", {
+    brandId,
+    sql: buildTableSql("fact_competitor_benchmark_monthly", brandId),
+    rows: rows.slice(0, 50),
+    rowCount: rows.length,
+    dataMode: context.dataMode
+  });
 
   return JSON.stringify({
     compareType: "platform",

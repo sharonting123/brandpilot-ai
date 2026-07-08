@@ -509,19 +509,20 @@ async function runChatRequest(ctx) {
   );
 
   const references = getDisplayReferences(brandId);
+  const enrichedProposal = workflowResult.proposal
+    ? enrichProposalWithReferences(workflowResult.proposal, references)
+    : null;
   const quality = runQualityGates({
     answer,
     references,
     calculations: workflowResult.calculations || [],
     dataMode,
-    requireReferences: !["data_query", "greeting", "document_qa"].includes(intent.workflow)
+    requireReferences: !["data_query", "greeting", "document_qa"].includes(intent.workflow),
+    proposal: enrichedProposal
   });
   if (quality.issues.length) {
     warnings.push(...quality.issues.map((item) => item.message));
   }
-  const enrichedProposal = workflowResult.proposal
-    ? enrichProposalWithReferences(workflowResult.proposal, references)
-    : null;
   const dossier = isLightweightWorkflow(intent.workflow)
     ? null
     : buildAgentDossier({

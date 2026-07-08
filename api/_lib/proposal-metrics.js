@@ -2,6 +2,8 @@
  * 提案指标卡：必须带 label，且 refs 绑定查数引用（S* / D*）
  */
 
+const { resolveMetricRefs } = require("./citation-resolver");
+
 function compactCurrency(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return "-";
@@ -136,7 +138,7 @@ function inferMetricLabel(item = {}) {
   return "";
 }
 
-function normalizeMetric(item, dataQueryRefs) {
+function normalizeMetric(item, dataQueryRefs, references = []) {
   if (item == null) return null;
   if (typeof item === "string") {
     const text = item.trim();
@@ -150,11 +152,12 @@ function normalizeMetric(item, dataQueryRefs) {
   if (!label || !value) return null;
 
   let refs = Array.isArray(item.refs) ? item.refs.map(String).filter(Boolean) : [];
-  refs = refs.filter((id) => /^[SD]\d+$/i.test(id));
+  refs = refs.filter((id) => /^[SDKC]\d+$/i.test(id));
   if (!refs.length) refs = dataQueryRefs.slice(0, 2);
   if (!refs.length) return null;
 
-  const out = { label, value, refs: [...new Set(refs)] };
+  const resolvedRefs = resolveMetricRefs({ label, value, delta: item.delta, refs }, references);
+  const out = { label, value, refs: [...new Set(resolvedRefs.length ? resolvedRefs : refs)] };
   if (item.delta != null && String(item.delta).trim()) out.delta = String(item.delta).trim();
   return out;
 }
@@ -168,12 +171,12 @@ function finalizeProposalMetrics(proposal, options = {}) {
   const fromNl = buildMetricsFromNlPayload(nlPayload, params, references);
 
   const incoming = Array.isArray(proposal.metrics) ? proposal.metrics : [];
-  const normalized = incoming.map((item) => normalizeMetric(item, dataQueryRefs)).filter(Boolean);
+  const normalized = incoming.map((item) => normalizeMetric(item, dataQueryRefs, references)).filter(Boolean);
 
   let metrics = normalized.length ? normalized : fromNl;
   if (!metrics.length && fromNl.length) metrics = fromNl;
 
-  metrics = metrics.map((metric) => normalizeMetric(metric, dataQueryRefs)).filter(Boolean);
+  metrics = metrics.map((metric) => normalizeMetric(metric, dataQueryRefs, references)).filter(Boolean);
 
   if (!metrics.length && dataQueryRefs.length) {
     metrics = fromNl.length
