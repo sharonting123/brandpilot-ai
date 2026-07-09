@@ -1,6 +1,6 @@
 {
   "name": "brandpilot-ai",
-  "version": "1.1.3",
+  "version": "1.1.4",
   "private": true,
   "description": "BrandPilot AI — 真 Agent 编排系统：意图识别路由 + NL2SQL/RAG + 事件持久化 + AR/数字人",
   "scripts": {
