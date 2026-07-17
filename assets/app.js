@@ -1312,7 +1312,12 @@
           else if (line.indexOf("data:") === 0) dataLines.push(line.slice(5).trim());
         });
         if (!dataLines.length) return;
-        var data = JSON.parse(dataLines.join("\n"));
+        var data;
+        try {
+          data = JSON.parse(dataLines.join("\n"));
+        } catch (parseError) {
+          throw new Error("流式响应解析失败：" + parseError.message);
+        }
         if (eventName === "done") {
           finalData = data;
           return;
@@ -1323,16 +1328,25 @@
         handleStreamEvent(eventName, data);
       }
 
+      function flushBuffer() {
+        if (!buffer.trim()) return;
+        handleBlock(buffer);
+        buffer = "";
+      }
+
       function pump() {
         return reader.read().then(function (result) {
+          if (result.value) {
+            buffer += decoder.decode(result.value, { stream: true });
+            var chunks = buffer.split("\n\n");
+            buffer = chunks.pop() || "";
+            chunks.forEach(handleBlock);
+          }
           if (result.done) {
-            if (!finalData) throw new Error("流式响应提前结束");
+            flushBuffer();
+            if (!finalData) throw new Error("流式响应提前结束（服务端未返回完成事件）");
             return finalData;
           }
-          buffer += decoder.decode(result.value, { stream: true });
-          var chunks = buffer.split("\n\n");
-          buffer = chunks.pop() || "";
-          chunks.forEach(handleBlock);
           return pump();
         });
       }

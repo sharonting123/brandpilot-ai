@@ -28,6 +28,9 @@ async function main() {
   const period = recognizeIntentWithKeywords("GMV同比下降，哪个城市拖累最大");
   assert.strictEqual(period.workflow, "period_compare");
 
+  const periodRecent = recognizeIntentWithKeywords("最近比上个月表现怎么样");
+  assert.strictEqual(periodRecent.workflow, "period_compare");
+
   const competitor = recognizeIntentWithKeywords("对比美团和抖音的经营表现");
   assert.strictEqual(competitor.workflow, "competitor_benchmark");
 

@@ -5,6 +5,7 @@
  */
 
 const { getIntentMaxTokens } = require("./token-budget");
+const { getStructuredModelConfig } = require("./env");
 const { enrichCompetitorParams } = require("./brand-peer");
 const { workflowRequiresNl2Sql } = require("./nl2sql-pipeline");
 const { detectGreetingIntent } = require("./greeting-intent");
@@ -19,6 +20,8 @@ const FAST_PATH_THRESHOLD = 0.72;
 const SEMANTIC_FAST_PATH_THRESHOLD = 0.86;
 const SEMANTIC_OVERRIDE_THRESHOLD = 0.84;
 const SEMANTIC_MIN_MARGIN = 0.06;
+const DEFAULT_SEMANTIC_TIMEOUT_MS = 8000;
+const DEFAULT_INTENT_LLM_TIMEOUT_MS = 45000;
 
 const { getWorkflows, getQueryTypeMap } = require("./semantic-graph");
 
@@ -33,8 +36,8 @@ const KEYWORD_RULES = [
   },
   {
     workflow: "period_compare",
-    strong: ["环比", "同比", "同环比", "比上月", "较上月", "去年同期", "同月比"],
-    weak: ["增长", "下降", "回落", "回升", "趋势", "拖累", "拉动"],
+    strong: ["环比", "同比", "同环比", "比上月", "较上月", "上个月", "去年同期", "同月比", "比上次", "比上一"],
+    weak: ["增长", "下降", "回落", "回升", "趋势", "拖累", "拉动", "表现", "最近", "变化"],
     weight: 1.0
   },
   {
@@ -91,7 +94,7 @@ const INTENT_RESULT_SCHEMA = z.object({
     "data_query"
   ]),
   brandId: z.string().default("haidilao"),
-  params: z.record(z.unknown()).default({}),
+  params: z.object({}).passthrough().default({}),
   confidence: z.number().min(0).max(1),
   reasoning: z.string().default("LLM 语义识别完成。")
 });
@@ -126,6 +129,44 @@ const INTENT_JSON_INSTRUCTION = [
 
 function isStrictDebug() {
   return process.env.INTENT_STRICT_DEBUG === "true";
+}
+
+function getSemanticTimeoutMs() {
+  const value = Number(process.env.INTENT_SEMANTIC_TIMEOUT_MS);
+  return Number.isFinite(value) && value > 0 ? value : DEFAULT_SEMANTIC_TIMEOUT_MS;
+}
+
+function getIntentLlmTimeoutMs(modelConfig = {}) {
+  const envValue = Number(process.env.INTENT_LLM_TIMEOUT_MS);
+  if (Number.isFinite(envValue) && envValue > 0) return envValue;
+  const modelTimeout = Number(modelConfig.timeoutMs);
+  if (Number.isFinite(modelTimeout) && modelTimeout > 0) {
+    return Math.min(modelTimeout, DEFAULT_INTENT_LLM_TIMEOUT_MS);
+  }
+  return DEFAULT_INTENT_LLM_TIMEOUT_MS;
+}
+
+function withTimeout(promise, timeoutMs, fallbackValue) {
+  if (!timeoutMs || timeoutMs <= 0) return promise;
+  return Promise.race([
+    promise,
+    new Promise((resolve) => {
+      setTimeout(() => resolve(fallbackValue), timeoutMs);
+    })
+  ]);
+}
+
+function buildIntentModelConfig(modelConfig = {}) {
+  const structured = getStructuredModelConfig(process.env);
+  return {
+    ...modelConfig,
+    ...structured,
+    apiKey: structured.apiKey || modelConfig.apiKey,
+    baseUrl: structured.baseUrl || modelConfig.baseUrl,
+    model: structured.structuredModel || structured.model || modelConfig.model,
+    structuredModel: structured.structuredModel || structured.model || modelConfig.model,
+    maxTokens: getIntentMaxTokens(modelConfig)
+  };
 }
 
 function matchKeywords(text, keywords) {
@@ -411,24 +452,33 @@ function chooseFallbackIntent(keywordResult, semanticResult) {
 }
 
 async function recognizeIntentWithLLM(message, modelConfig, semanticResult = null) {
-  const semanticHint = semanticResult
+  const semanticMeta = semanticResult && semanticResult.semanticMeta ? semanticResult.semanticMeta : null;
+  const semanticHint = semanticMeta
     ? [
         "",
         "向量召回仅作为参考证据，仍需独立判断：",
         JSON.stringify({
           workflow: semanticResult.workflow,
-          score: Number(semanticResult.semanticMeta.score.toFixed(4)),
-          margin: Number(semanticResult.semanticMeta.margin.toFixed(4))
+          score: Number(Number(semanticMeta.score || 0).toFixed(4)),
+          margin: Number(Number(semanticMeta.margin || 0).toFixed(4))
         })
       ].join("\n")
     : "";
-  const result = await generateStructuredObject({
-    modelConfig,
-    schema: INTENT_RESULT_SCHEMA,
-    system: INTENT_JSON_INSTRUCTION,
-    prompt: message + semanticHint,
-    maxOutputTokens: getIntentMaxTokens(modelConfig),
-  });
+  const intentModelConfig = buildIntentModelConfig(modelConfig);
+  const result = await withTimeout(
+    generateStructuredObject({
+      modelConfig: intentModelConfig,
+      schema: INTENT_RESULT_SCHEMA,
+      system: INTENT_JSON_INSTRUCTION,
+      prompt: message + semanticHint,
+      maxOutputTokens: getIntentMaxTokens(intentModelConfig)
+    }),
+    getIntentLlmTimeoutMs(intentModelConfig),
+    null
+  );
+  if (!result) {
+    throw new Error("意图识别 LLM 超时（" + getIntentLlmTimeoutMs(intentModelConfig) + "ms）");
+  }
 
   return {
     ...normalizeIntentPayload(result.object),
@@ -597,6 +647,11 @@ async function recognizeIntent(message, modelConfig, options = {}) {
   }
 
   const keywordResult = recognizeIntentWithKeywords(routingMessage);
+  const semanticPromise = withTimeout(
+    recognizeIntentWithSemantic(routingMessage).catch(() => null),
+    getSemanticTimeoutMs(),
+    null
+  );
   const canFastPath =
     keywordResult.keywordMeta &&
     keywordResult.keywordMeta.eligibleFastPath &&
@@ -606,12 +661,7 @@ async function recognizeIntent(message, modelConfig, options = {}) {
     return finalizeIntent(keywordResult, "keyword_fast", routingMessage);
   }
 
-  let semanticResult = null;
-  try {
-    semanticResult = await recognizeIntentWithSemantic(routingMessage);
-  } catch {
-    semanticResult = null;
-  }
+  const semanticResult = await semanticPromise;
 
   const canSemanticFastPath =
     semanticResult &&
@@ -651,6 +701,7 @@ async function recognizeIntent(message, modelConfig, options = {}) {
     return finalizeIntent(
       {
         ...fallback,
+        llmError: error.message,
         reasoning: "LLM 不可用，回退本地路由证据：" + fallback.reasoning
       },
       fallback.recognitionMode || "keyword_fallback",
