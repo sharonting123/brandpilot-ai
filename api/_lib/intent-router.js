@@ -1,19 +1,24 @@
 /**
  * 意图识别路由层
- * 两段式：关键词快路径（强信号） + LLM 语义理解（含交叉校验）
- * 生产态：LLM 失败回退关键词；调试态（INTENT_STRICT_DEBUG=true）可关闭回退
+ * 分层路由：确定性快路径 + 向量语义召回 + LLM 结构化分类（含交叉校验）
+ * 生产态：外部能力失败时回退本地关键词；调试态可关闭 LLM 回退
  */
 
 const { getIntentMaxTokens } = require("./token-budget");
-const { extractUsageFromGenerateResult } = require("./token-usage");
 const { enrichCompetitorParams } = require("./brand-peer");
 const { workflowRequiresNl2Sql } = require("./nl2sql-pipeline");
 const { detectGreetingIntent } = require("./greeting-intent");
 const { detectDocumentQaIntent } = require("./document-intent");
 const { extractAnalysisSlots, mergeSlotsIntoIntentParams } = require("./intent-slots");
 const { detectCityFromText } = require("./drill-knowledge-graph");
+const { isEmbeddingConfigured, embedTexts, cosineSimilarity } = require("./rag-embeddings");
+const { generateStructuredObject } = require("./structured-output");
+const { z } = require("zod");
 
 const FAST_PATH_THRESHOLD = 0.72;
+const SEMANTIC_FAST_PATH_THRESHOLD = 0.86;
+const SEMANTIC_OVERRIDE_THRESHOLD = 0.84;
+const SEMANTIC_MIN_MARGIN = 0.06;
 
 const { getWorkflows, getQueryTypeMap } = require("./semantic-graph");
 
@@ -51,6 +56,47 @@ const KEYWORD_RULES = [
     weight: 0.5
   }
 ];
+
+const INTENT_PROFILES = [
+  {
+    workflow: "annual_proposal",
+    text: "品牌年度提案、半年经营复盘、完整分析报告、经营方案与未来规划。示例：帮我出一份经营复盘；制定下半年增长方案；生成完整品牌报告。"
+  },
+  {
+    workflow: "period_compare",
+    text: "同比、环比、跨周期趋势和增减归因。示例：最近表现变好还是变差；与上一周期相比如何；哪个城市拖累增长。"
+  },
+  {
+    workflow: "funnel_diagnosis",
+    text: "搜索或推荐到核销的转化漏斗、链路损耗和断点诊断。示例：用户在哪一步流失最多；转化链路哪里有问题；从曝光到核销怎么优化。"
+  },
+  {
+    workflow: "competitor_benchmark",
+    text: "平台或品牌竞品对标、市场差距和竞争表现。示例：和主要对手相比表现如何；不同平台经营效果对比；分析竞品优势。"
+  },
+  {
+    workflow: "data_query",
+    text: "查询具体经营指标、数值或事实。示例：销售额是多少；查询客单价；订单量和转化率分别是多少。"
+  }
+];
+
+const INTENT_RESULT_SCHEMA = z.object({
+  workflow: z.enum([
+    "greeting",
+    "document_qa",
+    "annual_proposal",
+    "funnel_diagnosis",
+    "competitor_benchmark",
+    "period_compare",
+    "data_query"
+  ]),
+  brandId: z.string().default("haidilao"),
+  params: z.record(z.unknown()).default({}),
+  confidence: z.number().min(0).max(1),
+  reasoning: z.string().default("LLM 语义识别完成。")
+});
+
+let intentProfileVectors = null;
 
 const INTENT_JSON_INSTRUCTION = [
   "你是 BrandPilot AI 的意图识别路由。分析用户输入，将其分类到以下 7 个工作流之一：",
@@ -215,6 +261,57 @@ function recognizeIntentWithKeywords(message) {
   return buildKeywordResult(best, message);
 }
 
+async function recognizeIntentWithSemantic(message) {
+  if (process.env.INTENT_EMBEDDING_ENABLED === "false" || !isEmbeddingConfigured(process.env)) {
+    return null;
+  }
+
+  if (!intentProfileVectors) {
+    intentProfileVectors = await embedTexts(
+      INTENT_PROFILES.map((profile) => profile.text),
+      { textType: "document" }
+    );
+  }
+
+  const [queryVector] = await embedTexts([String(message || "")], { textType: "query" });
+  const ranked = INTENT_PROFILES.map((profile, index) => ({
+    workflow: profile.workflow,
+    score: cosineSimilarity(queryVector, intentProfileVectors[index])
+  })).sort((a, b) => b.score - a.score);
+  const best = ranked[0];
+  const second = ranked[1] || { score: 0 };
+  if (!best || best.score <= 0) return null;
+
+  const margin = Math.max(0, best.score - second.score);
+  const confidence = Math.min(
+    0.9,
+    Math.max(0.5, 0.5 + Math.max(0, best.score - 0.5) * 0.9 + Math.min(margin, 0.2) * 0.5)
+  );
+
+  return {
+    workflow: best.workflow,
+    brandId: "haidilao",
+    params:
+      best.workflow === "competitor_benchmark"
+        ? enrichCompetitorParams(message, extractIntentParams(message))
+        : extractIntentParams(message),
+    confidence,
+    reasoning:
+      "向量语义最接近「" +
+      workflowLabel(best.workflow) +
+      "」（相似度 " +
+      best.score.toFixed(3) +
+      "，领先 " +
+      margin.toFixed(3) +
+      "）。",
+    semanticMeta: {
+      score: best.score,
+      margin,
+      candidates: ranked.slice(0, 3)
+    }
+  };
+}
+
 function crossValidateIntent(llmResult, keywordResult) {
   if (!keywordResult || !llmResult) return llmResult;
 
@@ -256,50 +353,91 @@ function crossValidateIntent(llmResult, keywordResult) {
   };
 }
 
-async function recognizeIntentWithLLM(message, modelConfig) {
-  const [{ generateText }, { createOpenAI }] = await Promise.all([
-    import("ai"),
-    import("@ai-sdk/openai")
-  ]);
+function crossValidateSemantic(llmResult, semanticResult) {
+  if (!llmResult || !semanticResult) return llmResult;
+  if (llmResult.recognitionMode === "keyword_override") return llmResult;
+  if (llmResult.workflow === semanticResult.workflow) {
+    return {
+      ...llmResult,
+      confidence: Math.min(0.95, (llmResult.confidence || 0.75) + 0.03),
+      reasoning: llmResult.reasoning + "（与向量语义召回一致）"
+    };
+  }
 
-  const model = createOpenAI({
-    baseURL: modelConfig.baseUrl,
-    apiKey: modelConfig.apiKey
-  })(modelConfig.model);
-
-  const result = await generateText({
-    model,
-    system: INTENT_JSON_INSTRUCTION,
-    prompt: message,
-    maxOutputTokens: getIntentMaxTokens(modelConfig),
-    temperature: 0
-  });
+  const meta = semanticResult.semanticMeta || {};
+  if (
+    semanticResult.confidence >= SEMANTIC_OVERRIDE_THRESHOLD &&
+    meta.margin >= SEMANTIC_MIN_MARGIN
+  ) {
+    return {
+      ...semanticResult,
+      confidence: Math.max(semanticResult.confidence, 0.84),
+      reasoning:
+        "LLM 识别为「" +
+        workflowLabel(llmResult.workflow) +
+        "」，但高置信度向量语义指向「" +
+        workflowLabel(semanticResult.workflow) +
+        "」，采用语义结果。",
+      recognitionMode: "semantic_override"
+    };
+  }
 
   return {
-    ...parseIntentJson(result.text),
-    tokenUsage: extractUsageFromGenerateResult(result)
+    ...llmResult,
+    confidence: Math.max(0.55, (llmResult.confidence || 0.75) - 0.05),
+    reasoning:
+      llmResult.reasoning +
+      "（向量语义倾向「" +
+      workflowLabel(semanticResult.workflow) +
+      "」，证据不足以覆盖模型结果）"
   };
 }
 
-function parseIntentJson(text) {
-  const cleaned = String(text || "")
-    .trim()
-    .replace(/^```json\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/\s*```$/i, "");
-
-  let payload;
-  try {
-    payload = JSON.parse(cleaned);
-  } catch {
-    const start = cleaned.indexOf("{");
-    const end = cleaned.lastIndexOf("}");
-    if (start < 0 || end <= start) {
-      throw new Error("模型未返回合法 JSON");
-    }
-    payload = JSON.parse(cleaned.slice(start, end + 1));
+function chooseFallbackIntent(keywordResult, semanticResult) {
+  if (!semanticResult) return keywordResult;
+  const noKeywordHit =
+    !keywordResult.keywordMeta || keywordResult.keywordMeta.matchedKeywords.length === 0;
+  const semanticReliable =
+    semanticResult.confidence >= 0.68 &&
+    semanticResult.semanticMeta &&
+    semanticResult.semanticMeta.margin >= 0.03;
+  if (semanticReliable && (noKeywordHit || keywordResult.confidence <= 0.55)) {
+    return {
+      ...semanticResult,
+      recognitionMode: "semantic_fallback"
+    };
   }
+  return keywordResult;
+}
 
+async function recognizeIntentWithLLM(message, modelConfig, semanticResult = null) {
+  const semanticHint = semanticResult
+    ? [
+        "",
+        "向量召回仅作为参考证据，仍需独立判断：",
+        JSON.stringify({
+          workflow: semanticResult.workflow,
+          score: Number(semanticResult.semanticMeta.score.toFixed(4)),
+          margin: Number(semanticResult.semanticMeta.margin.toFixed(4))
+        })
+      ].join("\n")
+    : "";
+  const result = await generateStructuredObject({
+    modelConfig,
+    schema: INTENT_RESULT_SCHEMA,
+    system: INTENT_JSON_INSTRUCTION,
+    prompt: message + semanticHint,
+    maxOutputTokens: getIntentMaxTokens(modelConfig),
+  });
+
+  return {
+    ...normalizeIntentPayload(result.object),
+    tokenUsage: result.tokenUsage,
+    structuredOutputMode: result.mode
+  };
+}
+
+function normalizeIntentPayload(payload) {
   const workflow = WORKFLOWS.includes(payload.workflow) ? payload.workflow : "data_query";
   const confidence = clampNumber(payload.confidence, 0, 1, 0.75);
   const params = payload.params && typeof payload.params === "object" ? payload.params : {};
@@ -322,6 +460,28 @@ function clampNumber(value, min, max, fallback) {
 function buildConfidenceMeta(intent) {
   const percent = Math.round((Number(intent.confidence) || 0) * 100);
   const wfLabel = workflowLabel(intent.workflow);
+
+  if (intent.recognitionMode && intent.recognitionMode.startsWith("semantic_")) {
+    const sm = intent.semanticMeta || {};
+    return {
+      percent,
+      source: intent.recognitionMode,
+      sourceLabel:
+        intent.recognitionMode === "semantic_override"
+          ? "向量语义校正"
+          : intent.recognitionMode === "semantic_fallback"
+            ? "向量语义回退"
+            : "向量语义匹配",
+      explanation:
+        "语义召回分类为「" +
+        wfLabel +
+        "」，相似度 " +
+        Number(sm.score || 0).toFixed(3) +
+        "，领先候选 " +
+        Number(sm.margin || 0).toFixed(3) +
+        "。"
+    };
+  }
 
   if (intent.recognitionMode === "llm" || intent.recognitionMode === "keyword_override") {
     return {
@@ -446,32 +606,54 @@ async function recognizeIntent(message, modelConfig, options = {}) {
     return finalizeIntent(keywordResult, "keyword_fast", routingMessage);
   }
 
+  let semanticResult = null;
+  try {
+    semanticResult = await recognizeIntentWithSemantic(routingMessage);
+  } catch {
+    semanticResult = null;
+  }
+
+  const canSemanticFastPath =
+    semanticResult &&
+    semanticResult.confidence >= SEMANTIC_FAST_PATH_THRESHOLD &&
+    semanticResult.semanticMeta.margin >= SEMANTIC_MIN_MARGIN;
+  if (canSemanticFastPath) {
+    return finalizeIntent(semanticResult, "semantic_fast", routingMessage);
+  }
+
   if (!modelConfig || !modelConfig.configured) {
     if (isStrictDebug()) {
       throw new Error("意图识别失败：模型未配置（MODEL_API_KEY 缺失）。INTENT_STRICT_DEBUG=true 已关闭关键词降级。");
     }
-    return finalizeIntent(keywordResult, "keyword_fallback", routingMessage);
+    const fallback = chooseFallbackIntent(keywordResult, semanticResult);
+    return finalizeIntent(
+      fallback,
+      fallback.recognitionMode || "keyword_fallback",
+      routingMessage
+    );
   }
 
   try {
-    const llmResult = await recognizeIntentWithLLM(routingMessage, modelConfig);
+    const llmResult = await recognizeIntentWithLLM(routingMessage, modelConfig, semanticResult);
     const enriched =
       llmResult.workflow === "competitor_benchmark"
         ? { ...llmResult, params: enrichCompetitorParams(routingMessage, llmResult.params) }
         : llmResult;
-    const validated = crossValidateIntent(enriched, keywordResult);
+    const keywordValidated = crossValidateIntent(enriched, keywordResult);
+    const validated = crossValidateSemantic(keywordValidated, semanticResult);
     const mode = validated.recognitionMode || "llm";
     return finalizeIntent(validated, mode, routingMessage);
   } catch (error) {
     if (isStrictDebug()) {
       throw new Error("意图识别 LLM 调用失败：" + error.message);
     }
+    const fallback = chooseFallbackIntent(keywordResult, semanticResult);
     return finalizeIntent(
       {
-        ...keywordResult,
-        reasoning: "LLM 不可用，回退关键词匹配：" + keywordResult.reasoning
+        ...fallback,
+        reasoning: "LLM 不可用，回退本地路由证据：" + fallback.reasoning
       },
-      "keyword_fallback",
+      fallback.recognitionMode || "keyword_fallback",
       routingMessage
     );
   }
@@ -483,7 +665,10 @@ function recognitionModeLabel(mode) {
     keyword_fast: "快速匹配",
     keyword_fallback: "关键词回退",
     keyword_override: "关键词校正",
-    keyword_only: "快速匹配"
+    keyword_only: "快速匹配",
+    semantic_fast: "语义快速匹配",
+    semantic_fallback: "语义回退",
+    semantic_override: "语义校正"
   };
   return labels[mode] || mode;
 }
@@ -509,5 +694,7 @@ module.exports = {
   buildConfidenceMeta,
   workflowRequiresNl2Sql,
   WORKFLOWS,
-  FAST_PATH_THRESHOLD
+  FAST_PATH_THRESHOLD,
+  SEMANTIC_FAST_PATH_THRESHOLD,
+  recognizeIntentWithSemantic
 };
